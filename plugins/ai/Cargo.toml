@@ -1,0 +1,19 @@
+[package]
+name = "channelflow-plugin-ai"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "ChannelFlow AI Provider Suite — OpenAI-compatible endpoints, tests, and failover"
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+# The plugin SDK lives in the base system repo; this repo adds plugins on top
+# of it. Bump `rev` (or move to a newer branch/tag) when you want a newer SDK.
+channelflow-plugin-api = { git = "https://github.com/binarygeek119/ChannelFlow", branch = "2.0.0" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }

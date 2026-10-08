@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["plugins/ai"]
+
+[profile.release]
+lto = "thin"
+strip = true
