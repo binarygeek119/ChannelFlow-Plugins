@@ -187,11 +187,13 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" packages/* --clobber
+          # The job has no checkout, so point gh at the repo explicitly.
+          repo="$GITHUB_REPOSITORY"
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$TAG" packages/* --repo "$repo" --clobber
           else
-            gh release create "$TAG" packages/* \
+            gh release create "$TAG" packages/* --repo "$repo" \
               --title "$TAG" \
               --generate-notes
           fi
-          gh release view "$TAG" --json assets --jq '.assets[].name'
+          gh release view "$TAG" --repo "$repo" --json assets --jq '.assets[].name'
