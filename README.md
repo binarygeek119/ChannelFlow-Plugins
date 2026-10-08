@@ -12,6 +12,7 @@ routes under `/api/plugins/{id}`.
 | Crate | Plugin id | What it does |
 |---|---|---|
 | [`plugins/ai`](plugins/ai) | `com.channelflow.ai` | The AI Provider Suite — OpenAI-compatible endpoints, tests, and priority-ordered failover |
+| [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
 
 ## How the base builds against this repo
 

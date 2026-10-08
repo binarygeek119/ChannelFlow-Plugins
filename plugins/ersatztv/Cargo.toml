@@ -1,0 +1,18 @@
+[package]
+name = "channelflow-plugin-ersatztv"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "ErsatzTV Transcoding Engine — next's ffmpeg and normalization settings as a plugin"
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+# The plugin SDK lives in the base system repo; add plugins on top of it.
+channelflow-plugin-api = { git = "https://github.com/binarygeek119/ChannelFlow", branch = "2.0.0" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
