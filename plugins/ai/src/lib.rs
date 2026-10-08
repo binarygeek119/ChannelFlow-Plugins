@@ -214,6 +214,7 @@ mod tests {
             base_version: "2.0.0".to_string(),
             dir: std::env::temp_dir(),
             logger: PluginLogger::new("com.channelflow.ai"),
+            core: std::sync::Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
         };
         plugin.on_load(api).await.expect("load");
         assert_eq!(plugin.health().detail, "disabled with 1 provider(s)");
