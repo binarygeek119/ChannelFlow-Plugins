@@ -5,6 +5,11 @@ edition = "2021"
 license = "MIT"
 description = "ChannelFlow AI Provider Suite — OpenAI-compatible endpoints, tests, and failover"
 
+# `rlib` keeps the crate usable as a git dependency of the base (compiled in);
+# `cdylib` produces the per-platform shared library the install flow ships.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["json"] }

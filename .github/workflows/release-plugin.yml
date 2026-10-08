@@ -1,0 +1,197 @@
+name: Release plugin
+
+# One plugin ships per version tag. Push a tag shaped `<plugin>-v<version>`
+# (for example `ai-v2.0.1`) and only that plugin is built, its shared library
+# is packaged with its `plugin.json`, and the zips are attached to a GitHub
+# release for the tag. The version in the tag has to match the plugin's
+# `Cargo.toml` and `plugin.json`, so a release can never drift from the source.
+on:
+  push:
+    tags:
+      - '*-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (must already exist, e.g. ai-v2.0.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two runs race on the same tag's release.
+  group: release-plugin-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      slug: ${{ steps.parse.outputs.slug }}
+      crate: ${{ steps.parse.outputs.crate }}
+      version: ${{ steps.parse.outputs.version }}
+      plugin_id: ${{ steps.parse.outputs.plugin_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Resolve plugin from the tag
+        id: parse
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          case "$TAG" in
+            *-v*) ;;
+            *) echo "::error::tag '$TAG' is not shaped <plugin>-v<version>"; exit 1 ;;
+          esac
+          slug="${TAG%-v*}"
+          version="${TAG##*-v}"
+          dir="plugins/$slug"
+
+          [ -f "$dir/Cargo.toml" ] || { echo "::error::no plugin at $dir (tag names must match a plugins/<dir>)"; exit 1; }
+          [ -f "$dir/plugin.json" ] || { echo "::error::$dir/plugin.json is missing"; exit 1; }
+
+          metadata="$(cargo metadata --no-deps --format-version 1)"
+          manifest="plugins/$slug/Cargo.toml"
+          crate="$(printf '%s' "$metadata" | jq -r --arg m "$manifest" '.packages[] | select(.manifest_path | endswith($m)) | .name')"
+          cargo_version="$(printf '%s' "$metadata" | jq -r --arg m "$manifest" '.packages[] | select(.manifest_path | endswith($m)) | .version')"
+
+          if [ -z "$crate" ] || [ "$crate" = "null" ]; then
+            echo "::error::could not resolve the crate for $dir"
+            exit 1
+          fi
+
+          plugin_id="$(jq -r .id "$dir/plugin.json")"
+          manifest_version="$(jq -r .version "$dir/plugin.json")"
+
+          # The tag is the contract: it must agree with both sources.
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error::tag version $version != $manifest version $cargo_version (bump the crate before tagging)"
+            exit 1
+          fi
+          if [ "$version" != "$manifest_version" ]; then
+            echo "::error::tag version $version != $dir/plugin.json version $manifest_version"
+            exit 1
+          fi
+
+          echo "Releasing plugin '$slug' ($plugin_id) $version from crate $crate"
+          {
+            echo "slug=$slug"
+            echo "crate=$crate"
+            echo "version=$version"
+            echo "plugin_id=$plugin_id"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: detect
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            rid: windows-x86_64
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build ${{ needs.detect.outputs.crate }} (${{ matrix.rid }})
+        env:
+          CRATE: ${{ needs.detect.outputs.crate }}
+          TARGET: ${{ matrix.target }}
+        run: cargo build -p "$CRATE" --release --target "$TARGET"
+
+      - name: Stage library and manifest
+        env:
+          CRATE: ${{ needs.detect.outputs.crate }}
+          TARGET: ${{ matrix.target }}
+          SLUG: ${{ needs.detect.outputs.slug }}
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          lib="${CRATE//-/_}"
+          case "$RID" in
+            linux-*)   file="lib${lib}.so" ;;
+            windows-*) file="${lib}.dll" ;;
+            macos-*)   file="lib${lib}.dylib" ;;
+            *) echo "::error::unhandled rid $RID"; exit 1 ;;
+          esac
+          src="target/${TARGET}/release/${file}"
+          if [ ! -f "$src" ]; then
+            echo "::error::$src was not produced; the release dir holds:"
+            ls -la "target/${TARGET}/release" || true
+            exit 1
+          fi
+          mkdir -p staging
+          cp "$src" staging/
+          cp "plugins/${SLUG}/plugin.json" staging/
+          ls -la staging
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-${{ needs.detect.outputs.slug }}-${{ matrix.rid }}
+          path: staging/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [detect, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+
+      - name: Package each platform
+        env:
+          SLUG: ${{ needs.detect.outputs.slug }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          PLUGIN_ID: ${{ needs.detect.outputs.plugin_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p packages
+          for dir in dist/plugin-*; do
+            art="$(basename "$dir")"
+            rid="${art#plugin-${SLUG}-}"
+            out="$PWD/packages/${PLUGIN_ID}-v${VERSION}-${rid}.zip"
+            ( cd "$dir" && zip -qr "$out" . )
+          done
+          ls -lh packages
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" packages/* --clobber
+          else
+            gh release create "$TAG" packages/* \
+              --title "$TAG" \
+              --generate-notes
+          fi
+          gh release view "$TAG" --json assets --jq '.assets[].name'

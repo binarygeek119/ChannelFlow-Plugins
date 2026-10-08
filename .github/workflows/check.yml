@@ -1,0 +1,30 @@
+name: Check plugins
+
+# Every push and pull request builds the whole workspace and runs the tests, so
+# a plugin that no longer compiles is caught before anyone tags a release.
+# Tagged releases are handled by release-plugin.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build every plugin
+        run: cargo build --workspace --release
+
+      - name: Test every plugin
+        run: cargo test --workspace
