@@ -54,10 +54,11 @@ com.channelflow.ai-v2.0.1-linux-x86_64.zip     libchannelflow_plugin_ai.so + plu
 com.channelflow.ai-v2.0.1-windows-x86_64.zip   channelflow_plugin_ai.dll + plugin.json
 ```
 
-The version in the tag has to match both `plugins/<plugin>/Cargo.toml` and
-`plugins/<plugin>/plugin.json`; the workflow refuses to build if they disagree,
-so a release cannot drift from the source. To cut one, bump both versions,
-commit, then:
+The version in the tag has to match the plugin's `plugin.json` — the manifest
+the base installs by — and the workflow refuses to build if they disagree. A
+drift between that version and `plugins/<plugin>/Cargo.toml` is only warned
+about, since the crate version is internal. To cut one, bump the manifest
+version, commit, then:
 
 ```bash
 git tag ai-v2.0.1
@@ -67,5 +68,12 @@ git push origin ai-v2.0.1
 Every other push and pull request runs
 [`.github/workflows/check.yml`](.github/workflows/check.yml), which builds the
 whole workspace and runs the tests. Add a plugin by dropping a crate under
-`plugins/` and listing it in the root `Cargo.toml`; the tag `ai-v…` becomes
-`<newdir>-v…` and no workflow change is needed.
+`plugins/`, listing it in the root `Cargo.toml`, and giving it the `cdylib`
+crate-type:
+
+```toml
+[lib]
+crate-type = ["rlib", "cdylib"]
+```
+
+The tag `<newdir>-v…` then works with no workflow change.

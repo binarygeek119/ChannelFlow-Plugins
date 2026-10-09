@@ -69,14 +69,15 @@ jobs:
           plugin_id="$(jq -r .id "$dir/plugin.json")"
           manifest_version="$(jq -r .version "$dir/plugin.json")"
 
-          # The tag is the contract: it must agree with both sources.
-          if [ "$version" != "$cargo_version" ]; then
-            echo "::error::tag version $version != $manifest version $cargo_version (bump the crate before tagging)"
+          # plugin.json is the version the base installs by, so the tag has to
+          # match it exactly. The crate version is an internal detail: drift
+          # there is a warning, not a failed release.
+          if [ "$version" != "$manifest_version" ]; then
+            echo "::error::tag version $version != $dir/plugin.json version $manifest_version (bump plugin.json before tagging)"
             exit 1
           fi
-          if [ "$version" != "$manifest_version" ]; then
-            echo "::error::tag version $version != $dir/plugin.json version $manifest_version"
-            exit 1
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::warning::$dir/Cargo.toml is version $cargo_version but plugin.json and the tag are $version"
           fi
 
           echo "Releasing plugin '$slug' ($plugin_id) $version from crate $crate"
@@ -139,7 +140,8 @@ jobs:
           esac
           src="target/${TARGET}/release/${file}"
           if [ ! -f "$src" ]; then
-            echo "::error::$src was not produced; the release dir holds:"
+            echo "::error::$src was not produced. Does plugins/${SLUG}/Cargo.toml declare [lib] crate-type = [\"rlib\", \"cdylib\"]?"
+            echo "the release dir holds:"
             ls -la "target/${TARGET}/release" || true
             exit 1
           fi

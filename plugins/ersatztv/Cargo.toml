@@ -5,6 +5,11 @@ edition = "2021"
 license = "MIT"
 description = "ErsatzTV Transcoding Engine — next's ffmpeg and normalization settings as a plugin"
 
+# `rlib` keeps the crate usable as a git dependency of the base (compiled in);
+# `cdylib` produces the per-platform shared library the install flow ships.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["json"] }
