@@ -224,7 +224,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet manifest.json; then
+          if [ -z "$(git status --porcelain manifest.json)" ]; then
             echo "manifest.json unchanged"
           else
             git config user.name "github-actions[bot]"

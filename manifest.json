@@ -1,0 +1,60 @@
+[
+  {
+    "id": "com.channelflow.ai",
+    "guid": "com.channelflow.ai",
+    "name": "AI Provider Suite",
+    "description": "OpenAI-compatible endpoints, tests, and priority-ordered failover",
+    "owner": "ChannelFlow Team",
+    "category": "ai",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-09T00:29:56Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ai-v2.0.0/com.channelflow.ai-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:df271accbde84401b1143900fe69ac61dcd5a88a2f074e4323147c24e108fcef",
+            "size": 265575
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ai-v2.0.0/com.channelflow.ai-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:ff2eb93800a022d5e8ab8a304df215242fc7d68ab626228be5fed340d7b8bfcd",
+            "size": 221898
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "com.channelflow.ersatztv",
+    "guid": "com.channelflow.ersatztv",
+    "name": "ErsatzTV Transcoding Engine",
+    "description": "Transcode settings and per-channel overrides, mirrored exactly from ErsatzTV next's ffmpeg and normalization schema",
+    "owner": "ChannelFlow Team",
+    "category": "transcoding",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-09T00:29:57Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ersatztv-v2.0.0/com.channelflow.ersatztv-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:f2aa0fdded3b65ae7a23c387851c696f85d943eccf2816bdb0961c422ba308e2",
+            "size": 266397
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ersatztv-v2.0.0/com.channelflow.ersatztv-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:677ea36beccbb50e3620e0331e401e28714693b375c2904c7b09ab331d14187a",
+            "size": 221923
+          }
+        }
+      }
+    ]
+  }
+]
