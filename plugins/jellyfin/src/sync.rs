@@ -125,7 +125,137 @@ async fn upsert(
         .replace_files(source_id, raw)
         .await
         .map_err(plugin_database)?;
+
+    // Jellyfin nests every track under an album; build the album → artist
+    // nodes and link this track into them (best-effort — a lone track stays
+    // ungrouped rather than failing the sync).
+    if let Err(error) =
+        ensure_hierarchy(&media, raw, item_id, &media_type, synced_at).await
+    {
+        tracing::warn!(error = %error.0, "jellyfin: could not build album/track hierarchy");
+    }
     Ok(created)
+}
+
+/// Jellyfin returns `Audio` items (tracks) with their `Album`, `AlbumArtist`
+/// and disc/track numbers, but never the album/artist items themselves —
+/// those are built here as synthesised grouping nodes so the library gets a
+/// real album → track (and artist) hierarchy instead of a flat track list.
+async fn ensure_hierarchy(
+    media: &MediaDb,
+    raw: &Value,
+    item_id: i64,
+    media_type: &str,
+    synced_at: &str,
+) -> Result<(), PluginError> {
+    match media_type {
+        "track" => {
+            let Some(album_title) = album_title(raw) else {
+                return Ok(());
+            };
+            let year = raw
+                .get("ProductionYear")
+                .and_then(Value::as_i64)
+                .map(|year| year as i32);
+            let artist_item = match album_artist(raw) {
+                Some(artist) => {
+                    let (artist_id, _) = media
+                        .upsert_item(
+                            &dedup::key("artist", &artist, None),
+                            "artist",
+                            &artist,
+                            None,
+                            None,
+                            synced_at,
+                        )
+                        .await
+                        .map_err(plugin_database)?;
+                    media.ensure_artist_row(artist_id).await.map_err(plugin_database)?;
+                    Some(artist_id)
+                }
+                None => None,
+            };
+            let (album_id, _) = media
+                .upsert_item(
+                    &dedup::key("album", &album_title, year),
+                    "album",
+                    &album_title,
+                    year,
+                    None,
+                    synced_at,
+                )
+                .await
+                .map_err(plugin_database)?;
+            media.ensure_album_row(album_id, artist_item).await.map_err(plugin_database)?;
+            let (track_number, disc_number) = track_numbers(raw);
+            media
+                .link_track(item_id, album_id, track_number, disc_number)
+                .await
+                .map_err(plugin_database)?;
+            Ok(())
+        }
+        "musicvideo" => {
+            if let Some(artist) = album_artist(raw) {
+                let (artist_id, _) = media
+                    .upsert_item(
+                        &dedup::key("artist", &artist, None),
+                        "artist",
+                        &artist,
+                        None,
+                        None,
+                        synced_at,
+                    )
+                    .await
+                    .map_err(plugin_database)?;
+                media.ensure_artist_row(artist_id).await.map_err(plugin_database)?;
+                media.link_music_video(item_id, Some(artist_id)).await.map_err(plugin_database)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The album a track belongs to, from the track's own fields.
+fn album_title(raw: &Value) -> Option<String> {
+    let title = raw.get("Album").and_then(Value::as_str).unwrap_or("").trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
+/// The artist for an album/track/music-video, in Jellyfin's field order.
+fn album_artist(raw: &Value) -> Option<String> {
+    let direct = raw.get("AlbumArtist").and_then(Value::as_str);
+    let from_album_artists = raw
+        .get("AlbumArtists")
+        .and_then(Value::as_array)
+        .and_then(|artists| artists.first())
+        .and_then(|artist| artist.get("Name"))
+        .and_then(Value::as_str);
+    let from_artist_items = raw
+        .get("ArtistItems")
+        .and_then(Value::as_array)
+        .and_then(|artists| artists.first())
+        .and_then(|artist| artist.get("Name"))
+        .and_then(Value::as_str);
+    [direct, from_album_artists, from_artist_items]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+/// `(track_number, disc_number)` — Jellyfin's `IndexNumber` /
+/// `ParentIndexNumber`.
+fn track_numbers(raw: &Value) -> (Option<i32>, Option<i32>) {
+    (
+        raw.get("IndexNumber").and_then(Value::as_i64).map(|n| n as i32),
+        raw.get("ParentIndexNumber").and_then(Value::as_i64).map(|n| n as i32),
+    )
 }
 
 fn map_type(raw: &str) -> &'static str {
@@ -203,5 +333,54 @@ pub async fn sweep_orphan_posters(db: Arc<dyn PluginDatabase>) -> Vec<String> {
             tracing::warn!(error = %error, "jellyfin: orphan sweep failed");
             Vec::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn album_and_artist_come_from_the_track_fields() {
+        let raw = serde_json::json!({
+            "Album": "Random Access Memories",
+            "AlbumArtist": "Daft Punk",
+            "AlbumArtists": [{"Name": "Daft Punk", "Id": "a1"}],
+            "ArtistItems": [{"Name": "Someone Else", "Id": "x"}],
+        });
+        assert_eq!(album_title(&raw).as_deref(), Some("Random Access Memories"));
+        assert_eq!(album_artist(&raw).as_deref(), Some("Daft Punk"));
+    }
+
+    #[test]
+    fn artist_falls_back_to_album_artists_then_artist_items() {
+        let raw = serde_json::json!({
+            "Album": "Greatest Hits",
+            "AlbumArtists": [{"Name": "The Band"}],
+        });
+        assert_eq!(album_artist(&raw).as_deref(), Some("The Band"));
+
+        let raw = serde_json::json!({
+            "Album": "Live",
+            "ArtistItems": [{"Name": "Live Artist"}],
+        });
+        assert_eq!(album_artist(&raw).as_deref(), Some("Live Artist"));
+    }
+
+    #[test]
+    fn missing_album_means_no_grouping() {
+        let raw = serde_json::json!({ "Name": "Lone Track" });
+        assert_eq!(album_title(&raw), None);
+        assert_eq!(album_artist(&raw), None);
+    }
+
+    #[test]
+    fn disc_and_track_numbers_are_extracted() {
+        let raw = serde_json::json!({
+            "IndexNumber": 7,
+            "ParentIndexNumber": 2,
+        });
+        assert_eq!(track_numbers(&raw), (Some(7), Some(2)));
+        assert_eq!(track_numbers(&serde_json::json!({})), (None, None));
     }
 }

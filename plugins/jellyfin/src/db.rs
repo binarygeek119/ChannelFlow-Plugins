@@ -611,7 +611,9 @@ impl MediaDb {
 
     /// Delete items that have no sources left (connection deleted, or the
     /// grace sweep removed the last one), returning the poster paths that are
-    /// now dead so the caller can remove the files.
+    /// now dead so the caller can remove the files. Synthesised grouping nodes
+    /// (`album`, `artist`) are never sourced and stay — they hold the live
+    /// tracks beneath them.
     #[allow(dead_code)]
     pub async fn orphan_sweep(&self) -> JfResult<Vec<String>> {
         let items = self.t("media_items");
@@ -621,7 +623,8 @@ impl MediaDb {
             .fetch_params(
                 &format!(
                     "SELECT {items}.id, {items}.poster_path FROM {items} \
-                     WHERE NOT EXISTS (SELECT 1 FROM {sources} WHERE {sources}.item_id = {items}.id)"
+                     WHERE NOT EXISTS (SELECT 1 FROM {sources} WHERE {sources}.item_id = {items}.id) \
+                       AND {items}.media_type NOT IN ('album', 'artist')"
                 ),
                 &[],
             )
@@ -661,6 +664,99 @@ impl MediaDb {
                 &[Value::from(item_id)],
             )
             .await
+    }
+
+    /// Track the artist's row in the `artists` table.
+    pub async fn ensure_artist_row(&self, artist_item_id: i64) -> JfResult<()> {
+        let artists = self.t("artists");
+        self.inner
+            .execute_params(
+                &format!(
+                    "INSERT INTO {artists} (item_id) VALUES ($1) \
+                     ON CONFLICT (item_id) DO NOTHING"
+                ),
+                &[Value::from(artist_item_id)],
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// Create or update an album row, linking it to its artist.
+    pub async fn ensure_album_row(
+        &self,
+        album_item_id: i64,
+        artist_item_id: Option<i64>,
+    ) -> JfResult<()> {
+        let albums = self.t("albums");
+        self.inner
+            .execute_params(
+                &format!(
+                    "INSERT INTO {albums} (item_id, artist_id) VALUES ($1, $2) \
+                     ON CONFLICT (item_id) DO UPDATE SET artist_id = EXCLUDED.artist_id"
+                ),
+                &[
+                    Value::from(album_item_id),
+                    artist_item_id
+                        .map(|id| Value::from(id))
+                        .unwrap_or(Value::Null),
+                ],
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// Link a track into its album and record its disc/track numbers.
+    pub async fn link_track(
+        &self,
+        track_item_id: i64,
+        album_item_id: i64,
+        track_number: Option<i32>,
+        disc_number: Option<i32>,
+    ) -> JfResult<()> {
+        let tracks = self.t("tracks");
+        self.inner
+            .execute_params(
+                &format!(
+                    "INSERT INTO {tracks} (item_id, album_id, track_number, disc_number) \
+                     VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (item_id) DO UPDATE SET \
+                       album_id = EXCLUDED.album_id, \
+                       track_number = EXCLUDED.track_number, \
+                       disc_number = EXCLUDED.disc_number"
+                ),
+                &[
+                    Value::from(track_item_id),
+                    Value::from(album_item_id),
+                    value_or_null(track_number),
+                    value_or_null(disc_number),
+                ],
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// Link a music video to its artist.
+    pub async fn link_music_video(
+        &self,
+        video_item_id: i64,
+        artist_item_id: Option<i64>,
+    ) -> JfResult<()> {
+        let music_videos = self.t("music_videos");
+        self.inner
+            .execute_params(
+                &format!(
+                    "INSERT INTO {music_videos} (item_id, artist_id) VALUES ($1, $2) \
+                     ON CONFLICT (item_id) DO UPDATE SET artist_id = EXCLUDED.artist_id"
+                ),
+                &[
+                    Value::from(video_item_id),
+                    artist_item_id
+                        .map(|id| Value::from(id))
+                        .unwrap_or(Value::Null),
+                ],
+            )
+            .await
+            .map(|_| ())
     }
 
     /// Remember a playout pin: use `file_id` for this item's window.
@@ -753,6 +849,11 @@ fn jf_num(raw: &Value, field: &str) -> Value {
         Some(Value::String(text)) => text.parse::<i64>().map(|value| Value::from(value)).unwrap_or(Value::Null),
         _ => Value::Null,
     }
+}
+
+/// A nullable integer as a bound text value.
+fn value_or_null(number: Option<i32>) -> Value {
+    number.map(|value| Value::from(value)).unwrap_or(Value::Null)
 }
 
 #[cfg(test)]
