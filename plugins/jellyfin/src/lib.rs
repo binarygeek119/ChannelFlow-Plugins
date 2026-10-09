@@ -68,6 +68,11 @@ pub fn media_source() -> Box<dyn MediaSource> {
     Box::new(JellyfinPlugin::new())
 }
 
+/// Called by the base after a `jellyfin` connection is deleted: the database
+/// rows cascade first, this removes the poster files of items that lost every
+/// source.
+pub use sync::sweep_orphan_posters;
+
 /// The ABI entrypoint: the base (or a future dynamic loader) calls this and
 /// downcasts the `MediaSource` it gets back.
 #[no_mangle]
