@@ -317,7 +317,7 @@ impl MediaDb {
             .fetch_params(
                 &format!(
                     "SELECT item_id FROM {sources} \
-                     WHERE connection_id = $1 AND jellyfin_id = $2"
+                     WHERE connection_id = $1::integer AND jellyfin_id = $2"
                 ),
                 &[Value::from(connection_id), Value::String(jellyfin_id.to_string())],
             )
@@ -328,7 +328,7 @@ impl MediaDb {
                 .execute_params(
                     &format!(
                         "UPDATE {items} SET dedup_key = $1, media_type = $2, title = $3, \
-                         year = $4, poster_path = $5, synced_at = $6 WHERE id = $7"
+                         year = $4::integer, poster_path = $5, synced_at = $6 WHERE id = $7::bigint"
                     ),
                     &[
                         Value::String(dedup_key.to_string()),
@@ -348,8 +348,8 @@ impl MediaDb {
                 .fetch_params(
                     &format!(
                         "INSERT INTO {items} \
-                         (dedup_key, media_type, title, year, poster_path, synced_at) \
-                         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+                         (dedup_key, media_type, title, year::integer, poster_path, synced_at) \
+                         VALUES ($1, $2, $3, $4::integer, $5, $6) RETURNING id"
                     ),
                     &[
                         Value::String(dedup_key.to_string()),
@@ -449,7 +449,7 @@ impl MediaDb {
                 &format!(
                     "INSERT INTO {sources} \
                      (item_id, connection_id, jellyfin_id, path, is_missing, synced_at) \
-                     VALUES ($1, $2, $3, $4, $5::int, $6) \
+                     VALUES ($1::bigint, $2::integer, $3, $4, $5::int, $6) \
                      ON CONFLICT (connection_id, jellyfin_id) DO UPDATE SET \
                        item_id = EXCLUDED.item_id, path = EXCLUDED.path, \
                        is_missing = EXCLUDED.is_missing, synced_at = EXCLUDED.synced_at \
@@ -484,7 +484,7 @@ impl MediaDb {
         let old: Vec<i64> = self
             .inner
             .fetch_params(
-                &format!("SELECT id FROM {files} WHERE source_id = $1"),
+                &format!("SELECT id FROM {files} WHERE source_id = $1::bigint"),
                 &[Value::from(source_id)],
             )
             .await?
@@ -495,14 +495,14 @@ impl MediaDb {
             for table in [&video, &audio, &subtitles, &chapters] {
                 self.inner
                     .execute_params(
-                        &format!("DELETE FROM {table} WHERE file_id = $1"),
+                        &format!("DELETE FROM {table} WHERE file_id = $1::bigint"),
                         &[Value::from(file_id)],
                     )
                     .await?;
             }
             self.inner
                 .execute_params(
-                    &format!("DELETE FROM {files} WHERE id = $1"),
+                    &format!("DELETE FROM {files} WHERE id = $1::bigint"),
                     &[Value::from(file_id)],
                 )
                 .await?;
@@ -520,7 +520,7 @@ impl MediaDb {
                     &format!(
                         "INSERT INTO {files} (source_id, remote_id, path, container, size_bytes, \
                          bitrate, runtime_ticks, is_remote, protocol, height, video_codec, hdr_format) \
-                         VALUES ($1, $2, $3, $4::text, $5, $6, $7, $8::int, $9::text, $10, $11::text, $12::text) \
+                         VALUES ($1::bigint, $2, $3, $4::text, $5::bigint, $6::bigint, $7::bigint, $8::int, $9::text, $10::integer, $11::text, $12::text) \
                          RETURNING id"
                     ),
                     &[
@@ -583,7 +583,7 @@ impl MediaDb {
                             &format!(
                                 "INSERT INTO {video} (file_id, stream_index, codec, profile, \
                                  resolution, bitrate, framerate, video_range) \
-                                 VALUES ($1, $2, $3::text, $4::text, $5, $6, $7, $8::text)"
+                                 VALUES ($1::bigint, $2::integer, $3::text, $4::text, $5, $6::bigint, $7::real, $8::text)"
                             ),
                             &[
                                 Value::from(file_id),
@@ -608,7 +608,7 @@ impl MediaDb {
                             &format!(
                                 "INSERT INTO {audio} (file_id, stream_index, title, language, \
                                  codec, layout, channels, bitrate, is_default, is_forced) \
-                                 VALUES ($1, $2, $3::text, $4::text, $5::text, $6::text, $7, $8, $9::int, $10::int)"
+                                 VALUES ($1::bigint, $2::integer, $3::text, $4::text, $5::text, $6::text, $7::integer, $8::bigint, $9::int, $10::int)"
                             ),
                             &[
                                 Value::from(file_id),
@@ -632,7 +632,7 @@ impl MediaDb {
                             &format!(
                                 "INSERT INTO {subtitles} (file_id, stream_index, title, language, \
                                  codec, is_default, is_external, external_path) \
-                                 VALUES ($1, $2, $3::text, $4::text, $5::text, $6::int, $7::int, $8::text)"
+                                 VALUES ($1::bigint, $2::integer, $3::text, $4::text, $5::text, $6::int, $7::int, $8::text)"
                             ),
                             &[
                                 Value::from(file_id),
@@ -659,8 +659,8 @@ impl MediaDb {
             .execute_params(
                 &format!(
                     "UPDATE {sources} SET is_missing = 1 \
-                     WHERE connection_id = $1 AND is_missing = 0 \
-                       AND jellyfin_id NOT IN (SELECT jellyfin_id FROM {sources} WHERE connection_id = $1)"
+                     WHERE connection_id = $1::integer AND is_missing = 0 \
+                       AND jellyfin_id NOT IN (SELECT jellyfin_id FROM {sources} WHERE connection_id = $1::integer)"
                 ),
                 &[Value::from(connection_id)],
             )
@@ -688,7 +688,7 @@ impl MediaDb {
             if let Some(item_id) = row["item_id"].as_i64() {
                 self.inner
                     .execute_params(
-                        &format!("DELETE FROM {items} WHERE id = $1"),
+                        &format!("DELETE FROM {items} WHERE id = $1::bigint::bigint"),
                         &[Value::from(item_id)],
                     )
                     .await?;
@@ -726,7 +726,7 @@ impl MediaDb {
             if let Some(id) = row["id"].as_i64() {
                 self.inner
                     .execute_params(
-                        &format!("DELETE FROM {items} WHERE id = $1"),
+                        &format!("DELETE FROM {items} WHERE id = $1::bigint::bigint"),
                         &[Value::from(id)],
                     )
                     .await?;
@@ -747,7 +747,7 @@ impl MediaDb {
                             f.height AS height, f.video_codec AS video_codec, f.hdr_format AS hdr_format, \
                             f.is_remote AS is_remote, s.is_missing AS is_missing, s.path AS path \
                      FROM {files} f JOIN {sources} s ON s.id = f.source_id \
-                     WHERE s.item_id = $1 \
+                     WHERE s.item_id = $1::bigint \
                      ORDER BY f.id"
                 ),
                 &[Value::from(item_id)],
@@ -762,7 +762,7 @@ impl MediaDb {
         self.inner
             .execute_params(
                 &format!(
-                    "INSERT INTO {artists} (item_id) VALUES ($1) \
+                    "INSERT INTO {artists} (item_id) VALUES ($1::bigint) \
                      ON CONFLICT (item_id) DO NOTHING"
                 ),
                 &[Value::from(artist_item_id)],
@@ -781,7 +781,7 @@ impl MediaDb {
         self.inner
             .execute_params(
                 &format!(
-                    "INSERT INTO {albums} (item_id, artist_id) VALUES ($1, $2) \
+                    "INSERT INTO {albums} (item_id, artist_id) VALUES ($1::bigint, $2::bigint) \
                      ON CONFLICT (item_id) DO UPDATE SET artist_id = EXCLUDED.artist_id"
                 ),
                 &[
@@ -808,7 +808,7 @@ impl MediaDb {
             .execute_params(
                 &format!(
                     "INSERT INTO {tracks} (item_id, album_id, track_number, disc_number) \
-                     VALUES ($1, $2, $3, $4) \
+                     VALUES ($1::bigint, $2::bigint, $3::integer, $4::integer) \
                      ON CONFLICT (item_id) DO UPDATE SET \
                        album_id = EXCLUDED.album_id, \
                        track_number = EXCLUDED.track_number, \
@@ -835,7 +835,7 @@ impl MediaDb {
         self.inner
             .execute_params(
                 &format!(
-                    "INSERT INTO {music_videos} (item_id, artist_id) VALUES ($1, $2) \
+                    "INSERT INTO {music_videos} (item_id, artist_id) VALUES ($1::bigint, $2::bigint) \
                      ON CONFLICT (item_id) DO UPDATE SET artist_id = EXCLUDED.artist_id"
                 ),
                 &[
@@ -891,7 +891,7 @@ impl MediaDb {
             .inner
             .fetch_params(
                 &format!(
-                    "SELECT id FROM {items} WHERE id = $1 AND merged_into IS NULL LIMIT 1"
+                    "SELECT id FROM {items} WHERE id = $1::bigint AND merged_into IS NULL LIMIT 1"
                 ),
                 &[Value::from(to_id)],
             )
@@ -902,7 +902,7 @@ impl MediaDb {
         }
         self.inner
             .execute_params(
-                &format!("UPDATE {sources} SET item_id = $1 WHERE item_id = $2"),
+                &format!("UPDATE {sources} SET item_id = $1::bigint WHERE item_id = $2::bigint"),
                 &[Value::from(to_id), Value::from(from_id)],
             )
             .await?;
@@ -910,8 +910,8 @@ impl MediaDb {
             .execute_params(
                 &format!(
                     "UPDATE {items} SET poster_path = sub.poster_path FROM \
-                     (SELECT poster_path FROM {items} WHERE id = $1) sub \
-                     WHERE {items}.id = $2 AND {items}.poster_path IS NULL \
+                     (SELECT poster_path FROM {items} WHERE id = $1::bigint) sub \
+                     WHERE {items}.id = $2::bigint AND {items}.poster_path IS NULL \
                        AND sub.poster_path IS NOT NULL"
                 ),
                 &[Value::from(from_id), Value::from(to_id)],
@@ -920,7 +920,7 @@ impl MediaDb {
         self.inner
             .execute_params(
                 &format!(
-                    "UPDATE {items} SET merged_into = $1, synced_at = $2 WHERE id = $3"
+                    "UPDATE {items} SET merged_into = $1::bigint, synced_at = $2 WHERE id = $3::bigint"
                 ),
                 &[Value::from(to_id), Value::String(chrono::Utc::now().to_rfc3339()), Value::from(from_id)],
             )
@@ -940,7 +940,7 @@ impl MediaDb {
             .fetch_params(
                 &format!(
                     "SELECT id, jellyfin_id FROM {sources} \
-                     WHERE item_id = $1 ORDER BY id",
+                     WHERE item_id = $1::bigint ORDER BY id",
                 ),
                 &[Value::from(item_id)],
             )
@@ -957,7 +957,7 @@ impl MediaDb {
                 .fetch_params(
                     &format!(
                         "SELECT dedup_key, media_type, title, year, poster_path, synced_at \
-                         FROM {items} WHERE id = $1",
+                         FROM {items} WHERE id = $1::bigint",
                     ),
                     &[Value::from(item_id)],
                 )
@@ -981,7 +981,7 @@ impl MediaDb {
                 .await?;
             self.inner
                 .execute_params(
-                    &format!("UPDATE {sources} SET item_id = $1 WHERE id = $2"),
+                    &format!("UPDATE {sources} SET item_id = $1::bigint WHERE id = $2::bigint"),
                     &[Value::from(new_item), Value::from(source_id)],
                 )
                 .await?;
@@ -998,7 +998,7 @@ impl MediaDb {
             .fetch_params(
                 &format!(
                     "INSERT INTO {pins} (item_id, file_id, window_start, created_at) \
-                     VALUES ($1, $2, $3::text, $4) RETURNING id"
+                     VALUES ($1::bigint, $2::bigint, $3::text, $4) RETURNING id"
                 ),
                 &[
                     Value::from(item_id),
@@ -1019,7 +1019,7 @@ impl MediaDb {
                 &format!(
                     "SELECT id, connection_id, kind, status, started_at, finished_at, \
                             items_added, items_updated, items_removed, errors, message \
-                     FROM {runs} ORDER BY id DESC LIMIT $1"
+                     FROM {runs} ORDER BY id DESC LIMIT $1::integer"
                 ),
                 &[Value::from(limit)],
             )
@@ -1043,7 +1043,7 @@ impl MediaDb {
                 &format!(
                     "INSERT INTO {runs} (connection_id, kind, status, started_at, finished_at, \
                      items_added, items_updated, items_removed, errors, message) \
-                     VALUES ($1, 'library', $2::text, $3, $4, $5::int, $6::int, $7::int, $8::int, $9::text)"
+                     VALUES ($1::integer, 'library', $2::text, $3, $4, $5::int, $6::int, $7::int, $8::int, $9::text)"
                 ),
                 &[
                     Value::from(connection_id),
