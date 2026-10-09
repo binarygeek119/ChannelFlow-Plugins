@@ -11,7 +11,7 @@
 -- canonical items — deduped by title:year:type
 CREATE TABLE IF NOT EXISTS media_items (
   id                    INTEGER PRIMARY KEY,
-  dedup_key             TEXT NOT NULL UNIQUE,
+  dedup_key             TEXT NOT NULL,
   media_type            TEXT NOT NULL,
   title                 TEXT,
   sort_title            TEXT,
@@ -30,8 +30,12 @@ CREATE TABLE IF NOT EXISTS media_items (
   language              TEXT,
   original_language     TEXT,
   poster_path           TEXT,
+  merged_into           INTEGER,
   synced_at             TEXT NOT NULL
 );
+-- dedup_key is a label, not the identity: title:year collides ("The Thing"
+-- 1982) and merge/split are manual, so the key is indexed but never unique.
+CREATE INDEX IF NOT EXISTS idx_items_key ON media_items(dedup_key);
 CREATE INDEX IF NOT EXISTS idx_items_type ON media_items(media_type);
 
 CREATE TABLE IF NOT EXISTS item_sources (

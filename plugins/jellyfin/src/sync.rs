@@ -107,7 +107,16 @@ async fn upsert(
 
     let poster_path = write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await?;
     let (item_id, created) = media
-        .upsert_item(&dedup_key, &media_type, &title, year, poster_path.as_deref(), synced_at)
+        .upsert_item_by_source(
+            ctx.connection_id,
+            jellyfin_id,
+            &dedup_key,
+            &media_type,
+            &title,
+            year,
+            poster_path.as_deref(),
+            synced_at,
+        )
         .await
         .map_err(plugin_database)?;
     let source_id = media
@@ -160,11 +169,10 @@ async fn ensure_hierarchy(
             let artist_item = match album_artist(raw) {
                 Some(artist) => {
                     let (artist_id, _) = media
-                        .upsert_item(
+                        .upsert_grouping(
                             &dedup::key("artist", &artist, None),
                             "artist",
                             &artist,
-                            None,
                             None,
                             synced_at,
                         )
@@ -176,12 +184,11 @@ async fn ensure_hierarchy(
                 None => None,
             };
             let (album_id, _) = media
-                .upsert_item(
+                .upsert_grouping(
                     &dedup::key("album", &album_title, year),
                     "album",
                     &album_title,
                     year,
-                    None,
                     synced_at,
                 )
                 .await
@@ -197,11 +204,10 @@ async fn ensure_hierarchy(
         "musicvideo" => {
             if let Some(artist) = album_artist(raw) {
                 let (artist_id, _) = media
-                    .upsert_item(
+                    .upsert_grouping(
                         &dedup::key("artist", &artist, None),
                         "artist",
                         &artist,
-                        None,
                         None,
                         synced_at,
                     )

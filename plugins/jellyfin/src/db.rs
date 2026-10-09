@@ -30,7 +30,6 @@ impl MediaDb {
 
     /// Create every table if it does not already exist.
     pub async fn init(&self) -> JfResult<()> {
-        let items = self.t("media_items");
         let sources = self.t("item_sources");
         let files = self.t("media_files");
         let people = self.t("people");
@@ -42,16 +41,32 @@ impl MediaDb {
                 "media_items",
                 &format!(
                     "id BIGSERIAL PRIMARY KEY,
-                     dedup_key TEXT NOT NULL UNIQUE,
+                     dedup_key TEXT NOT NULL,
                      media_type TEXT NOT NULL,
                      title TEXT, sort_title TEXT, original_title TEXT, overview TEXT,
                      tagline TEXT, container TEXT, runtime_ticks BIGINT, release_date TEXT,
                      year INTEGER, community_rating REAL, critics_rating REAL,
                      official_rating TEXT, custom_rating TEXT, original_aspect_ratio TEXT,
                      language TEXT, original_language TEXT, poster_path TEXT,
+                     merged_into BIGINT,
                      synced_at TEXT NOT NULL"
                 ),
             )
+            .await?;
+        // `dedup_key` is a *label*, not the identity: title:year:type collides
+        // ("The Thing" 1982, twice), and merge/split are manual — so the key is
+        // indexed but never unique. Existing databases made under the old
+        // UNIQUE constraint get it dropped here.
+        let items = self.t("media_items");
+        self.inner
+            .execute(&format!(
+                "ALTER TABLE {items} DROP CONSTRAINT IF EXISTS {items}_dedup_key_key"
+            ))
+            .await?;
+        self.inner
+            .execute(&format!(
+                "CREATE INDEX IF NOT EXISTS {items}_dedup_key_idx ON {items}(dedup_key)"
+            ))
             .await?;
         self.inner
             .create_table(
@@ -280,10 +295,14 @@ impl MediaDb {
         Ok(())
     }
 
-    /// Find or create the canonical item for a dedup key. Returns
-    /// `(id, created)`.
-    pub async fn upsert_item(
+    /// Find or create the item for one `(connection, jellyfin_id)` source.
+    /// Sync's identity is the source, so two "The Thing" (1982)s from two
+    /// servers stay separate rows and the merge screen decides their fate.
+    /// Returns `(id, created)`.
+    pub async fn upsert_item_by_source(
         &self,
+        connection_id: i64,
+        jellyfin_id: &str,
         dedup_key: &str,
         media_type: &str,
         title: &str,
@@ -292,22 +311,28 @@ impl MediaDb {
         synced_at: &str,
     ) -> JfResult<(i64, bool)> {
         let items = self.t("media_items");
+        let sources = self.t("item_sources");
         let rows = self
             .inner
             .fetch_params(
-                &format!("SELECT id FROM {items} WHERE dedup_key = $1"),
-                &[Value::String(dedup_key.to_string())],
+                &format!(
+                    "SELECT item_id FROM {sources} \
+                     WHERE connection_id = $1 AND jellyfin_id = $2"
+                ),
+                &[Value::from(connection_id), Value::String(jellyfin_id.to_string())],
             )
             .await?;
         if let Some(row) = rows.first() {
-            let id = row["id"].as_i64().unwrap_or(0);
+            let id = row["item_id"].as_i64().unwrap_or(0);
             self.inner
                 .execute_params(
                     &format!(
-                        "UPDATE {items} SET title = $1, year = $2, poster_path = $3, synced_at = $4 \
-                         WHERE id = $5"
+                        "UPDATE {items} SET dedup_key = $1, media_type = $2, title = $3, \
+                         year = $4, poster_path = $5, synced_at = $6 WHERE id = $7"
                     ),
                     &[
+                        Value::String(dedup_key.to_string()),
+                        Value::String(media_type.to_string()),
                         Value::String(title.to_string()),
                         year.map(|value| Value::from(value)).unwrap_or(Value::Null),
                         poster_path.map(|text| Value::String(text.to_string())).unwrap_or(Value::Null),
@@ -342,6 +367,69 @@ impl MediaDb {
                 .unwrap_or(0);
             Ok((id, true))
         }
+    }
+
+    /// Find or create a grouping node (album, artist) by its dedup key. These
+    /// have no sources of their own, so first-match-wins keeps one album row
+    /// per title:year across connections.
+    pub async fn upsert_grouping(
+        &self,
+        dedup_key: &str,
+        media_type: &str,
+        title: &str,
+        year: Option<i32>,
+        synced_at: &str,
+    ) -> JfResult<(i64, bool)> {
+        let items = self.t("media_items");
+        let rows = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT id FROM {items} WHERE dedup_key = $1 AND media_type = $2 \
+                     AND merged_into IS NULL ORDER BY id LIMIT 1"
+                ),
+                &[Value::String(dedup_key.to_string()), Value::String(media_type.to_string())],
+            )
+            .await?;
+        if let Some(row) = rows.first() {
+            let id = row["id"].as_i64().unwrap_or(0);
+            Ok((id, false))
+        } else {
+            self.insert_item(dedup_key, media_type, title, year, None, synced_at)
+                .await
+        }
+    }
+
+    async fn insert_item(
+        &self,
+        dedup_key: &str,
+        media_type: &str,
+        title: &str,
+        year: Option<i32>,
+        poster_path: Option<&str>,
+        synced_at: &str,
+    ) -> JfResult<(i64, bool)> {
+        let items = self.t("media_items");
+        let rows = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "INSERT INTO {items} \
+                     (dedup_key, media_type, title, year, poster_path, synced_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+                ),
+                &[
+                    Value::String(dedup_key.to_string()),
+                    Value::String(media_type.to_string()),
+                    Value::String(title.to_string()),
+                    year.map(|value| Value::from(value)).unwrap_or(Value::Null),
+                    poster_path.map(|text| Value::String(text.to_string())).unwrap_or(Value::Null),
+                    Value::String(synced_at.to_string()),
+                ],
+            )
+            .await?;
+        let id = rows.first().and_then(|row| row["id"].as_i64()).unwrap_or(0);
+        Ok((id, true))
     }
 
     /// Find or create the per-connection source row for a Jellyfin item.
@@ -624,6 +712,7 @@ impl MediaDb {
                 &format!(
                     "SELECT {items}.id, {items}.poster_path FROM {items} \
                      WHERE NOT EXISTS (SELECT 1 FROM {sources} WHERE {sources}.item_id = {items}.id) \
+                       AND {items}.merged_into IS NULL \
                        AND {items}.media_type NOT IN ('album', 'artist')"
                 ),
                 &[],
@@ -667,6 +756,7 @@ impl MediaDb {
     }
 
     /// Track the artist's row in the `artists` table.
+    #[allow(dead_code)]
     pub async fn ensure_artist_row(&self, artist_item_id: i64) -> JfResult<()> {
         let artists = self.t("artists");
         self.inner
@@ -757,6 +847,147 @@ impl MediaDb {
             )
             .await
             .map(|_| ())
+    }
+
+    // ── manual merge / split ──────────────────────────────────────────────
+
+    /// Items that collide on a dedup key and are still separate, shaped for
+    /// the merge screen. Only real media (not the album/artist grouping
+    /// nodes) are offered.
+    pub async fn merge_candidates(&self) -> JfResult<Vec<Value>> {
+        let items = self.t("media_items");
+        let sources = self.t("item_sources");
+        self.inner
+            .fetch_params(
+                &format!(
+                    "SELECT m.dedup_key AS dedup_key, m.media_type AS media_type, \
+                            json_agg(json_build_object( \
+                              'id', m.id, 'title', m.title, 'year', m.year, \
+                              'poster_path', m.poster_path, 'synced_at', m.synced_at, \
+                              'sources', (SELECT count(*) FROM {sources} s WHERE s.item_id = m.id) \
+                            ) ORDER BY m.id) AS items \
+                     FROM {items} m \
+                     WHERE m.merged_into IS NULL AND m.media_type NOT IN ('album', 'artist') \
+                     GROUP BY m.dedup_key, m.media_type \
+                     HAVING count(*) > 1 OR \
+                            bool_or((SELECT count(*) FROM {sources} s WHERE s.item_id = m.id) > 1) \
+                     ORDER BY m.dedup_key"
+                ),
+                &[],
+            )
+            .await
+    }
+
+    /// Move every source (and, by cascade, their files/streams) from
+    /// `from_id` into `to_id`, adopt the poster if the target lacks one, and
+    /// keep the emptied row as hidden history (`merged_into`).
+    pub async fn merge_items(&self, from_id: i64, to_id: i64) -> JfResult<()> {
+        let items = self.t("media_items");
+        let sources = self.t("item_sources");
+        if from_id == to_id {
+            return Ok(());
+        }
+        if self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT id FROM {items} WHERE id = $1 AND merged_into IS NULL LIMIT 1"
+                ),
+                &[Value::from(to_id)],
+            )
+            .await?
+            .is_empty()
+        {
+            return Err(PluginDatabaseError("the target item is not current".to_string()));
+        }
+        self.inner
+            .execute_params(
+                &format!("UPDATE {sources} SET item_id = $1 WHERE item_id = $2"),
+                &[Value::from(to_id), Value::from(from_id)],
+            )
+            .await?;
+        self.inner
+            .execute_params(
+                &format!(
+                    "UPDATE {items} SET poster_path = sub.poster_path FROM \
+                     (SELECT poster_path FROM {items} WHERE id = $1) sub \
+                     WHERE {items}.id = $2 AND {items}.poster_path IS NULL \
+                       AND sub.poster_path IS NOT NULL"
+                ),
+                &[Value::from(from_id), Value::from(to_id)],
+            )
+            .await?;
+        self.inner
+            .execute_params(
+                &format!(
+                    "UPDATE {items} SET merged_into = $1, synced_at = $2 WHERE id = $3"
+                ),
+                &[Value::from(to_id), Value::String(chrono::Utc::now().to_rfc3339()), Value::from(from_id)],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Break an item with several sources into one row per source. The first
+    /// source keeps the original row; each remaining source gets a fresh row
+    /// with a suffixed dedup key (it is a label, not the identity). Returns
+    /// how many rows were created.
+    pub async fn split_item(&self, item_id: i64) -> JfResult<usize> {
+        let items = self.t("media_items");
+        let sources = self.t("item_sources");
+        let rows = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT id, jellyfin_id FROM {sources} \
+                     WHERE item_id = $1 ORDER BY id",
+                ),
+                &[Value::from(item_id)],
+            )
+            .await?;
+        let mut made = 0usize;
+        for (index, row) in rows.iter().enumerate() {
+            if index == 0 {
+                continue; // first source keeps the original row
+            }
+            let source_id = row["id"].as_i64().unwrap_or(0);
+            let jellyfin_id = row["jellyfin_id"].as_str().unwrap_or("source");
+            let detail = self
+                .inner
+                .fetch_params(
+                    &format!(
+                        "SELECT dedup_key, media_type, title, year, poster_path, synced_at \
+                         FROM {items} WHERE id = $1",
+                    ),
+                    &[Value::from(item_id)],
+                )
+                .await?;
+            let Some(base) = detail.first() else { continue };
+            let dedup_key = base["dedup_key"].as_str().unwrap_or("item");
+            let suffix: String = jellyfin_id
+                .chars()
+                .take(8)
+                .collect();
+            let label = format!("{dedup_key}#{suffix}");
+            let (new_item, _) = self
+                .insert_item(
+                    &label,
+                    base["media_type"].as_str().unwrap_or("movie"),
+                    base["title"].as_str().unwrap_or(""),
+                    base["year"].as_i64().map(|year| year as i32),
+                    None,
+                    base["synced_at"].as_str().unwrap_or(""),
+                )
+                .await?;
+            self.inner
+                .execute_params(
+                    &format!("UPDATE {sources} SET item_id = $1 WHERE id = $2"),
+                    &[Value::from(new_item), Value::from(source_id)],
+                )
+                .await?;
+            made += 1;
+        }
+        Ok(made)
     }
 
     /// Remember a playout pin: use `file_id` for this item's window.

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -37,7 +37,64 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
         )
         .route("/items/{id}/pin", post(pin_file))
         .route("/health-events", get(health_events))
+        .route("/merge", get(merge_screen))
+        .route("/merge-candidates", get(merge_candidates))
+        .route("/merge", post(merge_request))
+        .route("/split", post(split_request))
         .with_state(Arc::new(RouteState { db }))
+}
+
+/// The manual merge/split screen.
+async fn merge_screen() -> Html<&'static str> {
+    Html(include_str!("../static/merge.html"))
+}
+
+/// Every group one operation-shy of being wrong: colliding dedup keys, or a
+/// single row holding several sources.
+async fn merge_candidates(State(state): State<Arc<RouteState>>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.merge_candidates().await {
+        Ok(candidates) => Json(json!({ "candidates": candidates })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+#[derive(Deserialize)]
+struct MergeRequest {
+    from_id: i64,
+    to_id: i64,
+}
+
+/// Move `from`'s sources (and files) into `to`; `from` becomes hidden history.
+async fn merge_request(
+    State(state): State<Arc<RouteState>>,
+    Json(input): Json<MergeRequest>,
+) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.merge_items(input.from_id, input.to_id).await {
+        Ok(()) => Json(json!({ "merged": { "from": input.from_id, "into": input.to_id } }))
+            .into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+#[derive(Deserialize)]
+struct SplitRequest {
+    item_id: i64,
+}
+
+/// Break a multi-source row into one row per source.
+async fn split_request(
+    State(state): State<Arc<RouteState>>,
+    Json(input): Json<SplitRequest>,
+) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.split_item(input.item_id).await {
+        Ok(created) => {
+            Json(json!({ "item_id": input.item_id, "created": created })).into_response()
+        }
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
 }
 
 #[derive(Deserialize)]

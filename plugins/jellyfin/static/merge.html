@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jellyfin Media Source · merge / split</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif;
+    background: #14181c; color: #e6e6e6;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color: #98a2b3; margin: 0 0 20px; }
+  .card {
+    background: #1c222a; border: 1px solid #2b3440; border-radius: 10px;
+    padding: 14px 16px; margin: 0 0 14px;
+  }
+  .key { font-weight: 600; color: #ffcdd2; }
+  .row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+    align-items: center; border-top: 1px solid #262f3a; padding: 8px 0 2px;
+  }
+  .row:first-of-type { border-top: 0; }
+  .title { color: #fff; }
+  .meta { color: #8696a8; font-size: 12.5px; }
+  button {
+    background: #2c3a4d; color: #e6e6e6; border: 1px solid #3a4a60;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12.5px;
+  }
+  button:hover { background: #34465e; }
+  button.primary { background: #2750ae; border-color: #3563c8; }
+  button.primary:hover { background: #2f5cc4; }
+  button.danger { background: #6b2d2d; border-color: #8a3a3a; }
+  button.danger:hover { background: #7d3535; }
+  button.dim { opacity: .55; pointer-events: none; }
+  .sources b { color: #bcd3ff; }
+  #status { min-height: 18px; color: #8fd19a; font-size: 12.5px; margin-top: 8px; }
+  #status.error { color: #ff9c9c; }
+  .empty { color: #8696a8; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <h1>Jellyfin — merge &amp; split</h1>
+  <p class="sub">
+    title:year can collide (two “The Thing”s from 1982). Sync keeps them
+    separate; merge the ones that are the same film, or split a row that is
+    really several films. Moving sources carries their files along; a merged
+    row is kept as hidden history.
+  </p>
+  <div id="list"></div>
+  <div id="status"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const status = (text, error = false) => {
+  const el = $("#status");
+  el.textContent = text;
+  el.classList.toggle("error", error);
+};
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(detail.error || res.statusText);
+  }
+  return res.json();
+}
+
+function itemRow(item, group) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const label = document.createElement("div");
+  label.innerHTML =
+    `<span class="title"></span><br><span class="meta">item #${item.id} · ` +
+    `<span class="sources"><b>${item.sources}</b> source(s)</span>` +
+    (item.year ? ` · ${item.year}` : "") +
+    ` · synced ${item.synced_at || "?"}` +
+    `</span>`;
+  label.querySelector(".title").textContent = item.title || `(untitled #${item.id})`;
+  row.appendChild(label);
+
+  const rest = group.items.filter((other) => other.id !== item.id);
+  const mergeBtn = document.createElement("button");
+  mergeBtn.className = "primary";
+  mergeBtn.textContent = "Merge into this";
+  mergeBtn.disabled = rest.length === 0 || item.sourceCountGuard;
+  mergeBtn.onclick = async () => {
+    for (const other of rest) {
+      try {
+        await api("/merge", { from_id: other.id, to_id: item.id });
+        status(`Merged #${other.id} into #${item.id}`);
+      } catch (error) {
+        status(error.message, true);
+      }
+    }
+    load();
+  };
+  row.appendChild(mergeBtn);
+
+  if (item.sources > 1) {
+    const splitBtn = document.createElement("button");
+    splitBtn.className = "danger";
+    splitBtn.textContent = "Split by source";
+    splitBtn.onclick = async () => {
+      try {
+        const result = await api("/split", { item_id: item.id });
+        status(`Split #${item.id} into ${result.created + 1} rows`);
+      } catch (error) {
+        status(error.message, true);
+      }
+      load();
+    };
+    row.appendChild(splitBtn);
+  } else {
+    const blank = document.createElement("span");
+    row.appendChild(blank);
+  }
+  return row;
+}
+
+async function load() {
+  let groups;
+  try {
+    groups = await api("/merge-candidates");
+  } catch (error) {
+    $("#list").innerHTML = `<div class="empty">Could not load candidates: ${error.message}</div>`;
+    return;
+  }
+  const list = $("#list");
+  list.textContent = "";
+  if (!groups.candidates.length) {
+    list.innerHTML = `<div class="empty">No collisions and nothing to split — sync everything cleanly.</div>`;
+    return;
+  }
+  for (const group of groups.candidates) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const head = document.createElement("div");
+    head.className = "key";
+    head.textContent =
+      `${group.dedup_key} ${group.media_type ? `(${group.media_type})` : ""}`;
+    card.appendChild(head);
+    for (const item of group.items) {
+      card.appendChild(itemRow(item, group));
+    }
+    list.appendChild(card);
+  }
+}
+
+load();
+</script>
+</body>
+</html>
