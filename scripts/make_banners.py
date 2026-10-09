@@ -166,6 +166,14 @@ PLUGINS = [
         "bottom": (6, 182, 212),  # cyan-500
         "mark": (4, 47, 46),     # teal-950
     },
+    {
+        "id": "com.channelflow.jellyfin",
+        "title": "Jellyfin Media Source",
+        "subtitle": "Sync movies, TV and music from a Jellyfin server",
+        "top": (160, 55, 32),    # jellyfin's burnt sienna
+        "bottom": (212, 120, 60),  # amber-600
+        "mark": (64, 20, 10),    # deep brown
+    },
 ]
 
 

@@ -115,31 +115,37 @@ def build(loaded: list[dict]) -> list[dict]:
     for plugin_json in sorted(ROOT.glob("plugins/*/plugin.json")):
         plugin = json.loads(plugin_json.read_text())
         slug = plugin_json.parent.name
-        entry = by_id.setdefault(
-            plugin["id"],
-            {
-                "id": plugin["id"],
-                "guid": plugin["id"],
-                "name": plugin.get("name", plugin["id"]),
-                "description": plugin.get("description", ""),
-                "owner": plugin.get("author", ""),
-                "category": plugin.get("category", ""),
-                "homepage": plugin.get("homepage", ""),
-                "imageUrl": "",
-                "versions": [],
-            },
-        )
+        had_entry = plugin["id"] in by_id
+        entry = by_id.setdefault(plugin["id"], new_entry(plugin))
         refresh_meta(entry, plugin)
         banner = ROOT / "banners" / f"{plugin['id']}.png"
         entry["imageUrl"] = f"{base}/banners/{plugin['id']}.png" if (base and banner.exists()) else entry.get("imageUrl", "")
 
         version = version_entry(slug, plugin)
         if version is None:
+            # A plugin with no release yet stays out of the catalog entirely;
+            # it appears here on its first release (its tag + assets land).
+            if not entry["versions"]:
+                del by_id[plugin["id"]]
             continue
         entry["versions"] = [v for v in entry["versions"] if v["version"] != version["version"]]
         entry["versions"].append(version)
         entry["versions"].sort(key=lambda v: v["version"])
     return list(by_id.values())
+
+
+def new_entry(plugin: dict) -> dict:
+    return {
+        "id": plugin["id"],
+        "guid": plugin["id"],
+        "name": plugin.get("name", plugin["id"]),
+        "description": plugin.get("description", ""),
+        "owner": plugin.get("author", ""),
+        "category": plugin.get("category", ""),
+        "homepage": plugin.get("homepage", ""),
+        "imageUrl": "",
+        "versions": [],
+    }
 
 
 def refresh_meta(entry: dict, plugin: dict) -> None:
