@@ -13,7 +13,7 @@ routes under `/api/plugins/{id}`.
 |---|---|---|
 | [`plugins/ai`](plugins/ai) | `com.channelflow.ai` | The AI Provider Suite — OpenAI-compatible endpoints, tests, and priority-ordered failover |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | ErsatzTV Transcoding Engine — ffmpeg and normalization settings |
-| [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract; first released at `jellyfin-v0.1.0`) |
+| [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract) |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
 
 ## How the base builds against this repo
