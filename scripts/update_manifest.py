@@ -113,6 +113,15 @@ def build(loaded: list[dict]) -> list[dict]:
         version = version_entry(slug, plugin)
         if version is None:
             continue
+        # Only rewrite a version that already exists in the manifest when its
+        # artifacts actually moved (a re-released zip, a new platform). An
+        # unchanged version keeps its original timestamp, so regeneration —
+        # including the manual update-manifest run — is a true no-op then.
+        same = next(
+            (v for v in entry["versions"] if v["version"] == version["version"]), None
+        )
+        if same is not None and same.get("artifacts") == version["artifacts"]:
+            continue
         entry["versions"] = [v for v in entry["versions"] if v["version"] != version["version"]]
         entry["versions"].append(version)
         entry["versions"].sort(key=lambda v: v["version"])
