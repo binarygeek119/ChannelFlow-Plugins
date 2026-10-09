@@ -58,5 +58,35 @@
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.ersatztv.png"
+  },
+  {
+    "id": "com.channelflow.jellyfin",
+    "guid": "com.channelflow.jellyfin",
+    "name": "Jellyfin Media Source",
+    "description": "Sync movies, TV, music and music videos from a Jellyfin server",
+    "owner": "ChannelFlow",
+    "category": "media-source",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.jellyfin.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-09T03:07:17Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/jellyfin-v2.0.0/com.channelflow.jellyfin-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:6a1a7bcfc36f1f5e8a1c1b6255fb5626138f2575f6177abeb8ee365b3dd120b4",
+            "size": 2236364
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/jellyfin-v2.0.0/com.channelflow.jellyfin-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:d534edb8db0636b7c156394e576d008bcd112807d9359b437649633844d42791",
+            "size": 2124507
+          }
+        }
+      }
+    ]
   }
 ]
