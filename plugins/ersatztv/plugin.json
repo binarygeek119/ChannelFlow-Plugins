@@ -16,6 +16,7 @@
   "permissions": [
     "storage:read",
     "storage:write",
+    "storage:database",
     "api:routes",
     "ui:settings",
     "api:core:read"

@@ -20,7 +20,11 @@ pub fn router(state: Arc<ErsatzTvState>) -> Router {
     Router::new()
         .route("/", get(get_defaults).put(put_defaults))
         .route("/channels", get(list_channels))
-        .route("/channels/{id}", get(get_channel).put(put_channel).delete(clear_channel))
+        .route(
+            "/channels/{id}",
+            get(get_channel).put(put_channel).delete(clear_channel),
+        )
+        .route("/channels/{id}/changes", get(channel_changes))
         .with_state(state)
 }
 
@@ -85,6 +89,9 @@ async fn put_defaults(
         .save_defaults(&config)
         .await
         .map_err(storage_error)?;
+    state
+        .audit("defaults_changed", None, Some(&serde_json::to_value(&config).unwrap_or_default()))
+        .await;
     Ok(Json(json!({ "defaults": config })))
 }
 
@@ -158,15 +165,14 @@ async fn put_channel(
     let effective = defaults.merged(&body)?;
 
     let mut map = state.overrides().await;
-    map.insert(
-        id.clone(),
-        if body.is_null() {
-            serde_json::Value::Object(serde_json::Map::new())
-        } else {
-            body
-        },
-    );
+    let patch = if body.is_null() {
+        serde_json::Value::Object(serde_json::Map::new())
+    } else {
+        body
+    };
+    map.insert(id.clone(), patch.clone());
     state.save_overrides(map).await.map_err(storage_error)?;
+    state.audit("overrides_changed", Some(&id), Some(&patch)).await;
     Ok(Json(json!({
         "overrides": channel_overrides(&state, &id).await,
         "effective": effective,
@@ -182,11 +188,35 @@ async fn clear_channel(
     let mut map = state.overrides().await;
     map.remove(&id);
     state.save_overrides(map).await.map_err(storage_error)?;
+    state.audit("overrides_cleared", Some(&id), None).await;
     let defaults = state.defaults.lock().await.clone();
     Ok(Json(json!({
         "overrides": serde_json::Value::Object(serde_json::Map::new()),
         "effective": defaults,
     })))
+}
+
+/// The most recent changes for one channel, read back from the plugin's own
+/// audit table.
+async fn channel_changes(
+    State(state): State<StateRef>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, HttpError> {
+    find_channel(&state, &id).await?;
+    let Some(table) = &state.audit else {
+        return Ok(Json(json!({ "available": false, "changes": [] })));
+    };
+    let sql = format!(
+        "SELECT action, at, payload FROM {table} \
+         WHERE channel_id = '{}' ORDER BY id DESC LIMIT 25",
+        crate::quote(&id)
+    );
+    let changes = state
+        .database
+        .fetch(&sql)
+        .await
+        .map_err(|error| HttpError::bad(error.to_string()))?;
+    Ok(Json(json!({ "available": true, "changes": changes })))
 }
 
 /// A channel's patch, or `{}` when the channel follows the defaults.

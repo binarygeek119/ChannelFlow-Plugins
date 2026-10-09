@@ -18,8 +18,11 @@ use std::sync::Arc;
 
 use axum::Router;
 use channelflow_plugin_api::{
-    core::CoreData, manifest::PluginManifest, plugin::PluginError, Plugin, PluginApi,
-    PluginHealth, PluginLogger, PluginStorage, UiContribution,
+    core::CoreData,
+    database::PluginDatabase,
+    manifest::PluginManifest,
+    plugin::PluginError,
+    Plugin, PluginApi, PluginHealth, PluginLogger, PluginStorage, UiContribution,
 };
 use tokio::sync::Mutex;
 
@@ -51,7 +54,10 @@ pub struct ErsatzTvState {
     pub overrides: Mutex<serde_json::Map<String, serde_json::Value>>,
     pub storage: Arc<dyn PluginStorage>,
     pub core: Arc<dyn CoreData>,
+    pub database: Arc<dyn PluginDatabase>,
     pub logger: PluginLogger,
+    /// The plugin's own audit table in Postgres, when one exists.
+    pub audit: Option<String>,
 }
 
 impl ErsatzTvPlugin {
@@ -71,6 +77,33 @@ impl ErsatzTvPlugin {
 }
 
 impl ErsatzTvState {
+    /// Record one change in the plugin's audit table. No-op when the base is
+    /// on the file backend, where there is no table.
+    async fn audit(
+        &self,
+        action: &str,
+        channel_id: Option<&str>,
+        payload: Option<&serde_json::Value>,
+    ) {
+        let Some(table) = &self.audit else {
+            self.logger.warn("skipping audit write — no database");
+            return;
+        };
+        let channel = channel_id
+            .map(|id| format!("'{}'", quote(&id)))
+            .unwrap_or_else(|| "NULL".to_string());
+        let payload = payload
+            .map(|value| format!("'{}'::jsonb", quote(&value.to_string())))
+            .unwrap_or_else(|| "NULL".to_string());
+        let sql = format!(
+            "INSERT INTO {table} (action, channel_id, payload) VALUES ('{}', {channel}, {payload})",
+            quote(action)
+        );
+        if let Err(error) = self.database.execute(&sql).await {
+            self.logger.error(&format!("audit write failed: {error}"));
+        }
+    }
+
     async fn save_defaults(&self, config: &TranscodeConfig) -> Result<(), PluginError> {
         let value = serde_json::to_value(config)
             .map_err(|error| PluginError::new(error.to_string()))?;
@@ -126,12 +159,38 @@ impl Plugin for ErsatzTvPlugin {
             Some(serde_json::Value::Object(map)) => map,
             _ => serde_json::Map::new(),
         };
+        // The plugin's own table, if the base gives it a database. Nothing
+        // here fails the load: on the file backend there is no table and the
+        // plugin simply stops keeping change history.
+        let audit = match api.database.table_of("audit") {
+            Some(table) => match api
+                .database
+                .create_table(
+                    "audit",
+                    "id BIGSERIAL PRIMARY KEY, at TIMESTAMPTZ NOT NULL DEFAULT now(), \
+                     action TEXT NOT NULL, channel_id TEXT, payload JSONB",
+                )
+                .await
+            {
+                Ok(()) => {
+                    api.logger.info(&format!("audit table ready ({table})"));
+                    Some(table)
+                }
+                Err(error) => {
+                    api.logger.warn(&format!("no audit table: {error}"));
+                    None
+                }
+            },
+            None => None,
+        };
         self.state = Some(Arc::new(ErsatzTvState {
             defaults: Mutex::new(defaults),
             overrides: Mutex::new(overrides),
             storage: api.storage,
             core: api.core,
+            database: api.database.clone(),
             logger: api.logger.clone(),
+            audit,
         }));
         api.logger.info("loaded");
         Ok(())
@@ -195,6 +254,12 @@ impl Plugin for ErsatzTvPlugin {
     }
 }
 
+/// Quote a string for inlining into SQL the plugin built itself (doubling the
+/// quote is the whole escaping SQL needs for a literal).
+pub(crate) fn quote(text: &str) -> String {
+    text.replace('\'', "''")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +291,7 @@ mod tests {
             dir: std::env::temp_dir(),
             logger: PluginLogger::new("com.channelflow.ersatztv"),
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
+            database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase::default()),
         };
         plugin.on_load(api).await.expect("load");
         let state = plugin.state().expect("state");
