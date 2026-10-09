@@ -148,7 +148,10 @@ jobs:
           fi
           mkdir -p staging
           cp "$src" staging/
-          cp "plugins/${SLUG}/plugin.json" staging/
+          # The plugin.json inside the zip names this platform's shared
+          # library, so a loader can find the entrypoint without conventions.
+          jq --arg rid "$RID" --arg lib "$file" \
+            '.entrypoint[$rid] = $lib' "plugins/${SLUG}/plugin.json" > staging/plugin.json
           ls -la staging
 
       - uses: actions/upload-artifact@v7
@@ -200,3 +203,33 @@ jobs:
               --generate-notes
           fi
           gh release view "$TAG" --repo "$repo" --json assets --jq '.assets[].name'
+
+  manifest:
+    needs: [detect, build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ github.token }}
+
+      - name: Regenerate manifest.json from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/update_manifest.py
+
+      - name: Commit it back
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet manifest.json; then
+            echo "manifest.json unchanged"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add manifest.json
+            git commit -m "Update plugin manifest: ${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
+            git push
+          fi

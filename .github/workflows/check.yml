@@ -28,3 +28,25 @@ jobs:
 
       - name: Test every plugin
         run: cargo test --workspace
+
+      - name: Validate manifest.json
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          manifest = pathlib.Path('manifest.json')
+          if not manifest.exists():
+              print('no manifest.json; skip')
+              raise SystemExit(0)
+          plugins = json.loads(manifest.read_text())
+          ids = [e['id'] for e in plugins]
+          assert len(ids) == len(set(ids)), 'duplicate plugin ids in manifest.json'
+          for entry in plugins:
+              assert entry['versions'], f"{entry['id']} has no versions"
+              for version in entry['versions']:
+                  assert version['artifacts'], f"{entry['id']} {version['version']} has no artifacts"
+                  for rid, artifact in version['artifacts'].items():
+                      assert artifact['url'].startswith('https://'), f"bad url for {entry['id']}"
+                      assert artifact['checksum'].startswith('sha256:'), f"bad checksum for {entry['id']}"
+                      assert isinstance(artifact['size'], int), f"bad size for {entry['id']}"
+          print(f'manifest.json OK: {len(plugins)} plugin(s)')
+          PY

@@ -1,0 +1,42 @@
+name: Update plugin manifest
+
+# Rebuild manifest.json by hand from what is currently released, and commit
+# the result to main. Releases update the manifest automatically from within
+# release-plugin.yml (after its zips are attached, so there is no race); this
+# exists for repair runs and for distribution without a fresh release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-manifest
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ github.token }}
+
+      - name: Regenerate manifest.json from releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/update_manifest.py
+
+      - name: Commit it back
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet manifest.json; then
+            echo "manifest.json unchanged"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add manifest.json
+            git commit -m "Update plugin manifest from releases"
+            git push
+          fi
