@@ -12,7 +12,7 @@
         "version": "2.0.0",
         "min_base_version": "2.0.0",
         "max_base_version": "2.999.999",
-        "timestamp": "2026-10-09T00:34:33Z",
+        "timestamp": "2026-10-09T00:02:07Z",
         "artifacts": {
           "linux-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ai-v2.0.0/com.channelflow.ai-v2.0.0-linux-x86_64.zip",
@@ -26,7 +26,8 @@
           }
         }
       }
-    ]
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.ai.png"
   },
   {
     "id": "com.channelflow.ersatztv",
@@ -41,7 +42,7 @@
         "version": "2.0.0",
         "min_base_version": "2.0.0",
         "max_base_version": "2.999.999",
-        "timestamp": "2026-10-09T00:34:34Z",
+        "timestamp": "2026-10-09T00:07:22Z",
         "artifacts": {
           "linux-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ersatztv-v2.0.0/com.channelflow.ersatztv-v2.0.0-linux-x86_64.zip",
@@ -55,6 +56,7 @@
           }
         }
       }
-    ]
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.ersatztv.png"
   }
 ]

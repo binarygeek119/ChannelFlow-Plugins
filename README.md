@@ -81,6 +81,12 @@ repositories, browse `/api/plugins/catalog`, and install by plugin id.
 [`.github/workflows/update-manifest.yml`](.github/workflows/update-manifest.yml)
 rebuilds the index by hand for repairs; releases keep it current automatically.
 
+Each plugin ships a **banner** (`[`banners/`](banners)`) from
+[`scripts/make_banners.py`](scripts/make_banners.py), referenced as
+`imageUrl` in the manifest and shown in the install catalog. Regenerate them
+with `python3 scripts/make_banners.py`; the `imageUrl` in `manifest.json` is
+recomputed from the file's presence when `update_manifest.py` runs.
+
 Every other push and pull request runs
 [`.github/workflows/check.yml`](.github/workflows/check.yml), which builds the
 whole workspace and runs the tests. Add a plugin by dropping a crate under

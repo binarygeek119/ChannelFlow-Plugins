@@ -41,6 +41,8 @@ jobs:
           ids = [e['id'] for e in plugins]
           assert len(ids) == len(set(ids)), 'duplicate plugin ids in manifest.json'
           for entry in plugins:
+              assert entry.get('imageUrl', '').startswith('https://'), f"{entry['id']} needs an https imageUrl"
+              assert pathlib.Path('banners', f"{entry['id']}.png").exists(), f"{entry['id']} banner missing in banners/"
               assert entry['versions'], f"{entry['id']} has no versions"
               for version in entry['versions']:
                   assert version['artifacts'], f"{entry['id']} {version['version']} has no artifacts"

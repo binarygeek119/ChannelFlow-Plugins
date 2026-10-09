@@ -2,13 +2,17 @@
 """Regenerate the ChannelFlow plugin repository's manifest.json.
 
 The manifest mirrors the Jellyfin plugin-catalog shape: one entry per plugin,
-each carrying a `versions[]` list. Every released version becomes one version
-entry whose `artifacts` are the per-platform zips from that tag's GitHub
-release, each with its sha256 checksum and byte size. This runs locally and in
-CI on every plugin release, so manifest.json never drifts from what is
-actually published.
+each carrying a `versions[]` list and an `imageUrl` banner. Every released
+version becomes one version entry whose `artifacts` are the per-platform zips
+from that tag's GitHub release, each with its sha256 checksum and byte size.
 
-Requires `gh` (authenticated), `curl`, and `sha256sum` on the PATH.
+Deterministic: a version's `timestamp` comes from the release's `publishedAt`,
+never from the clock, so regenerating with nothing changed writes (and commits)
+nothing. This runs locally and in CI on every plugin release.
+
+Requires `gh` (authenticated), `curl`, and `sha256sum` on the PATH. Set
+`RAW_BASE` (e.g. https://raw.githubusercontent.com/owner/repo/main) when not
+running from the canonical git checkout.
 """
 
 from __future__ import annotations
@@ -19,7 +23,6 @@ import subprocess
 import sys
 import tempfile
 from collections import OrderedDict
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +39,28 @@ def gh(*args: str) -> str:
     return run("gh", *args)
 
 
+def raw_base() -> str:
+    """The raw.githubusercontent.com base for this repo, for imageUrl etc."""
+    if os.environ.get("RAW_BASE"):
+        return os.environ["RAW_BASE"].rstrip("/")
+    url = run("git", "remote", "get-url", "origin")
+    if url.startswith("git@github.com:"):
+        url = "https://github.com/" + url[len("git@github.com:") :]
+    url = url.removesuffix(".git")
+    if "github.com/" in url:
+        return f"https://raw.githubusercontent.com/{url.split('github.com/')[-1]}/main"
+    return ""
+
+
+def try_release(tag: str) -> dict | None:
+    """The release's assets + publishedAt, or None when it does not exist."""
+    try:
+        raw = gh("release", "view", tag, "--json", "assets,publishedAt", "-q", ".")
+        return json.loads(raw) if raw else None
+    except subprocess.CalledProcessError:
+        return None
+
+
 def sha256_of(url: str) -> str:
     """Download the url once and answer its sha256 in lowercase hex."""
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -48,28 +73,21 @@ def sha256_of(url: str) -> str:
     return digest
 
 
-def release_assets(tag: str) -> list[dict]:
-    """Every asset on the release, or [] when the release does not exist."""
-    raw = gh("release", "view", tag, "--json", "assets", "-q", ".assets")
-    assets = json.loads(raw) if raw else []
-    return [a for a in assets if a.get("name", "").endswith(".zip")]
-
-
 def version_entry(slug: str, plugin: dict) -> dict | None:
     tag = f"{slug}-v{plugin['version']}"
-    assets = release_assets(tag)
-    if not assets:
+    release = try_release(tag)
+    if not release:
         print(
-            f"::warning::no release assets for {tag}; "
-            "keeping whatever manifest.json already had for it",
+            f"::warning::no release found for {tag}; keeping whatever "
+            "manifest.json already had for that version",
             file=sys.stderr,
         )
         return None
 
     prefix = f"{plugin['id']}-v{plugin['version']}-"
     artifacts: dict[str, dict] = {}
-    for asset in assets:
-        name = asset["name"]
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
         if not name.startswith(prefix) or not name.endswith(".zip"):
             continue
         rid = name[len(prefix) : -len(".zip")]
@@ -86,12 +104,13 @@ def version_entry(slug: str, plugin: dict) -> dict | None:
         "version": plugin["version"],
         "min_base_version": plugin.get("min_base_version", ""),
         "max_base_version": plugin.get("max_base_version", ""),
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": release.get("publishedAt") or "",
         "artifacts": dict(sorted(artifacts.items())),
     }
 
 
 def build(loaded: list[dict]) -> list[dict]:
+    base = raw_base()
     by_id = OrderedDict((entry["id"], entry) for entry in loaded)
     for plugin_json in sorted(ROOT.glob("plugins/*/plugin.json")):
         plugin = json.loads(plugin_json.read_text())
@@ -106,21 +125,16 @@ def build(loaded: list[dict]) -> list[dict]:
                 "owner": plugin.get("author", ""),
                 "category": plugin.get("category", ""),
                 "homepage": plugin.get("homepage", ""),
+                "imageUrl": "",
                 "versions": [],
             },
         )
         refresh_meta(entry, plugin)
+        banner = ROOT / "banners" / f"{plugin['id']}.png"
+        entry["imageUrl"] = f"{base}/banners/{plugin['id']}.png" if (base and banner.exists()) else entry.get("imageUrl", "")
+
         version = version_entry(slug, plugin)
         if version is None:
-            continue
-        # Only rewrite a version that already exists in the manifest when its
-        # artifacts actually moved (a re-released zip, a new platform). An
-        # unchanged version keeps its original timestamp, so regeneration —
-        # including the manual update-manifest run — is a true no-op then.
-        same = next(
-            (v for v in entry["versions"] if v["version"] == version["version"]), None
-        )
-        if same is not None and same.get("artifacts") == version["artifacts"]:
             continue
         entry["versions"] = [v for v in entry["versions"] if v["version"] != version["version"]]
         entry["versions"].append(version)
