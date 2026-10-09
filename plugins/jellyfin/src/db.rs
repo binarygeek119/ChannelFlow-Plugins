@@ -348,7 +348,7 @@ impl MediaDb {
                 .fetch_params(
                     &format!(
                         "INSERT INTO {items} \
-                         (dedup_key, media_type, title, year::integer, poster_path, synced_at) \
+                         (dedup_key, media_type, title, year, poster_path, synced_at) \
                          VALUES ($1, $2, $3, $4::integer, $5, $6) RETURNING id"
                     ),
                     &[
@@ -416,7 +416,7 @@ impl MediaDb {
                 &format!(
                     "INSERT INTO {items} \
                      (dedup_key, media_type, title, year, poster_path, synced_at) \
-                     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+                     VALUES ($1, $2, $3, $4::integer, $5, $6) RETURNING id"
                 ),
                 &[
                     Value::String(dedup_key.to_string()),
