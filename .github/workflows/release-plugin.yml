@@ -4,7 +4,8 @@ name: Release plugin
 # (for example `ai-v2.0.1`) and only that plugin is built, its shared library
 # is packaged with its `plugin.json`, and the zips are attached to a GitHub
 # release for the tag. The version in the tag has to match the plugin's
-# `Cargo.toml` and `plugin.json`, so a release can never drift from the source.
+# `plugin.json` (the install version); the crate version only warns if it
+# drifts, so a release can never drift from the published manifest.
 on:
   push:
     tags:
