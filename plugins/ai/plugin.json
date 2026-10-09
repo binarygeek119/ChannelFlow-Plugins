@@ -22,6 +22,15 @@
   ],
   "ui_contributions": [
     {
+      "type": "page",
+      "id": "ai",
+      "path": "/ai",
+      "title": "AI",
+      "icon": "robot",
+      "section": "main",
+      "component": "AiPage"
+    },
+    {
       "type": "settings_section",
       "id": "ai-providers",
       "title": "AI Providers",
