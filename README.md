@@ -65,6 +65,22 @@ git tag ai-v2.0.1
 git push origin ai-v2.0.1
 ```
 
+The zip's `plugin.json` carries the shared library's filename in `entrypoint`,
+so the base's loader never has to guess it. After a release is attached the
+release workflow regenerates [`manifest.json`](manifest.json) — the
+Jellyfin-style repository index listing every released plugin/version with its
+per-platform zips, sha256 checksums and sizes. The index is what a ChannelFlow
+instance installs from:
+
+```
+https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/manifest.json
+```
+
+So the install flow is: register that URL in ChannelFlow's plugin
+repositories, browse `/api/plugins/catalog`, and install by plugin id.
+[`.github/workflows/update-manifest.yml`](.github/workflows/update-manifest.yml)
+rebuilds the index by hand for repairs; releases keep it current automatically.
+
 Every other push and pull request runs
 [`.github/workflows/check.yml`](.github/workflows/check.yml), which builds the
 whole workspace and runs the tests. Add a plugin by dropping a crate under
