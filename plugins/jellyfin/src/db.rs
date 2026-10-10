@@ -748,6 +748,52 @@ impl MediaDb {
             .map(str::to_string))
     }
 
+    /// Every music artist row: `{ id, name }`. An artist's albums are those
+    /// whose `albums.artist_id` is the artist's item id.
+    pub async fn music_artists(&self) -> JfResult<Vec<Value>> {
+        let artists = self.t("artists");
+        let items = self.t("media_items");
+        self.inner
+            .fetch(&format!(
+                "SELECT ar.item_id AS id, m.title AS name \
+                 FROM {artists} ar JOIN {items} m ON m.id = ar.item_id \
+                 ORDER BY lower(m.title), m.title"
+            ))
+            .await
+    }
+
+    /// Every album row with its artist: `{ id, title, year, artist_id,
+    /// artist_name }`.
+    pub async fn music_albums(&self) -> JfResult<Vec<Value>> {
+        let albums = self.t("albums");
+        let items = self.t("media_items");
+        self.inner
+            .fetch(&format!(
+                "SELECT a.id, a.title, a.year, al.artist_id, art.title AS artist_name \
+                 FROM {albums} al JOIN {items} a ON a.id = al.item_id \
+                 LEFT JOIN {items} art ON art.id = al.artist_id \
+                 ORDER BY lower(a.title), a.title"
+            ))
+            .await
+    }
+
+    /// The tracks on one album, in disc/track order.
+    pub async fn album_tracks(&self, album_id: i64) -> JfResult<Vec<Value>> {
+        let tracks = self.t("tracks");
+        let items = self.t("media_items");
+        self.inner
+            .fetch_params(
+                &format!(
+                    "SELECT m.title, m.runtime_ticks, t.track_number, t.disc_number \
+                     FROM {tracks} t JOIN {items} m ON m.id = t.item_id \
+                     WHERE t.album_id = $1::bigint \
+                     ORDER BY t.disc_number NULLS LAST, t.track_number NULLS LAST, lower(m.title), m.title"
+                ),
+                &[Value::from(album_id)],
+            )
+            .await
+    }
+
     /// The rich row behind a Media-page item: the Jellyfin metadata, its
     /// genres, studios, and cast (in billing order) — what an item detail
     /// page shows. Looks the item up by its Jellyfin id.

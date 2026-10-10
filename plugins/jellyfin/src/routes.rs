@@ -34,6 +34,9 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
         .route("/progress", get(progress_snapshot))
         .route("/people", get(people_list))
         .route("/people/{name}", get(person_detail))
+        .route("/music/artists", get(music_artists))
+        .route("/music/albums", get(music_albums))
+        .route("/music/albums/{id}/tracks", get(album_tracks))
         .route("/item/{jellyfin_id}/detail", get(item_detail))
         .route(
             "/items/{id}/sources",
@@ -155,6 +158,34 @@ async fn person_detail(
     match media.person_filmography(&name).await {
         Ok(Some(person)) => Json(json!({ "person": person })).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such person" })))
+            .into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+/// The music artist rows (the Music tab's artist pages group their albums).
+async fn music_artists(State(state): State<Arc<RouteState>>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.music_artists().await {
+        Ok(artists) => Json(json!({ "artists": artists })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+/// The album rows with their artist links (the Music tab's album pages).
+async fn music_albums(State(state): State<Arc<RouteState>>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.music_albums().await {
+        Ok(albums) => Json(json!({ "albums": albums })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+/// The track list behind one album.
+async fn album_tracks(State(state): State<Arc<RouteState>>, Path(id): Path<i64>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.album_tracks(id).await {
+        Ok(tracks) => Json(json!({ "track_count": tracks.len(), "tracks": tracks }))
             .into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
     }
