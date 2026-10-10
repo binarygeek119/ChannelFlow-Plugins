@@ -190,6 +190,14 @@ PLUGINS = [
         "bottom": (217, 119, 6), # amber-600
         "mark": (46, 16, 4),     # deep brown
     },
+    {
+        "id": "com.channelflow.emergency",
+        "title": "Emergency Broadcast System",
+        "subtitle": "Weather alerts that overlay programming",
+        "top": (153, 27, 27),    # alert red
+        "bottom": (249, 115, 22),# orange-500
+        "mark": (255, 255, 255), # white play mark
+    },
 ]
 
 

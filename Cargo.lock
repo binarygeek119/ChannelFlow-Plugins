@@ -202,6 +202,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "channelflow-plugin-emergency"
+version = "1.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "channelflow-plugin-api",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "channelflow-plugin-ersatztv"
 version = "2.0.0"
 dependencies = [

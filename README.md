@@ -16,6 +16,7 @@ routes under `/api/plugins/{id}`.
 | [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract) |
 | [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media (1.0.0's EBS settings as a plugin) |
 | [`plugins/commercialbrainz`](plugins/commercialbrainz) | `com.channelflow.commercialbrainz` | CommercialBrainz — ad avails, pool mode, and content filters (1.0.0's connection as a plugin) |
+| [`plugins/emergency`](plugins/emergency) | `com.channelflow.emergency` | Emergency Broadcast System — how weather alerts overlay programming (1.0.0's alert overlay as a plugin) |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
 
 ## How the base builds against this repo
