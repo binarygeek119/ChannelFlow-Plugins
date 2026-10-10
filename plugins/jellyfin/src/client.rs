@@ -128,10 +128,11 @@ impl JellyfinClient {
         let types = "Movie,Series,Episode,Audio,MusicVideo";
         // Without a sync user the bare /Items endpoint is right (an admin API
         // key). /Users//Items - the empty-user form - 404s on newer Jellyfin.
+        // get() prepends the base, so only build the path here.
         let listing = if self.user_id.is_empty() {
-            format!("{}/Items", self.base)
+            "/Items".to_string()
         } else {
-            format!("{}/Users/{}/Items", self.base, self.user_id)
+            format!("/Users/{}/Items", self.user_id)
         };
         let url = format!(
             "{listing}?ParentId={library_id}&Recursive=true&IncludeItemTypes={types}&Fields={fields}&StartIndex={offset}&Limit=200"
