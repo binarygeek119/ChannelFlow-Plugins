@@ -410,7 +410,9 @@ async fn metadata_upsert(
         tracing::warn!(error = %error.0, "jellyfin: could not build album/track hierarchy");
     }
     // Cast metadata: people rows + item links. Their images arrive in phase 2.
-    media.upsert_people(item_id, raw).await.map_err(plugin_database)?;
+    if let Err(error) = media.upsert_people(item_id, raw).await {
+        tracing::warn!(error = %error.0, "jellyfin: could not store item people");
+    }
 
     Ok(created)
 }

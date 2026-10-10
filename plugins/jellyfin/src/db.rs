@@ -537,7 +537,7 @@ impl MediaDb {
                 .execute_params(
                     &format!(
                         "INSERT INTO {links} (item_id, person_id, role_type, role, character, sort_order) \
-                         VALUES ($1::bigint, $2::bigint, $3, $4, $4, $5) \
+                         VALUES ($1::bigint, $2::bigint, $3, $4, $4, $5::int) \
                          ON CONFLICT (item_id, person_id, role_type, role) DO NOTHING"
                     ),
                     &[
