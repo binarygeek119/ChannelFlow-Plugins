@@ -259,6 +259,34 @@ impl MediaSource for JellyfinPlugin {
             .ok()
             .map(|state| routes::router(state.db.clone()))
     }
+
+    async fn server_info(
+        &self,
+        connection: &Connection,
+        api_key: &str,
+    ) -> Option<serde_json::Value> {
+        let client = client::JellyfinClient::new(connection, api_key).ok()?;
+        let (server_id, server_name) = client.system_info().await?;
+        Some(serde_json::json!({
+            "server_id": server_id,
+            "server_name": server_name,
+        }))
+    }
+
+    fn item_web_url(&self, connection: &Connection, remote_id: &str) -> Option<String> {
+        if remote_id.is_empty() {
+            return None;
+        }
+        let base = connection.url.trim().trim_end_matches('/');
+        if base.is_empty() {
+            return None;
+        }
+        let mut url = format!("{base}/web/index.html#!/details?id={remote_id}");
+        if let Some(server_id) = connection.server_id.as_deref().filter(|id| !id.is_empty()) {
+            url.push_str(&format!("&serverId={server_id}"));
+        }
+        Some(url)
+    }
 }
 
 impl Default for JellyfinPlugin {

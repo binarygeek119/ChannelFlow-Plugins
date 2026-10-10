@@ -44,6 +44,22 @@ impl JellyfinClient {
         })
     }
 
+    /// The server's identity for deep links, from the authenticated
+    /// `/System/Info` endpoint: `{ "server_id": Id, "server_name": ServerName }`.
+    pub async fn system_info(&self) -> Option<(String, String)> {
+        let response = self.get("/System/Info").send().await.ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let value: serde_json::Value = response.json().await.ok()?;
+        let server_id = value.get("Id").and_then(serde_json::Value::as_str).map(str::to_string)?;
+        let server_name = match value.get("ServerName").and_then(serde_json::Value::as_str) {
+            Some(name) => name.to_string(),
+            None => server_id.clone(),
+        };
+        Some((server_id, server_name))
+    }
+
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
         // Send the token both ways. Jellyfin accepts the legacy
         // `X-Emby-Token` header and the standard

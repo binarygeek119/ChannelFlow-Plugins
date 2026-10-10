@@ -578,6 +578,44 @@ impl MediaDb {
             .await
     }
 
+    /// The rich row behind a Media-page item: the Jellyfin metadata, its
+    /// genres, studios, and cast (in billing order) — what an item detail
+    /// page shows. Looks the item up by its Jellyfin id.
+    pub async fn get_item_detail(&self, jellyfin_id: &str) -> JfResult<Option<Value>> {
+        let items = self.t("media_items");
+        let sources = self.t("item_sources");
+        let item_genres = self.t("item_genres");
+        let genres = self.t("genres");
+        let item_studios = self.t("item_studios");
+        let studios = self.t("studios");
+        let item_people = self.t("item_people");
+        let people = self.t("people");
+        self.inner
+            .fetch_params(
+                &format!(
+                    "SELECT m.id, m.media_type, m.title, m.year, m.overview, m.tagline, \
+                            m.runtime_ticks, m.release_date, m.community_rating, m.critics_rating, \
+                            m.official_rating, m.poster_path, \
+                            COALESCE((SELECT json_agg(g.name ORDER BY g.name) \
+                                      FROM {item_genres} ig JOIN {genres} g ON g.id = ig.genre_id \
+                                      WHERE ig.item_id = m.id), '[]'::json) AS genres, \
+                            COALESCE((SELECT json_agg(s.name ORDER BY s.name) \
+                                      FROM {item_studios} ist JOIN {studios} s ON s.id = ist.studio_id \
+                                      WHERE ist.item_id = m.id), '[]'::json) AS studios, \
+                            COALESCE((SELECT json_agg(json_build_object('name', p.name, 'image_path', p.image_path, \
+                                            'role', ip.role, 'character', ip.character) \
+                                      ORDER BY ip.sort_order, p.name) \
+                                      FROM {item_people} ip JOIN {people} p ON p.id = ip.person_id \
+                                      WHERE ip.item_id = m.id), '[]'::json) AS people \
+                     FROM {items} m \
+                     WHERE m.id = (SELECT s.item_id FROM {sources} s WHERE s.jellyfin_id = $1 LIMIT 1)"
+                ),
+                &[Value::String(jellyfin_id.to_string())],
+            )
+            .await
+            .map(|rows| rows.into_iter().next())
+    }
+
     /// Replace a source's files (and their streams/chapters) from the raw
     /// Jellyfin media sources.
     pub async fn replace_files(&self, source_id: i64, raw: &Value) -> JfResult<u64> {
