@@ -118,6 +118,14 @@ impl JellyfinClient {
                 name: library.name,
                 collection_type: library.collection_type,
             })
+            // Boxsets and home videos are special views, not media to put on
+            // a channel lineup; keep them out of the picker and the sync.
+            .filter(|library| {
+                !matches!(
+                    library.collection_type.as_deref(),
+                    Some("boxsets") | Some("homevideos")
+                )
+            })
             .collect())
     }
 
