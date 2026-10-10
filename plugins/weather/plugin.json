@@ -28,7 +28,7 @@
     {
       "type": "page",
       "id": "weather",
-      "path": "/weather",
+      "path": "/webui/weather",
       "title": "Weather",
       "icon": "sun",
       "section": "main",

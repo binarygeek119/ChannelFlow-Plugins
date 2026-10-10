@@ -5,7 +5,7 @@
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
-  "description": "Ad avails synced from CommercialBrainz — the server, pool mode, and content filters",
+  "description": "Ad avails synced from CommercialBrainz \u2014 the server, pool mode, and content filters",
   "homepage": "https://github.com/binarygeek119/ChannelFlow",
   "repository": {
     "type": "github",
@@ -28,7 +28,7 @@
     {
       "type": "page",
       "id": "commercialbrainz",
-      "path": "/commercialbrainz",
+      "path": "/webui/commercialbrainz",
       "title": "CommercialBrainz",
       "icon": "megaphone",
       "section": "main",

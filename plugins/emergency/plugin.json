@@ -5,7 +5,7 @@
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
-  "description": "How weather alerts overlay programming — off, cut-in, or a scrolling ticker",
+  "description": "How weather alerts overlay programming \u2014 off, cut-in, or a scrolling ticker",
   "homepage": "https://github.com/binarygeek119/ChannelFlow",
   "repository": {
     "type": "github",
@@ -27,7 +27,7 @@
     {
       "type": "page",
       "id": "emergency",
-      "path": "/emergency",
+      "path": "/webui/emergency",
       "title": "Emergency Broadcast System",
       "icon": "alert",
       "section": "main",

@@ -5,7 +5,7 @@
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
-  "description": "The FlowWire newscast — headlines from RSS, read with TTS",
+  "description": "The FlowWire newscast \u2014 headlines from RSS, read with TTS",
   "homepage": "https://github.com/binarygeek119/ChannelFlow",
   "repository": {
     "type": "github",
@@ -28,7 +28,7 @@
     {
       "type": "page",
       "id": "news",
-      "path": "/news",
+      "path": "/webui/news",
       "title": "News",
       "icon": "newspaper",
       "section": "main",

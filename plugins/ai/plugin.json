@@ -24,7 +24,7 @@
     {
       "type": "page",
       "id": "ai",
-      "path": "/ai",
+      "path": "/webui/ai",
       "title": "AI",
       "icon": "robot",
       "section": "main",
