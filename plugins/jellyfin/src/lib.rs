@@ -187,7 +187,11 @@ impl MediaSource for JellyfinPlugin {
         match client.test().await {
             client::TestVerdict::Ok => TestResult::ok("Reachable, key accepted"),
             client::TestVerdict::AuthFailed => {
-                TestResult::auth_failed("Server reachable, API key rejected")
+                if client.has_token() {
+                    TestResult::auth_failed("Server reachable, API key rejected")
+                } else {
+                    TestResult::auth_failed("Server reachable, but no API key was given")
+                }
             }
             client::TestVerdict::Unreachable => TestResult::unreachable("Could not reach the server"),
             client::TestVerdict::BadUrl => TestResult::bad_url("Unexpected response from that URL"),

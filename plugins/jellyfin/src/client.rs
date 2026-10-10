@@ -24,7 +24,9 @@ pub enum TestVerdict {
 
 impl JellyfinClient {
     pub fn new(connection: &Connection, api_key: &str) -> Result<Self, PluginError> {
-        let base = connection.url.trim_end_matches('/').to_string();
+        // Trim both: a key or URL pasted from the Jellyfin dashboard usually
+        // carries a stray space or newline, which the server then rejects.
+        let base = connection.url.trim().trim_end_matches('/').to_string();
         url::Url::parse(&base).map_err(|_| PluginError::new("not a valid server URL"))?;
         let http = reqwest::Client::builder()
             .danger_accept_invalid_certs(!connection.verify_tls)
@@ -33,7 +35,7 @@ impl JellyfinClient {
         Ok(Self {
             http,
             base,
-            token: api_key.to_string(),
+            token: api_key.trim().to_string(),
             user_id: connection.sync_user_id.clone().unwrap_or_default(),
         })
     }
@@ -64,6 +66,12 @@ impl JellyfinClient {
             Ok(_) => TestVerdict::BadUrl,
             Err(_) => TestVerdict::Unreachable,
         }
+    }
+
+    /// True when no API key was supplied at all, so the form can say that
+    /// instead of blaming a key the user never entered.
+    pub fn has_token(&self) -> bool {
+        !self.token.is_empty()
     }
 
     pub async fn libraries(&self) -> Result<Vec<Library>, PluginError> {
