@@ -1,5 +1,33 @@
 [
   {
+    "id": "com.channelflow.lists",
+    "guid": "com.channelflow.lists",
+    "name": "Lists",
+    "description": "Named lists of catalog items you can reuse across channels and presets",
+    "owner": "ChannelFlow",
+    "category": "catalog",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T00:00:00Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/lists-v2.0.0/com.channelflow.lists-v2.0.0-linux-x86_64.zip",
+            "size": 0
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/lists-v2.0.0/com.channelflow.lists-v2.0.0-windows-x86_64.zip",
+            "size": 0
+          }
+        }
+      }
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.lists.png"
+  },
+  {
     "id": "com.channelflow.presets",
     "guid": "com.channelflow.presets",
     "name": "Presets",

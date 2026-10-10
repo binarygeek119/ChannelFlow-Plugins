@@ -248,6 +248,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "channelflow-plugin-lists"
+version = "2.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "channelflow-plugin-api",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "channelflow-plugin-news"
 version = "2.0.2"
 dependencies = [

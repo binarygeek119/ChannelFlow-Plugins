@@ -1,0 +1,41 @@
+/* Lists page: named collections of catalog items. */
+#lists-container { margin-top: 0.8rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.list-card {
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--card-bg);
+    padding: 0.7rem 0.9rem;
+}
+.list-card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.list-card-head strong { font-size: 0.95rem; }
+.list-card-head .count-label { color: var(--muted); font-size: 0.78rem; }
+.list-card-head .spacer { flex: 1; }
+.list-item-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+.list-item-row .kind { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; width: 6.5rem; }
+.list-item-row .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-empty { padding: 0.5rem 0; color: var(--muted); font-size: 0.85rem; }
+
+#list-items-body { max-height: 60vh; overflow: auto; }
+#list-items-body .kind-tabs { display: flex; gap: 0.3rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+#list-items-body .kind-tabs button { font-size: 0.75rem; }
+#list-items-body .kind-tabs button.active { border-color: var(--accent); color: var(--accent); }
+.list-pick-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+.list-pick-row .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,0 +1,29 @@
+<div class="panel">
+  <div class="panel-head">
+    <h2>Lists</h2>
+    <span class="count" id="lists-count"></span>
+  </div>
+  <p class="hint">
+    Named lists of catalog items you can reuse across channels and presets. Create one, pick items
+    from the Media catalog, and remove items or whole lists whenever you like.
+  </p>
+  <form id="new-list-form" class="ms-form" autocomplete="off">
+    <div class="field">
+      <label class="field-label" for="new-list-name">New list</label>
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        <input id="new-list-name" type="text" placeholder="80s Movies" style="flex:1">
+        <button type="submit" class="primary" id="new-list-create">Create</button>
+      </div>
+    </div>
+    <p class="field-note" id="lists-result"></p>
+  </form>
+  <div id="lists-container"></div>
+</div>
+
+<dialog id="list-items-dialog" class="settings-dialog">
+  <div class="settings-dialog-head">
+    <h2 id="list-items-title">Add items</h2>
+    <button type="button" class="ghost" id="list-items-close">Close</button>
+  </div>
+  <div id="list-items-body" class="settings-dialog-body"></div>
+</dialog>
