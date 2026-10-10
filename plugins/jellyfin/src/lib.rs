@@ -31,8 +31,18 @@ pub struct JellyfinPlugin {
     state: Option<PluginState>,
 }
 
+#[derive(Clone)]
 struct PluginState {
     db: Arc<dyn PluginDatabase>,
+}
+
+/// The plugin instance the lifecycle drives and the separate media-source
+/// handle must see the same loaded state, or a core-driven sync fails with
+/// "has not been loaded". Both write/read this process-global slot.
+fn shared_state() -> &'static std::sync::Mutex<Option<PluginState>> {
+    use std::sync::OnceLock;
+    static SHARED: OnceLock<std::sync::Mutex<Option<PluginState>>> = OnceLock::new();
+    SHARED.get_or_init(|| std::sync::Mutex::new(None))
 }
 
 impl JellyfinPlugin {
@@ -44,10 +54,16 @@ impl JellyfinPlugin {
         }
     }
 
-    fn state(&self) -> Result<&PluginState, PluginError> {
-        self.state
-            .as_ref()
-            .ok_or_else(|| PluginError::new("Jellyfin plugin has not been loaded"))
+    fn state(&self) -> Result<PluginState, PluginError> {
+        if let Some(state) = &self.state {
+            return Ok(state.clone());
+        }
+        if let Ok(guard) = shared_state().lock() {
+            if let Some(state) = guard.as_ref() {
+                return Ok(state.clone());
+            }
+        }
+        Err(PluginError::new("Jellyfin plugin has not been loaded"))
     }
 }
 
@@ -97,9 +113,13 @@ impl Plugin for JellyfinPlugin {
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
         // Tables initialise lazily on the first sync so a file-only install
         // (no Postgres) still loads and fails softly at sync time.
-        self.state = Some(PluginState {
+        let state = PluginState {
             db: api.database.clone(),
-        });
+        };
+        if let Ok(mut guard) = shared_state().lock() {
+            *guard = Some(state.clone());
+        }
+        self.state = Some(state);
         api.logger.info("loaded");
         Ok(())
     }
@@ -122,6 +142,9 @@ impl Plugin for JellyfinPlugin {
 
     fn on_unload(&mut self) {
         self.state = None;
+        if let Ok(mut guard) = shared_state().lock() {
+            *guard = None;
+        }
     }
 
     async fn on_config(&mut self, _config: serde_json::Value) -> Result<(), PluginError> {
