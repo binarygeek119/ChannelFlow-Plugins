@@ -1,0 +1,36 @@
+{
+  "id": "com.channelflow.presets",
+  "name": "Presets",
+  "version": "2.0.0",
+  "min_base_version": "2.0.0",
+  "max_base_version": "2.999.999",
+  "author": "ChannelFlow",
+  "description": "Ready-made Binarygeek119 channels to get up and running quickly — a shortcut, not the only way to add channels",
+  "homepage": "https://github.com/binarygeek119/ChannelFlow",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/binarygeek119/ChannelFlow",
+    "releases_url": "https://api.github.com/repos/binarygeek119/ChannelFlow/releases"
+  },
+  "category": "catalog",
+  "permissions": [
+    "api:core:read",
+    "api:routes",
+    "ui:pages"
+  ],
+  "entrypoint": {
+    "linux-x86_64": "libchannelflow_plugin_presets.so",
+    "windows-x86_64": "channelflow_plugin_presets.dll"
+  },
+  "ui_contributions": [
+    {
+      "type": "page",
+      "id": "presets",
+      "path": "/webui/presets",
+      "title": "Presets",
+      "icon": "grid",
+      "section": "main",
+      "component": "PresetsPage"
+    }
+  ]
+}

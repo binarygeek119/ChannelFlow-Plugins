@@ -1,0 +1,27 @@
+/* Presets page: the ready-made channel list. */
+#presets-list { margin-top: 0.3rem; overflow-x: auto; }
+#presets-list .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+#presets-list .data-table th,
+#presets-list .data-table td {
+    text-align: left;
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+#presets-list .data-table th {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+#presets-list .status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+#presets-list .status.existing { color: var(--muted); }
+#presets-list .status.new { color: var(--ok); }
