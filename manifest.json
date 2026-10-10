@@ -244,5 +244,35 @@
         }
       }
     ]
+  },
+  {
+    "id": "com.channelflow.weather",
+    "guid": "com.channelflow.weather",
+    "name": "Weather",
+    "description": "WeatherStar look, weather source, default location, units, and the screens that play in the loop",
+    "owner": "ChannelFlow",
+    "category": "weather",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.weather.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T06:28:50Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/weather-v2.0.0/com.channelflow.weather-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:289780f490107a2a058c73700c7b4cd63fdf25f96613c7ad4c769963ae02dca0",
+            "size": 258076
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/weather-v2.0.0/com.channelflow.weather-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:291186a82e42f0803586829496ff1bd1f01f75ce5cface2b765fd2b05c90104a",
+            "size": 221463
+          }
+        }
+      }
+    ]
   }
 ]
