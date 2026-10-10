@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-ai"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 license = "MIT"
 description = "ChannelFlow AI Provider Suite — OpenAI-compatible endpoints, tests, and failover"
