@@ -20,7 +20,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::client::JellyfinClient;
-use crate::db::MediaDb;
+use crate::db::{ItemDetail, MediaDb};
 use crate::dedup;
 
 const PAGE: usize = 200;
@@ -381,6 +381,7 @@ async fn metadata_upsert(
             &title,
             year,
             None,
+            &ItemDetail::from_raw(raw),
             synced_at,
         )
         .await
@@ -412,6 +413,10 @@ async fn metadata_upsert(
     // Cast metadata: people rows + item links. Their images arrive in phase 2.
     if let Err(error) = media.upsert_people(item_id, raw).await {
         tracing::warn!(error = %error.0, "jellyfin: could not store item people");
+    }
+    // Genres and studios links, for the item detail page (best-effort).
+    if let Err(error) = media.set_genres_and_studios(item_id, raw).await {
+        tracing::warn!(error = %error.0, "jellyfin: could not store item genres/studios");
     }
 
     Ok(created)

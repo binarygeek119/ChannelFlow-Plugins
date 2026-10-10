@@ -11,6 +11,45 @@ use serde_json::Value;
 
 pub type JfResult<T> = Result<T, PluginDatabaseError>;
 
+/// The rich per-item metadata an upsert records (what an item detail page
+/// shows). Built from one Jellyfin item payload; every field is optional so a
+/// sparse response never fails the sync.
+#[derive(Debug, Default, Clone)]
+pub struct ItemDetail {
+    pub overview: Option<String>,
+    pub tagline: Option<String>,
+    pub sort_title: Option<String>,
+    pub original_title: Option<String>,
+    pub runtime_ticks: Option<i64>,
+    pub release_date: Option<String>,
+    pub community_rating: Option<f64>,
+    pub critics_rating: Option<f64>,
+    pub official_rating: Option<String>,
+}
+
+impl ItemDetail {
+    pub fn from_raw(raw: &Value) -> Self {
+        let text = |key: &str| raw.get(key).and_then(Value::as_str).map(str::to_string);
+        Self {
+            overview: text("Overview"),
+            tagline: raw
+                .get("Taglines")
+                .and_then(Value::as_array)
+                .and_then(|lines| lines.first())
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .or_else(|| text("Tagline")),
+            sort_title: text("SortName"),
+            original_title: text("OriginalTitle"),
+            runtime_ticks: raw.get("RunTimeTicks").and_then(Value::as_i64),
+            release_date: text("PremiereDate"),
+            community_rating: raw.get("CommunityRating").and_then(Value::as_f64),
+            critics_rating: raw.get("CriticRating").and_then(Value::as_f64),
+            official_rating: text("OfficialRating"),
+        }
+    }
+}
+
 /// A thin wrapper over the base's plugin database handle.
 pub struct MediaDb {
     inner: Arc<dyn PluginDatabase>,
@@ -308,10 +347,19 @@ impl MediaDb {
         title: &str,
         year: Option<i32>,
         poster_path: Option<&str>,
+        detail: &ItemDetail,
         synced_at: &str,
     ) -> JfResult<(i64, bool)> {
         let items = self.t("media_items");
         let sources = self.t("item_sources");
+        let opt_text = |value: &Option<String>| {
+            value
+                .as_deref()
+                .map(|text| Value::String(text.to_string()))
+                .unwrap_or(Value::Null)
+        };
+        let opt_real = |value: &Option<f64>| value.map(Value::from).unwrap_or(Value::Null);
+        let opt_int = |value: &Option<i64>| value.map(Value::from).unwrap_or(Value::Null);
         let rows = self
             .inner
             .fetch_params(
@@ -328,14 +376,27 @@ impl MediaDb {
                 .execute_params(
                     &format!(
                         "UPDATE {items} SET dedup_key = $1, media_type = $2, title = $3, \
-                         year = $4::integer, poster_path = $5, synced_at = $6 WHERE id = $7::bigint"
+                         year = $4::integer, poster_path = $5, overview = $6, tagline = $7, \
+                         sort_title = $8, original_title = $9, runtime_ticks = $10::bigint, \
+                         release_date = $11, community_rating = $12::double precision, \
+                         critics_rating = $13::double precision, official_rating = $14, \
+                         synced_at = $15 WHERE id = $16::bigint"
                     ),
                     &[
                         Value::String(dedup_key.to_string()),
                         Value::String(media_type.to_string()),
                         Value::String(title.to_string()),
-                        year.map(|value| Value::from(value)).unwrap_or(Value::Null),
+                        year.map(Value::from).unwrap_or(Value::Null),
                         poster_path.map(|text| Value::String(text.to_string())).unwrap_or(Value::Null),
+                        opt_text(&detail.overview),
+                        opt_text(&detail.tagline),
+                        opt_text(&detail.sort_title),
+                        opt_text(&detail.original_title),
+                        opt_int(&detail.runtime_ticks),
+                        opt_text(&detail.release_date),
+                        opt_real(&detail.community_rating),
+                        opt_real(&detail.critics_rating),
+                        opt_text(&detail.official_rating),
                         Value::String(synced_at.to_string()),
                         Value::from(id),
                     ],
@@ -348,15 +409,28 @@ impl MediaDb {
                 .fetch_params(
                     &format!(
                         "INSERT INTO {items} \
-                         (dedup_key, media_type, title, year, poster_path, synced_at) \
-                         VALUES ($1, $2, $3, $4::integer, $5, $6) RETURNING id"
+                         (dedup_key, media_type, title, year, poster_path, overview, tagline, \
+                          sort_title, original_title, runtime_ticks, release_date, \
+                          community_rating, critics_rating, official_rating, synced_at) \
+                         VALUES ($1, $2, $3, $4::integer, $5, $6, $7, $8, $9, $10::bigint, \
+                                 $11, $12::double precision, $13::double precision, $14, $15) \
+                         RETURNING id"
                     ),
                     &[
                         Value::String(dedup_key.to_string()),
                         Value::String(media_type.to_string()),
                         Value::String(title.to_string()),
-                        year.map(|value| Value::from(value)).unwrap_or(Value::Null),
+                        year.map(Value::from).unwrap_or(Value::Null),
                         poster_path.map(|text| Value::String(text.to_string())).unwrap_or(Value::Null),
+                        opt_text(&detail.overview),
+                        opt_text(&detail.tagline),
+                        opt_text(&detail.sort_title),
+                        opt_text(&detail.original_title),
+                        opt_int(&detail.runtime_ticks),
+                        opt_text(&detail.release_date),
+                        opt_real(&detail.community_rating),
+                        opt_real(&detail.critics_rating),
+                        opt_text(&detail.official_rating),
                         Value::String(synced_at.to_string()),
                     ],
                 )
@@ -367,6 +441,81 @@ impl MediaDb {
                 .unwrap_or(0);
             Ok((id, true))
         }
+    }
+
+    /// Replace an item's genre and studio links from the Jellyfin payload. The
+    /// payload lists genres as strings and studios as `{ Name }` objects.
+    pub async fn set_genres_and_studios(&self, item_id: i64, raw: &Value) -> JfResult<()> {
+        self.link_named(item_id, raw, "Genres", "genres", "item_genres", "genre_id")
+            .await?;
+        self.link_named(item_id, raw, "Studios", "studios", "item_studios", "studio_id")
+            .await?;
+        Ok(())
+    }
+
+    async fn link_named(
+        &self,
+        item_id: i64,
+        raw: &Value,
+        key: &str,
+        table: &str,
+        link_table: &str,
+        link_column: &str,
+    ) -> JfResult<()> {
+        let names: Vec<String> = raw
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|entry| {
+                        entry
+                            .as_str()
+                            .map(str::to_string)
+                            .or_else(|| entry.get("Name").and_then(Value::as_str).map(str::to_string))
+                    })
+                    .map(|name| name.trim().to_string())
+                    .filter(|name| !name.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let class = self.t(table);
+        let links = self.t(link_table);
+        // The current set wins: drop old links, then re-add.
+        self.inner
+            .execute_params(
+                &format!("DELETE FROM {links} WHERE item_id = $1::bigint"),
+                &[Value::from(item_id)],
+            )
+            .await?;
+        for name in names {
+            self.inner
+                .execute_params(
+                    &format!("INSERT INTO {class} (name) VALUES ($1) ON CONFLICT (name) DO NOTHING"),
+                    &[Value::String(name.clone())],
+                )
+                .await?;
+            let rows = self
+                .inner
+                .fetch_params(
+                    &format!("SELECT id FROM {class} WHERE name = $1"),
+                    &[Value::String(name)],
+                )
+                .await?;
+            let Some(class_id) = rows.first().and_then(|row| row["id"].as_i64()) else {
+                continue;
+            };
+            self.inner
+                .execute_params(
+                    &format!(
+                        "INSERT INTO {links} (item_id, {link_column}) VALUES ($1::bigint, $2::bigint) \
+                         ON CONFLICT DO NOTHING"
+                    ),
+                    &[Value::from(item_id), Value::from(class_id)],
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     /// Find or create a grouping node (album, artist) by its dedup key. These
