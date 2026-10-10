@@ -297,7 +297,13 @@ async fn upsert(
         dedup::key(&media_type, &title, year)
     };
 
-    let poster_path = write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await?;
+    // Only the items that appear on the base Media page get a poster. Fetching
+    // one for every episode/track was the bulk of a big library's scan time.
+    let poster_path = if matches!(media_type, "movie" | "series" | "musicvideo") {
+        write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await?
+    } else {
+        None
+    };
     let (item_id, created) = media
         .upsert_item_by_source(
             ctx.connection_id,

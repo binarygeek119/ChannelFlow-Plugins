@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.jellyfin",
   "name": "Jellyfin Media Source",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
