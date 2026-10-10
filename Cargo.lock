@@ -262,6 +262,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "channelflow-plugin-weather"
+version = "1.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "channelflow-plugin-api",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"

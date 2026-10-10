@@ -198,6 +198,14 @@ PLUGINS = [
         "bottom": (249, 115, 22),# orange-500
         "mark": (255, 255, 255), # white play mark
     },
+    {
+        "id": "com.channelflow.weather",
+        "title": "Weather",
+        "subtitle": "WeatherStar look, source, location, and screens",
+        "top": (2, 132, 199),    # sky blue
+        "bottom": (128, 222, 234), # cyan-300
+        "mark": (12, 74, 110),   # deep blue
+    },
 ]
 
 

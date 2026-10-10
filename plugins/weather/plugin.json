@@ -1,0 +1,38 @@
+{
+  "id": "com.channelflow.weather",
+  "name": "Weather",
+  "version": "1.0.0",
+  "min_base_version": "2.0.0",
+  "max_base_version": "2.999.999",
+  "author": "ChannelFlow",
+  "description": "WeatherStar look, weather source, default location, units, and the screens that play in the loop",
+  "homepage": "https://github.com/binarygeek119/ChannelFlow",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/binarygeek119/ChannelFlow",
+    "releases_url": "https://api.github.com/repos/binarygeek119/ChannelFlow/releases"
+  },
+  "category": "weather",
+  "permissions": [
+    "storage:read",
+    "storage:write",
+    "network:outbound",
+    "api:routes",
+    "ui:pages"
+  ],
+  "entrypoint": {
+    "linux-x86_64": "libchannelflow_plugin_weather.so",
+    "windows-x86_64": "channelflow_plugin_weather.dll"
+  },
+  "ui_contributions": [
+    {
+      "type": "page",
+      "id": "weather",
+      "path": "/weather",
+      "title": "Weather",
+      "icon": "sun",
+      "section": "main",
+      "component": "WeatherPage"
+    }
+  ]
+}
