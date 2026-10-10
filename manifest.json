@@ -154,5 +154,35 @@
         }
       }
     ]
+  },
+  {
+    "id": "com.channelflow.news",
+    "guid": "com.channelflow.news",
+    "name": "News",
+    "description": "The FlowWire newscast \u2014 headlines from RSS, read with TTS",
+    "owner": "ChannelFlow",
+    "category": "news",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.news.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T06:22:55Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/news-v2.0.0/com.channelflow.news-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:8d5fa0c0c8996444ca51e999c86598061671b226db4f5a861426bce0ce8a42ae",
+            "size": 258008
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/news-v2.0.0/com.channelflow.news-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:21d384b8718e5ed328e82db8ef7e4e2d890d31bdbed6f63371899530b3e97fbf",
+            "size": 221453
+          }
+        }
+      }
+    ]
   }
 ]
