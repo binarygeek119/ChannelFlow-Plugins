@@ -1,5 +1,33 @@
 [
   {
+    "id": "com.channelflow.presets",
+    "guid": "com.channelflow.presets",
+    "name": "Presets",
+    "description": "Ready-made Binarygeek119 channels to get up and running quickly \u2014 a shortcut, not the only way to add channels",
+    "owner": "ChannelFlow",
+    "category": "catalog",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T00:00:00Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.0/com.channelflow.presets-v2.0.0-linux-x86_64.zip",
+            "size": 0
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.0/com.channelflow.presets-v2.0.0-windows-x86_64.zip",
+            "size": 0
+          }
+        }
+      }
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.presets.png"
+  },
+  {
     "id": "com.channelflow.ai",
     "guid": "com.channelflow.ai",
     "name": "AI Provider Suite",
