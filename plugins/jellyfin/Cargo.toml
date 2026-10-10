@@ -22,3 +22,7 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "time"] }
 tracing = "0.1"
 url = "2"
+[features]
+# Builds the exported ABI entrypoint into the cdylib; the compiled-in base
+# leaves it off so plugins sharing a symbol name do not collide.
+abi = []

@@ -73,14 +73,18 @@ pub fn media_source() -> Box<dyn MediaSource> {
 /// source.
 pub use sync::sweep_orphan_posters;
 
-/// The ABI entrypoint: the base (or a future dynamic loader) calls this and
-/// downcasts the `MediaSource` it gets back.
+/// The ABI entrypoint: a future dynamic loader calls this and downcasts the
+/// `MediaSource` it gets back. Compiled only for the `abi` feature — the
+/// standalone cdylib the release ships — because two plugins exporting the
+/// same symbol collide when both are linked into the base binary.
+#[cfg(feature = "abi")]
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn channelflow_plugin_v1() -> *mut dyn MediaSource {
     Box::into_raw(Box::new(JellyfinPlugin::new()))
 }
 
+#[cfg(feature = "abi")]
 #[no_mangle]
 pub static channelflow_plugin_abi_version: u32 = PLUGIN_ABI_VERSION;
 

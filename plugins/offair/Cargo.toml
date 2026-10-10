@@ -21,3 +21,7 @@ tracing = "0.1"
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
+[features]
+# Builds the exported ABI entrypoint into the cdylib; the compiled-in base
+# leaves it off so plugins sharing a symbol name do not collide.
+abi = []

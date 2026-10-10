@@ -32,13 +32,17 @@ pub fn plugin() -> Box<dyn Plugin> {
     Box::new(OffAirPlugin::new())
 }
 
-/// The ABI entrypoint, for the future dynamic loader.
+/// The ABI entrypoint, for a future dynamic loader. Compiled only for the
+/// `abi` feature (the standalone cdylib) so compiled-in plugins do not collide
+/// on the shared symbol name.
+#[cfg(feature = "abi")]
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn channelflow_plugin_v1() -> *mut dyn Plugin {
     Box::into_raw(Box::new(OffAirPlugin::new()))
 }
 
+#[cfg(feature = "abi")]
 #[no_mangle]
 pub static channelflow_plugin_abi_version: u32 = PLUGIN_ABI_VERSION;
 
