@@ -727,6 +727,27 @@ impl MediaDb {
             .await
     }
 
+    /// A synced person photo matching `name`, if one exists. Used when a music
+    /// artist has no primary image on the server: the cast photo of the same
+    /// name stands in for the artist's image.
+    pub async fn person_image_by_name(&self, name: &str) -> JfResult<Option<String>> {
+        let people = self.t("people");
+        let rows = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT image_path FROM {people} \
+                     WHERE lower(name) = lower($1) AND image_path IS NOT NULL LIMIT 1"
+                ),
+                &[Value::String(name.to_string())],
+            )
+            .await?;
+        Ok(rows
+            .first()
+            .and_then(|row| row["image_path"].as_str())
+            .map(str::to_string))
+    }
+
     /// The rich row behind a Media-page item: the Jellyfin metadata, its
     /// genres, studios, and cast (in billing order) — what an item detail
     /// page shows. Looks the item up by its Jellyfin id.

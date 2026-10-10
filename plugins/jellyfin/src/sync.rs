@@ -178,6 +178,17 @@ async fn sync_catalog(
             if let Ok(Some(path)) = write_poster(ctx, client, &remote, &kind, &remote).await {
                 items[index].poster_path = Some(path);
                 waiting += 1;
+            } else if matches!(kind.as_str(), "album" | "artist") {
+                // No primary image on the server (soundtrack composers usually
+                // have none) — fall back to the synced person photo when the
+                // same name has one, so music artists still show an image.
+                let media = MediaDb::new(ctx.db.clone());
+                if let Ok(Some(person_path)) =
+                    media.person_image_by_name(&items[index].title).await
+                {
+                    items[index].poster_path = Some(person_path);
+                    waiting += 1;
+                }
             }
         }
         if waiting > 0 && last.elapsed() >= std::time::Duration::from_secs(2) {
