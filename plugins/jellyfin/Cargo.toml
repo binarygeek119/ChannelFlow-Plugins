@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-jellyfin"
-version = "2.0.2"
+version = "2.0.3"
 edition = "2021"
 license = "MIT"
 description = "Jellyfin Media Source — sync movies, TV, and music from a Jellyfin server"

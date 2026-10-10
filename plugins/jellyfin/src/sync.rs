@@ -18,12 +18,83 @@ use crate::dedup;
 
 const PAGE: usize = 200;
 
+/// A live snapshot of an in-flight sync, for the progress popup: the stage
+/// (Movies / TV / Music), the count within the current library, and the
+/// running totals.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SyncProgress {
+    pub running: bool,
+    /// `movies`, `tv`, or `music`.
+    pub stage: String,
+    /// Human label for the stage, e.g. "Movies".
+    pub label: String,
+    /// Items processed so far in the current library.
+    pub current: u64,
+    /// Items in the current library.
+    pub total: u64,
+    /// Libraries finished so far.
+    pub done: u64,
+    pub libraries: u64,
+    pub added: u64,
+    pub updated: u64,
+    pub errors: u64,
+}
+
+impl Default for SyncProgress {
+    fn default() -> Self {
+        Self {
+            running: false,
+            stage: String::new(),
+            label: String::new(),
+            current: 0,
+            total: 0,
+            done: 0,
+            libraries: 0,
+            added: 0,
+            updated: 0,
+            errors: 0,
+        }
+    }
+}
+
+/// One process-wide progress slot, shared between the route that runs a sync
+/// and the route the popup polls — the same pattern the plugin's loaded state
+/// uses.
+pub fn progress_state() -> &'static std::sync::Mutex<SyncProgress> {
+    use std::sync::OnceLock;
+    static PROGRESS: OnceLock<std::sync::Mutex<SyncProgress>> = OnceLock::new();
+    PROGRESS.get_or_init(|| std::sync::Mutex::new(SyncProgress::default()))
+}
+
+/// Which stage a library belongs to, from Jellyfin's collection type.
+pub fn stage_for(collection_type: Option<&str>) -> (&'static str, &'static str) {
+    match collection_type.unwrap_or_default().to_ascii_lowercase().as_str() {
+        "movies" | "folders" | "boxsets" => ("movies", "Movies"),
+        "tvshows" => ("tv", "TV"),
+        "music" | "musicvideos" => ("music", "Music"),
+        _ => ("library", "Library"),
+    }
+}
+
 pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
+    let progress = progress_state();
+    {
+        let mut state = progress.lock().unwrap();
+        *state = SyncProgress::default();
+        state.running = true;
+        state.libraries = ctx.enabled_libraries.len() as u64;
+    }
+
     let mut report = SyncReport::default();
     let media = MediaDb::new(db);
     if let Err(error) = media.init().await {
         tracing::error!(error = %error, "jellyfin: could not initialise tables");
         report.errors += 1;
+        {
+            let mut state = progress.lock().unwrap();
+            state.running = false;
+            state.errors = report.errors;
+        }
         return report;
     }
     let client = match JellyfinClient::new(&ctx.connection, &ctx.api_key) {
@@ -31,12 +102,25 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
         Err(error) => {
             tracing::error!(error = %error, "jellyfin: bad connection settings");
             report.errors += 1;
+            {
+                let mut state = progress.lock().unwrap();
+                state.running = false;
+                state.errors = report.errors;
+            }
             return report;
         }
     };
     let synced_at = chrono::Utc::now().to_rfc3339();
 
     for library in &ctx.enabled_libraries {
+        let (stage, label) = stage_for(library.collection_type.as_deref());
+        {
+            let mut state = progress.lock().unwrap();
+            state.stage = stage.to_string();
+            state.label = label.to_string();
+            state.current = 0;
+            state.total = 0;
+        }
         let mut offset = 0usize;
         loop {
             let page = match client.items(&library.remote_id, offset).await {
@@ -44,10 +128,22 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
                 Err(error) => {
                     tracing::warn!(library = %library.name, %error, "jellyfin: library page failed");
                     report.errors += 1;
+                    {
+                        let mut state = progress.lock().unwrap();
+                        state.errors = report.errors;
+                    }
                     break;
                 }
             };
+            {
+                let mut state = progress.lock().unwrap();
+                state.total = page.total_record_count as u64;
+            }
             for raw in &page.items {
+                {
+                    let mut state = progress.lock().unwrap();
+                    state.current += 1;
+                }
                 match upsert(&media, ctx, &client, raw, &synced_at).await {
                     Ok(created) => {
                         if created {
@@ -61,11 +157,21 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
                         report.errors += 1;
                     }
                 }
+                {
+                    let mut state = progress.lock().unwrap();
+                    state.added = report.added;
+                    state.updated = report.updated;
+                    state.errors = report.errors;
+                }
             }
             offset += PAGE;
             if offset >= page.total_record_count {
                 break;
             }
+        }
+        {
+            let mut state = progress.lock().unwrap();
+            state.done += 1;
         }
     }
 
@@ -75,6 +181,13 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
             tracing::warn!(error = %error, "jellyfin: could not mark absent sources");
             report.errors += 1;
         }
+    }
+    {
+        let mut state = progress.lock().unwrap();
+        state.running = false;
+        state.added = report.added;
+        state.updated = report.updated;
+        state.errors = report.errors;
     }
     report
 }
@@ -388,5 +501,14 @@ mod tests {
         });
         assert_eq!(track_numbers(&raw), (Some(7), Some(2)));
         assert_eq!(track_numbers(&serde_json::json!({})), (None, None));
+    }
+
+    #[test]
+    fn stages_map_from_collection_types() {
+        assert_eq!(stage_for(Some("movies")), ("movies", "Movies"));
+        assert_eq!(stage_for(Some("TVShows")), ("tv", "TV"));
+        assert_eq!(stage_for(Some("music")), ("music", "Music"));
+        assert_eq!(stage_for(Some("musicvideos")), ("music", "Music"));
+        assert_eq!(stage_for(None), ("library", "Library"));
     }
 }

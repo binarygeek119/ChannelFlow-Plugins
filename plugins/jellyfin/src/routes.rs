@@ -31,6 +31,7 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
     Router::new()
         .route("/libraries", post(libraries_request))
         .route("/sync", post(sync_request))
+        .route("/progress", get(progress_snapshot))
         .route(
             "/items/{id}/sources",
             get(item_sources).post(item_sources),
@@ -125,6 +126,12 @@ struct SyncRequest {
     /// The core's image root; posters land under `<root>/posters/…`.
     #[serde(default)]
     image_root: Option<String>,
+}
+
+/// The live sync progress snapshot the popup polls while a sync runs.
+async fn progress_snapshot() -> Json<serde_json::Value> {
+    let state = crate::sync::progress_state().lock().unwrap();
+    Json(serde_json::json!({ "progress": state.clone() }))
 }
 
 /// Run one sync pass against the listed libraries.
