@@ -152,6 +152,7 @@ async fn sync_request(
         db: state.db.clone(),
         image_root,
         remaps: serde_json::Value::Null,
+        catalog: None, // plugin-hosted runs have no base catalog handle
     };
     let report = sync::run(&ctx, state.db.clone()).await;
     let _ = media
