@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.ai",
   "name": "AI Provider Suite",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow Team",

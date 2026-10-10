@@ -68,6 +68,12 @@ impl Plugin for NewsPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder:
+        // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("news.css", "text/css", include_bytes!("../web/news.css"));
+        api.web.serve_embedded("news.html", "text/html", include_bytes!("../web/news.html"));
+        api.web.serve_embedded("news.js", "text/javascript", include_bytes!("../web/news.js"));
+
         let settings = match api
             .storage
             .get(SETTINGS_KEY)
@@ -176,6 +182,7 @@ mod tests {
             logger: PluginLogger::new("com.channelflow.news"),
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase),
+            web: channelflow_plugin_api::PluginWeb::new(),
         };
         plugin.on_load(api).await.expect("load");
         let settings = plugin.state().expect("state").settings.lock().await.clone();

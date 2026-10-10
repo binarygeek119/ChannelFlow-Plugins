@@ -67,6 +67,12 @@ impl Plugin for WeatherPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder:
+        // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("weather.css", "text/css", include_bytes!("../web/weather.css"));
+        api.web.serve_embedded("weather.html", "text/html", include_bytes!("../web/weather.html"));
+        api.web.serve_embedded("weather.js", "text/javascript", include_bytes!("../web/weather.js"));
+
         let settings = match api
             .storage
             .get(SETTINGS_KEY)
@@ -175,6 +181,7 @@ mod tests {
             logger: PluginLogger::new("com.channelflow.weather"),
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase),
+            web: channelflow_plugin_api::PluginWeb::new(),
         };
         plugin.on_load(api).await.expect("load");
         let settings = plugin.state().expect("state").settings.lock().await.clone();

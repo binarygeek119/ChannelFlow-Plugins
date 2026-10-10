@@ -100,6 +100,12 @@ impl Plugin for AiPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder:
+        // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("ai.css", "text/css", include_bytes!("../web/ai.css"));
+        api.web.serve_embedded("ai.html", "text/html", include_bytes!("../web/ai.html"));
+        api.web.serve_embedded("ai.js", "text/javascript", include_bytes!("../web/ai.js"));
+
         let config = match api
             .storage
             .get(PROVIDERS_KEY)
@@ -216,6 +222,7 @@ mod tests {
             logger: PluginLogger::new("com.channelflow.ai"),
             core: std::sync::Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: std::sync::Arc::new(channelflow_plugin_api::database::NoPluginDatabase::default()),
+            web: channelflow_plugin_api::PluginWeb::new(),
         };
         plugin.on_load(api).await.expect("load");
         assert_eq!(plugin.health().detail, "disabled with 1 provider(s)");

@@ -111,6 +111,12 @@ impl Plugin for JellyfinPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder:
+        // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("jellyfin.css", "text/css", include_bytes!("../web/jellyfin.css"));
+        api.web.serve_embedded("jellyfin.html", "text/html", include_bytes!("../web/jellyfin.html"));
+        api.web.serve_embedded("jellyfin.js", "text/javascript", include_bytes!("../web/jellyfin.js"));
+
         // Tables initialise lazily on the first sync so a file-only install
         // (no Postgres) still loads and fails softly at sync time.
         let state = PluginState {

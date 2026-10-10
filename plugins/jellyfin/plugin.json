@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.jellyfin",
   "name": "Jellyfin Media Source",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
@@ -36,5 +36,15 @@
     "track",
     "musicvideo"
   ],
-  "ui_contributions": []
+  "ui_contributions": [
+    {
+      "type": "page",
+      "id": "jellyfin",
+      "path": "/webui/library",
+      "title": "Library",
+      "icon": "library",
+      "section": "main",
+      "component": "JellyfinLibraryPage"
+    }
+  ]
 }

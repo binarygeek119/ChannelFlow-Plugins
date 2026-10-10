@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.ersatztv",
   "name": "ErsatzTV Transcoding Engine",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow Team",
@@ -23,6 +23,15 @@
   ],
   "ui_contributions": [
     {
+      "type": "page",
+      "id": "transcode",
+      "path": "/webui/transcode",
+      "title": "Transcode",
+      "icon": "sliders",
+      "section": "main",
+      "component": "TranscodeSettingsPage"
+    },
+    {
       "type": "settings_section",
       "id": "ersatztv-transcode",
       "title": "Transcode",
@@ -34,7 +43,9 @@
       "id": "ersatztv-transcode",
       "title": "Transcoding",
       "component": "TranscodeSettingsTab",
-      "applies_to": ["all"]
+      "applies_to": [
+        "all"
+      ]
     }
   ]
 }

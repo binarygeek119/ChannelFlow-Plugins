@@ -140,6 +140,12 @@ impl Plugin for ErsatzTvPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder:
+        // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("transcode.css", "text/css", include_bytes!("../web/transcode.css"));
+        api.web.serve_embedded("transcode.html", "text/html", include_bytes!("../web/transcode.html"));
+        api.web.serve_embedded("transcode.js", "text/javascript", include_bytes!("../web/transcode.js"));
+
         let defaults = match api
             .storage
             .get(DEFAULTS_KEY)
@@ -292,6 +298,7 @@ mod tests {
             logger: PluginLogger::new("com.channelflow.ersatztv"),
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase::default()),
+            web: channelflow_plugin_api::PluginWeb::new(),
         };
         plugin.on_load(api).await.expect("load");
         let state = plugin.state().expect("state");
