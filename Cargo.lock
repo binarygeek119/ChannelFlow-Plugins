@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-commercialbrainz"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-emergency"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-news"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-offair"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-weather"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "axum",
