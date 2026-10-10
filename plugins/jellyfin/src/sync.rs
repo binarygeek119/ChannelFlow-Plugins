@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use channelflow_plugin_api::database::PluginDatabase;
-use channelflow_plugin_api::media::{CatalogItem, SyncCtx, SyncReport};
+use channelflow_plugin_api::media::{CatalogItem, MediaCatalog, SyncCtx, SyncReport};
 use channelflow_plugin_api::PluginError;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -112,6 +112,76 @@ impl CatalogCollector {
     }
 }
 
+/// Jellyfin's item type mapped to a base-catalog kind (the ones the Media page
+/// lists), or `None` for items the catalog does not show.
+fn catalog_kind(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "Movie" => Some("movie"),
+        "Series" => Some("series"),
+        "MusicAlbum" => Some("album"),
+        "MusicArtist" => Some("artist"),
+        "MusicVideo" => Some("musicvideo"),
+        _ => None,
+    }
+}
+
+/// Fill the base media catalog for one library from a light top-level query,
+/// reporting the titles first and then the posters as they arrive. The heavy
+/// per-item detail sync below leaves the catalog alone.
+async fn sync_catalog(
+    client: &JellyfinClient,
+    ctx: &SyncCtx,
+    library: &channelflow_plugin_api::media::Library,
+    catalog: &std::sync::Arc<dyn MediaCatalog>,
+) -> Result<(), String> {
+    let mut items: Vec<CatalogItem> = Vec::new();
+    for raw in client.catalog(&library.remote_id).await.map_err(|error| error.0)? {
+        let Some(kind) = catalog_kind(raw.get("Type").and_then(Value::as_str).unwrap_or("")) else {
+            continue;
+        };
+        let Some(remote) = raw.get("Id").and_then(Value::as_str) else {
+            continue;
+        };
+        let title = raw.get("Name").and_then(Value::as_str).unwrap_or("");
+        let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
+        let overview = raw.get("Overview").and_then(Value::as_str).map(str::to_string);
+        items.push(
+            CatalogItem::new(kind, remote, title)
+                .year(year)
+                .overview(overview)
+                .library(&library.name),
+        );
+    }
+
+    catalog
+        .replace_library(ctx.connection_id, &library.name, items.clone())
+        .await?;
+
+    let mut waiting = 0usize;
+    let mut last = std::time::Instant::now();
+    for index in 0..items.len() {
+        if matches!(items[index].kind.as_str(), "movie" | "series" | "musicvideo") {
+            let remote = items[index].remote_id.clone();
+            let kind = items[index].kind.clone();
+            if let Ok(Some(path)) = write_poster(ctx, client, &remote, &kind, &remote).await {
+                items[index].poster_path = Some(path);
+                waiting += 1;
+            }
+        }
+        if waiting > 0 && last.elapsed() >= std::time::Duration::from_secs(2) {
+            catalog
+                .replace_library(ctx.connection_id, &library.name, items.clone())
+                .await?;
+            waiting = 0;
+            last = std::time::Instant::now();
+        }
+    }
+    catalog
+        .replace_library(ctx.connection_id, &library.name, items)
+        .await?;
+    Ok(())
+}
+
 pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
     let progress = progress_state();
     {
@@ -157,10 +227,16 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
             state.current = 0;
             state.total = 0;
         }
+        // Fill the base Media page's catalog from a light top-level query
+        // before the heavy per-item sync, so a big library does not hold it up.
+        if let Some(catalog) = &ctx.catalog {
+            if let Err(error) = sync_catalog(&client, ctx, library, catalog).await {
+                tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
+                report.errors += 1;
+            }
+        }
         let mut offset = 0usize;
         let mut collector = CatalogCollector::default();
-        let mut flushed = 0usize;
-        let mut last_flush = std::time::Instant::now();
         loop {
             let page = match client.items(&library.remote_id, offset).await {
                 Ok(page) => page,
@@ -203,46 +279,11 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
                     state.errors = report.errors;
                 }
             }
-            // Report to the base catalog as items accumulate, so a big library
-            // (a long TV scan) shows up on the Media page before it finishes.
-            // Throttled so a library is not fully re-written on every page.
-            if let Some(catalog) = &ctx.catalog {
-                if collector.items.len() > flushed
-                    && last_flush.elapsed() >= std::time::Duration::from_secs(2)
-                {
-                    match catalog
-                        .replace_library(ctx.connection_id, &library.name, collector.items.clone())
-                        .await
-                    {
-                        Ok(_) => {
-                            flushed = collector.items.len();
-                            last_flush = std::time::Instant::now();
-                        }
-                        Err(error) => {
-                            tracing::warn!(error = %error, "jellyfin: could not update the base media catalog");
-                            report.errors += 1;
-                        }
-                    }
-                }
-            }
+            // The catalog is filled by sync_catalog() before this loop; the
+            // heavy per-item detail below does not report to it.
             offset += PAGE;
             if offset >= page.total_record_count {
                 break;
-            }
-        }
-        // Final report for this library: the full set (so anything that dropped
-        // out is pruned), even when nothing new accumulated.
-        if let Some(catalog) = &ctx.catalog {
-            if let Err(error) = catalog
-                .replace_library(
-                    ctx.connection_id,
-                    &library.name,
-                    std::mem::take(&mut collector.items),
-                )
-                .await
-            {
-                tracing::warn!(error = %error, "jellyfin: could not update the base media catalog");
-                report.errors += 1;
             }
         }
         {
