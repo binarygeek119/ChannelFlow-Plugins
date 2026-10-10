@@ -1,0 +1,41 @@
+<div class="panel">
+  <div class="panel-head">
+    <h2>Past Tense News</h2>
+    <span class="count" id="ptn-count"></span>
+  </div>
+  <p class="hint">
+    Point ChannelFlow at a folder of news <strong>events</strong>. Each event is its own folder —
+    <code>1992 LA Riots News coverage</code>, <code>Apollo 11 News coverage</code> — and holds that
+    event's coverage videos (<code>1992 Los Angeles riots news coverage.mkv</code>,
+    <code>NBC News Coverage of Apollo 11 Part 11.mkv</code>). Every event becomes one
+    <strong>Past Tense News</strong> item, shown on the Media page like a TV show without seasons.
+    A <code>poster.jpg</code> / <code>poster.png</code> in the event folder is its artwork.
+  </p>
+  <form id="ptn-form" class="ms-form" autocomplete="off">
+    <div class="field">
+      <label class="field-label" for="ptn-name">Connection name</label>
+      <input id="ptn-name" type="text" placeholder="Past Tense News" required>
+    </div>
+    <div class="field">
+      <label class="field-label" for="ptn-path">Events folder</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input id="ptn-path" type="text" placeholder="/media/past-tense-news" required>
+        <button type="button" class="ghost" id="ptn-load">Load</button>
+      </div>
+      <div id="ptn-browser" class="ptn-browser"></div>
+      <span class="field-hint">Type a path, or click through the folders below to find the one holding the event folders.</span>
+    </div>
+    <div class="ms-form-actions">
+      <button type="submit" class="primary" id="ptn-create">Add folder</button>
+    </div>
+    <p class="field-note" id="ptn-result"></p>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>News folders</h2>
+  </div>
+  <p class="hint">Each added folder is scanned into the media database as its own Past Tense News items.</p>
+  <div id="ptn-connections"></div>
+</div>

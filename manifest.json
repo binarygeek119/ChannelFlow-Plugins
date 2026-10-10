@@ -1,5 +1,33 @@
 [
   {
+    "id": "com.channelflow.pasttense",
+    "guid": "com.channelflow.pasttense",
+    "name": "Past Tense News",
+    "description": "Home-movie news coverage played as live breaking news: pick a folder of events, each event folder holds its coverage videos",
+    "owner": "ChannelFlow",
+    "category": "catalog",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T00:00:00Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.0/com.channelflow.pasttense-v2.0.0-linux-x86_64.zip",
+            "size": 0
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.0/com.channelflow.pasttense-v2.0.0-windows-x86_64.zip",
+            "size": 0
+          }
+        }
+      }
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.pasttense.png"
+  },
+  {
     "id": "com.channelflow.local",
     "guid": "com.channelflow.local",
     "name": "Local Files",
