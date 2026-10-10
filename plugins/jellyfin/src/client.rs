@@ -41,9 +41,18 @@ impl JellyfinClient {
     }
 
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        // Send the token both ways. Jellyfin accepts the legacy
+        // `X-Emby-Token` header and the standard
+        // `Authorization: MediaBrowser Token="…"`; different versions and
+        // reverse proxies honor one or the other, and a valid key that only
+        // one form satisfies looked like a rejected key.
         self.http
             .get(format!("{}{}", self.base, path))
             .header("X-Emby-Token", &self.token)
+            .header(
+                "Authorization",
+                format!("MediaBrowser Token=\"{}\"", self.token),
+            )
             .header("Accept", "application/json")
     }
 
