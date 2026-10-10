@@ -159,6 +159,8 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
         }
         let mut offset = 0usize;
         let mut collector = CatalogCollector::default();
+        let mut flushed = 0usize;
+        let mut last_flush = std::time::Instant::now();
         loop {
             let page = match client.items(&library.remote_id, offset).await {
                 Ok(page) => page,
@@ -201,13 +203,35 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
                     state.errors = report.errors;
                 }
             }
+            // Report to the base catalog as items accumulate, so a big library
+            // (a long TV scan) shows up on the Media page before it finishes.
+            // Throttled so a library is not fully re-written on every page.
+            if let Some(catalog) = &ctx.catalog {
+                if collector.items.len() > flushed
+                    && last_flush.elapsed() >= std::time::Duration::from_secs(2)
+                {
+                    match catalog
+                        .replace_library(ctx.connection_id, &library.name, collector.items.clone())
+                        .await
+                    {
+                        Ok(_) => {
+                            flushed = collector.items.len();
+                            last_flush = std::time::Instant::now();
+                        }
+                        Err(error) => {
+                            tracing::warn!(error = %error, "jellyfin: could not update the base media catalog");
+                            report.errors += 1;
+                        }
+                    }
+                }
+            }
             offset += PAGE;
             if offset >= page.total_record_count {
                 break;
             }
         }
-        // The base's Media page reads its own catalog, so report this library's
-        // synced items once the library's pages are done.
+        // Final report for this library: the full set (so anything that dropped
+        // out is pruned), even when nothing new accumulated.
         if let Some(catalog) = &ctx.catalog {
             if let Err(error) = catalog
                 .replace_library(
