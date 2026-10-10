@@ -140,6 +140,24 @@
             "size": 2128429
           }
         }
+      },
+      {
+        "version": "2.0.4",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T07:54:13Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/jellyfin-v2.0.4/com.channelflow.jellyfin-v2.0.4-linux-x86_64.zip",
+            "checksum": "sha256:2cc47236c6dee7c9249fc78ed7a0c88dfdd5a79235b5c2cca717e38d928fa93b",
+            "size": 2252336
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/jellyfin-v2.0.4/com.channelflow.jellyfin-v2.0.4-windows-x86_64.zip",
+            "checksum": "sha256:c467f6a73f0db2e92e634c20835840905e6fa211839aa44ef8694fdf576f8ffb",
+            "size": 2142193
+          }
+        }
       }
     ]
   },
