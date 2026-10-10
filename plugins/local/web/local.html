@@ -1,0 +1,49 @@
+<div class="panel">
+  <div class="panel-head">
+    <h2>Local Files</h2>
+    <span class="count" id="local-count"></span>
+  </div>
+  <p class="hint">
+    Add folders on this machine as a media source — no media server. Browse to the folder, say
+    what's in it, and ChannelFlow reads the
+    <a href="https://jellyfin.org/docs/general/server/metadata/nfo/" target="_blank" rel="noopener">Jellyfin-format
+    <code>.nfo</code> files</a> (title, year, plot) and uses <code>poster.jpg</code> /
+    <code>poster.png</code> as the artwork.
+  </p>
+  <form id="local-form" class="ms-form" autocomplete="off">
+    <div class="field">
+      <label class="field-label" for="local-name">Connection name</label>
+      <input id="local-name" type="text" placeholder="Home Movies" required>
+    </div>
+    <div class="field">
+      <label class="field-label" for="local-kind">What's in this folder?</label>
+      <select id="local-kind">
+        <option value="movies">Movies</option>
+        <option value="tv">TV Shows</option>
+        <option value="music">Music</option>
+        <option value="musicvideos">Music Videos</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label" for="local-path">Folder path</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input id="local-path" type="text" placeholder="/media/movies" required>
+        <button type="button" class="ghost" id="local-load">Load</button>
+      </div>
+      <div id="local-browser" class="local-browser"></div>
+      <span class="field-hint">Type a path, or click through the folders below to find it.</span>
+    </div>
+    <div class="ms-form-actions">
+      <button type="submit" class="primary" id="local-create">Add folder</button>
+    </div>
+    <p class="field-note" id="local-result"></p>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Local connections</h2>
+  </div>
+  <p class="hint">Each added folder is synced into the Media catalog with a scan. Runs use the library scan task.</p>
+  <div id="local-connections"></div>
+</div>

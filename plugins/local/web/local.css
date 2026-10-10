@@ -1,0 +1,46 @@
+/* Local Files page: folder browser + connection rows. */
+.local-browser {
+    margin-top: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    max-height: 12rem;
+    overflow: auto;
+    padding: 0.35rem;
+}
+.local-browser .dir {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+.local-browser .dir:hover { background: #2c2c2c; }
+.local-browser .dir .path { color: var(--muted); font-size: 0.75rem; }
+.local-browser .dir .name { font-weight: 600; }
+#local-connections { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.local-conn {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--card-bg);
+}
+.local-conn .name { font-weight: 600; }
+.local-conn .path { color: var(--muted); font-size: 0.82rem; }
+.local-conn .kind {
+    color: var(--accent);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+}
+.local-conn .spacer { flex: 1; }

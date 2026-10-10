@@ -1,5 +1,33 @@
 [
   {
+    "id": "com.channelflow.local",
+    "guid": "com.channelflow.local",
+    "name": "Local Files",
+    "description": "A media source for files on this machine \u2014 no media server. Pick a folder, say what's in it, and ChannelFlow reads .nfo files and poster.jpg/png",
+    "owner": "ChannelFlow",
+    "category": "catalog",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T00:00:00Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.0/com.channelflow.local-v2.0.0-linux-x86_64.zip",
+            "size": 0
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.0/com.channelflow.local-v2.0.0-windows-x86_64.zip",
+            "size": 0
+          }
+        }
+      }
+    ],
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.local.png"
+  },
+  {
     "id": "com.channelflow.lists",
     "guid": "com.channelflow.lists",
     "name": "Lists",
