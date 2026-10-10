@@ -37,6 +37,7 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
         .route("/music/artists", get(music_artists))
         .route("/music/albums", get(music_albums))
         .route("/music/albums/{id}/tracks", get(album_tracks))
+        .route("/music/videos", get(music_videos))
         .route("/item/{jellyfin_id}/detail", get(item_detail))
         .route(
             "/items/{id}/sources",
@@ -187,6 +188,15 @@ async fn album_tracks(State(state): State<Arc<RouteState>>, Path(id): Path<i64>)
     match media.album_tracks(id).await {
         Ok(tracks) => Json(json!({ "track_count": tracks.len(), "tracks": tracks }))
             .into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+/// The music-video rows with their artists (for artist → videos browsing).
+async fn music_videos(State(state): State<Arc<RouteState>>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.music_videos().await {
+        Ok(videos) => Json(json!({ "videos": videos })).into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
     }
 }

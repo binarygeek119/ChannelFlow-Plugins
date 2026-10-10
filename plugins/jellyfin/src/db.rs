@@ -794,6 +794,23 @@ impl MediaDb {
             .await
     }
 
+    /// Every music-video row with its artist: `{ id, title, year,
+    /// poster_path, artist_id, artist_name }` — the video equivalent of
+    /// `music_albums`, so an artist's page can list their videos too.
+    pub async fn music_videos(&self) -> JfResult<Vec<Value>> {
+        let mvs = self.t("music_videos");
+        let items = self.t("media_items");
+        self.inner
+            .fetch(&format!(
+                "SELECT m.id, m.title, m.year, m.poster_path, mv.artist_id, \
+                        art.title AS artist_name \
+                 FROM {mvs} mv JOIN {items} m ON m.id = mv.item_id \
+                 LEFT JOIN {items} art ON art.id = mv.artist_id \
+                 ORDER BY lower(m.title), m.title"
+            ))
+            .await
+    }
+
     /// The rich row behind a Media-page item: the Jellyfin metadata, its
     /// genres, studios, and cast (in billing order) — what an item detail
     /// page shows. Looks the item up by its Jellyfin id.
