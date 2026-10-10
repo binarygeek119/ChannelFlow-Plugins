@@ -214,5 +214,35 @@
         }
       }
     ]
+  },
+  {
+    "id": "com.channelflow.emergency",
+    "guid": "com.channelflow.emergency",
+    "name": "Emergency Broadcast System",
+    "description": "How weather alerts overlay programming \u2014 off, cut-in, or a scrolling ticker",
+    "owner": "ChannelFlow",
+    "category": "presentation",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.emergency.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T06:26:51Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/emergency-v2.0.0/com.channelflow.emergency-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:3ea4a4f5e513eaf6611c5adb47206128862dcb5f84a4f271e1f0a6768d81e5a5",
+            "size": 256564
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/emergency-v2.0.0/com.channelflow.emergency-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:e87ac015795e96d50a192160780d132c93db9537861d25e51b451f28dcd7973b",
+            "size": 221493
+          }
+        }
+      }
+    ]
   }
 ]
