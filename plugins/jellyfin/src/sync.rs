@@ -167,7 +167,12 @@ async fn sync_catalog(
     let mut waiting = 0usize;
     let mut last = std::time::Instant::now();
     for index in 0..items.len() {
-        if matches!(items[index].kind.as_str(), "movie" | "series" | "musicvideo") {
+        // Posters the Media page shows: movies, shows, music videos, and —
+        // the music tab's — album covers and artist images.
+        if matches!(
+            items[index].kind.as_str(),
+            "movie" | "series" | "musicvideo" | "album" | "artist"
+        ) {
             let remote = items[index].remote_id.clone();
             let kind = items[index].kind.clone();
             if let Ok(Some(path)) = write_poster(ctx, client, &remote, &kind, &remote).await {
