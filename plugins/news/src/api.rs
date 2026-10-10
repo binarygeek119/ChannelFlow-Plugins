@@ -108,7 +108,13 @@ fn extract_headlines(body: &str, limit: usize) -> Vec<String> {
         let Some(start) = item.find("<title>") else { continue };
         let Some(end) = item[start..].find("</title>") else { continue };
         let raw = &item[start + "<title>".len()..start + end];
-        let title = unescape(raw).trim().to_string();
+        let trimmed = raw.trim();
+        let unwrapped = if trimmed.starts_with("<![CDATA[") && trimmed.ends_with("]]>") {
+            &trimmed["<![CDATA[".len()..trimmed.len() - "]]>".len()]
+        } else {
+            trimmed
+        };
+        let title = unescape(unwrapped).trim().to_string();
         if !title.is_empty() {
             headlines.push(title);
         }
@@ -140,7 +146,7 @@ mod tests {
     #[test]
     fn extracts_item_titles_only() {
         let body = "<rss><channel><title>Channel</title><item><title>First story</title></item>\
-            <item><title>Second &amp; longer story</title></item><item><title>Third</title></item></channel></rss>";
+            <item><title><![CDATA[Second &amp; longer story]]></title></item><item><title>Third</title></item></channel></rss>";
         let headlines = extract_headlines(body, 2);
         assert_eq!(headlines, ["First story", "Second & longer story"]);
     }
