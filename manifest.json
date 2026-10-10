@@ -184,5 +184,35 @@
         }
       }
     ]
+  },
+  {
+    "id": "com.channelflow.commercialbrainz",
+    "guid": "com.channelflow.commercialbrainz",
+    "name": "CommercialBrainz",
+    "description": "Ad avails synced from CommercialBrainz \u2014 the server, pool mode, and content filters",
+    "owner": "ChannelFlow",
+    "category": "commercials",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.commercialbrainz.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T06:25:01Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/commercialbrainz-v2.0.0/com.channelflow.commercialbrainz-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:bcabf11d8df0c55d7ec6c74d2d483b23f2d25e0a116e69f593bb91709ef5dc05",
+            "size": 257745
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/commercialbrainz-v2.0.0/com.channelflow.commercialbrainz-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:0435e8cfb31e14d74ecd670be8bcb440957216a12397ca77897577e6882c4834",
+            "size": 221511
+          }
+        }
+      }
+    ]
   }
 ]
