@@ -1,7 +1,14 @@
-//! Library sync: page every enabled library, upsert a canonical item per
-//! dedup key, restate each per-connection source, replace its files and
-//! streams, write the poster only when it changed, then mark every source the
-//! server no longer reports as missing.
+//! Library sync, in two phases, one media library type at a time.
+//!
+//! **Phase 1 — metadata and paths.** Every enabled library is walked in full
+//! (moving on to the next library type when it finishes): items, sources,
+//! files, streams, people and hierarchies are stored, and the base Media
+//! catalog gets the titles. No images are fetched.
+//!
+//! **Phase 2 — images.** Every library is walked again: posters (for movies,
+//! series and music videos) and every cast member's picture are fetched, saved
+//! under `<config>/Images/`, and their paths written into the plugin's tables
+//! and the base catalog.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -76,42 +83,6 @@ pub fn stage_for(collection_type: Option<&str>) -> (&'static str, &'static str) 
     }
 }
 
-/// Collects the normalized items one library reported, deduplicated, ready to
-/// hand to the base's media catalog at the end of a library's sync.
-#[derive(Default)]
-struct CatalogCollector {
-    items: Vec<CatalogItem>,
-    seen: std::collections::HashSet<String>,
-}
-
-impl CatalogCollector {
-    /// Queue one catalog item unless an identical (kind, remote id) row is
-    /// already present — albums/artists repeat on every track of a list.
-    fn push(
-        &mut self,
-        kind: &str,
-        remote_id: &str,
-        title: &str,
-        year: Option<i32>,
-        overview: Option<String>,
-        poster_path: Option<String>,
-        library: &str,
-    ) {
-        let key = format!("{kind}:{remote_id}");
-        if self.seen.contains(&key) {
-            return;
-        }
-        self.seen.insert(key);
-        self.items.push(
-            CatalogItem::new(kind, remote_id, title)
-                .year(year)
-                .overview(overview)
-                .poster_path(poster_path)
-                .library(library),
-        );
-    }
-}
-
 /// Jellyfin's item type mapped to a base-catalog kind (the ones the Media page
 /// lists), or `None` for items the catalog does not show.
 fn catalog_kind(type_name: &str) -> Option<&'static str> {
@@ -147,14 +118,22 @@ fn provider_match_id(raw: &Value) -> Option<String> {
     None
 }
 
-/// Fill the base media catalog for one library from a light top-level query,
-/// reporting the titles first and then the posters as they arrive. The heavy
-/// per-item detail sync below leaves the catalog alone.
+/// Which pass a `walk` is doing: either metadata (phase 1) or images (phase 2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Metadata,
+    Images,
+}
+
+/// Fill the base media catalog for one library from a light top-level query.
+/// Phase 1 (`with_images=false`) reports titles straight away; phase 2
+/// (`with_images=true`) adds the posters as they are fetched.
 async fn sync_catalog(
     client: &JellyfinClient,
     ctx: &SyncCtx,
     library: &channelflow_plugin_api::media::Library,
     catalog: &std::sync::Arc<dyn MediaCatalog>,
+    with_images: bool,
 ) -> Result<(), String> {
     let mut items: Vec<CatalogItem> = Vec::new();
     for raw in client.catalog(&library.remote_id).await.map_err(|error| error.0)? {
@@ -174,6 +153,11 @@ async fn sync_catalog(
                 .library(&library.name)
                 .match_id(provider_match_id(&raw)),
         );
+    }
+
+    if !with_images {
+        catalog.replace_library(ctx.connection_id, &library.name, items).await?;
+        return Ok(());
     }
 
     catalog
@@ -241,78 +225,30 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
     };
     let synced_at = chrono::Utc::now().to_rfc3339();
 
+    // ---- Phase 1: metadata and paths, one library type at a time. ----------
     for library in &ctx.enabled_libraries {
-        let (stage, label) = stage_for(library.collection_type.as_deref());
-        {
-            let mut state = progress.lock().unwrap();
-            state.stage = stage.to_string();
-            state.label = label.to_string();
-            state.current = 0;
-            state.total = 0;
-        }
-        // Fill the base Media page's catalog from a light top-level query
-        // before the heavy per-item sync, so a big library does not hold it up.
+        start_library(&progress, library);
         if let Some(catalog) = &ctx.catalog {
-            if let Err(error) = sync_catalog(&client, ctx, library, catalog).await {
+            if let Err(error) = sync_catalog(&client, ctx, library, catalog, false).await {
                 tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
                 report.errors += 1;
             }
         }
-        let mut offset = 0usize;
-        let mut collector = CatalogCollector::default();
-        loop {
-            let page = match client.items(&library.remote_id, offset).await {
-                Ok(page) => page,
-                Err(error) => {
-                    tracing::warn!(library = %library.name, %error, "jellyfin: library page failed");
-                    report.errors += 1;
-                    {
-                        let mut state = progress.lock().unwrap();
-                        state.errors = report.errors;
-                    }
-                    break;
-                }
-            };
-            {
-                let mut state = progress.lock().unwrap();
-                state.total = page.total_record_count as u64;
-            }
-            for raw in &page.items {
-                {
-                    let mut state = progress.lock().unwrap();
-                    state.current += 1;
-                }
-                match upsert(&media, ctx, &client, raw, &synced_at, library, &mut collector).await {
-                    Ok(created) => {
-                        if created {
-                            report.added += 1;
-                        } else {
-                            report.updated += 1;
-                        }
-                    }
-                    Err(error) => {
-                        tracing::warn!(error = %error, "jellyfin: item upsert failed");
-                        report.errors += 1;
-                    }
-                }
-                {
-                    let mut state = progress.lock().unwrap();
-                    state.added = report.added;
-                    state.updated = report.updated;
-                    state.errors = report.errors;
-                }
-            }
-            // The catalog is filled by sync_catalog() before this loop; the
-            // heavy per-item detail below does not report to it.
-            offset += PAGE;
-            if offset >= page.total_record_count {
-                break;
+        walk(&client, ctx, &media, library, &synced_at, Phase::Metadata, &progress, &mut report).await;
+        mark_done(&progress);
+    }
+
+    // ---- Phase 2: images (posters + people), one library type at a time. ---
+    for library in &ctx.enabled_libraries {
+        start_library(&progress, library);
+        if let Some(catalog) = &ctx.catalog {
+            if let Err(error) = sync_catalog(&client, ctx, library, catalog, true).await {
+                tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
+                report.errors += 1;
             }
         }
-        {
-            let mut state = progress.lock().unwrap();
-            state.done += 1;
-        }
+        walk(&client, ctx, &media, library, &synced_at, Phase::Images, &progress, &mut report).await;
+        mark_done(&progress);
     }
 
     match media.mark_absent_missing(ctx.connection_id).await {
@@ -332,14 +268,91 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
     report
 }
 
-async fn upsert(
+fn start_library(progress: &'static std::sync::Mutex<SyncProgress>, library: &channelflow_plugin_api::media::Library) {
+    let (stage, label) = stage_for(library.collection_type.as_deref());
+    let mut state = progress.lock().unwrap();
+    state.stage = stage.to_string();
+    state.label = label.to_string();
+    state.current = 0;
+    state.total = 0;
+}
+
+fn mark_done(progress: &'static std::sync::Mutex<SyncProgress>) {
+    let mut state = progress.lock().unwrap();
+    state.done += 1;
+}
+
+async fn walk(
+    client: &JellyfinClient,
+    ctx: &SyncCtx,
+    media: &MediaDb,
+    library: &channelflow_plugin_api::media::Library,
+    synced_at: &str,
+    phase: Phase,
+    progress: &'static std::sync::Mutex<SyncProgress>,
+    report: &mut SyncReport,
+) {
+    let mut offset = 0usize;
+    loop {
+        let page = match client.items(&library.remote_id, offset).await {
+            Ok(page) => page,
+            Err(error) => {
+                tracing::warn!(library = %library.name, %error, "jellyfin: library page failed");
+                report.errors += 1;
+                {
+                    let mut state = progress.lock().unwrap();
+                    state.errors = report.errors;
+                }
+                break;
+            }
+        };
+        {
+            let mut state = progress.lock().unwrap();
+            state.total = page.total_record_count as u64;
+        }
+        for raw in &page.items {
+            {
+                let mut state = progress.lock().unwrap();
+                state.current += 1;
+            }
+            let result = match phase {
+                Phase::Metadata => metadata_upsert(media, ctx, raw, synced_at).await,
+                Phase::Images => image_upsert(media, ctx, client, raw).await.map(|_| false),
+            };
+            match result {
+                Ok(created) if phase == Phase::Metadata => {
+                    if created {
+                        report.added += 1;
+                    } else {
+                        report.updated += 1;
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error, "jellyfin: item upsert failed");
+                    report.errors += 1;
+                }
+            }
+            {
+                let mut state = progress.lock().unwrap();
+                state.added = report.added;
+                state.updated = report.updated;
+                state.errors = report.errors;
+            }
+        }
+        offset += PAGE;
+        if offset >= page.total_record_count {
+            break;
+        }
+    }
+}
+
+/// Phase 1: store an item's metadata and paths, without fetching any image.
+async fn metadata_upsert(
     media: &MediaDb,
     ctx: &SyncCtx,
-    client: &JellyfinClient,
     raw: &Value,
     synced_at: &str,
-    library: &channelflow_plugin_api::media::Library,
-    collector: &mut CatalogCollector,
 ) -> Result<bool, PluginError> {
     let jellyfin_id = raw
         .get("Id")
@@ -348,8 +361,6 @@ async fn upsert(
     let media_type = map_type(raw.get("Type").and_then(Value::as_str).unwrap_or(""));
     let title = raw.get("Name").and_then(Value::as_str).unwrap_or("").to_string();
     let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
-    let overview = raw.get("Overview").and_then(Value::as_str).map(str::to_string);
-
     let dedup_key = if media_type == "episode" {
         dedup::episode_key(
             raw.get("SeriesName").and_then(Value::as_str).unwrap_or(""),
@@ -361,13 +372,6 @@ async fn upsert(
         dedup::key(&media_type, &title, year)
     };
 
-    // Only the items that appear on the base Media page get a poster. Fetching
-    // one for every episode/track was the bulk of a big library's scan time.
-    let poster_path = if matches!(media_type, "movie" | "series" | "musicvideo") {
-        write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await?
-    } else {
-        None
-    };
     let (item_id, created) = media
         .upsert_item_by_source(
             ctx.connection_id,
@@ -376,7 +380,7 @@ async fn upsert(
             &media_type,
             &title,
             year,
-            poster_path.as_deref(),
+            None,
             synced_at,
         )
         .await
@@ -397,35 +401,72 @@ async fn upsert(
         .await
         .map_err(plugin_database)?;
 
-    // The base's Media page shows stored items per kind, so a movie becomes a
-    // Movies row, a series a TV row, an album or artist a Music row, and a
-    // music video a Music Videos row. Episodes/seasons stay under their series.
-    if ctx.catalog.is_some() {
-        match media_type {
-            "movie" => collector.push("movie", &dedup_key, &title, year, overview, poster_path, &library.name),
-            "series" => collector.push("series", &dedup_key, &title, year, overview, poster_path, &library.name),
-            "musicvideo" => collector.push("musicvideo", &dedup_key, &title, year, overview, poster_path, &library.name),
-            "track" => {
-                if let Some(album) = album_title(raw) {
-                    collector.push("album", &dedup::key("album", &album, year), &album, year, None, None, &library.name);
-                }
-                if let Some(artist) = album_artist(raw) {
-                    collector.push("artist", &dedup::key("artist", &artist, None), &artist, None, None, None, &library.name);
-                }
-            }
-            _ => {}
-        }
-    }
-
     // Jellyfin nests every track under an album; build the album → artist
     // nodes and link this track into them (best-effort — a lone track stays
     // ungrouped rather than failing the sync).
     if let Err(error) =
-        ensure_hierarchy(&media, raw, item_id, &media_type, synced_at).await
+        ensure_hierarchy(media, raw, item_id, &media_type, synced_at).await
     {
         tracing::warn!(error = %error.0, "jellyfin: could not build album/track hierarchy");
     }
+    // Cast metadata: people rows + item links. Their images arrive in phase 2.
+    media.upsert_people(item_id, raw).await.map_err(plugin_database)?;
+
     Ok(created)
+}
+
+/// Phase 2: fetch posters and cast pictures, save them under
+/// `<config>/Images/`, and record the paths in the database.
+async fn image_upsert(
+    media: &MediaDb,
+    ctx: &SyncCtx,
+    client: &JellyfinClient,
+    raw: &Value,
+) -> Result<(), PluginError> {
+    let jellyfin_id = raw
+        .get("Id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| PluginError::new("item has no Id"))?;
+    let media_type = map_type(raw.get("Type").and_then(Value::as_str).unwrap_or(""));
+    let title = raw.get("Name").and_then(Value::as_str).unwrap_or("").to_string();
+    let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
+    let dedup_key = if media_type == "episode" {
+        dedup::episode_key(
+            raw.get("SeriesName").and_then(Value::as_str).unwrap_or(""),
+            None,
+            raw.get("ParentIndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
+            raw.get("IndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
+        )
+    } else {
+        dedup::key(&media_type, &title, year)
+    };
+
+    // Posters for the kinds the Media page shows.
+    if matches!(media_type, "movie" | "series" | "musicvideo") {
+        if let Some(path) = write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await? {
+            media
+                .set_poster(ctx.connection_id, jellyfin_id, &path)
+                .await
+                .map_err(plugin_database)?;
+        }
+    }
+    // Cast pictures, saved under <config>/Images/people/.
+    if let Some(people) = raw.get("People").and_then(Value::as_array) {
+        for person in people {
+            let name = person.get("Name").and_then(Value::as_str).unwrap_or("").trim();
+            if name.is_empty() {
+                continue;
+            }
+            let person_id = person.get("Id").and_then(Value::as_str).unwrap_or("");
+            if let Some(path) = write_people_image(ctx, client, person_id, name).await? {
+                media
+                    .set_people_image(name, &path)
+                    .await
+                    .map_err(plugin_database)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Jellyfin returns `Audio` items (tracks) with their `Album`, `AlbumArtist`
@@ -595,6 +636,53 @@ async fn write_poster(
     Ok(Some(path.display().to_string()))
 }
 
+/// A cast member's picture, saved under `<config>/Images/people/` keyed by the
+/// person's Jellyfin id (or a sanitised name when no id is exposed).
+async fn write_people_image(
+    ctx: &SyncCtx,
+    client: &JellyfinClient,
+    person_id: &str,
+    name: &str,
+) -> Result<Option<String>, PluginError> {
+    let bytes = match client.person_image(person_id, name).await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
+    let file = if person_id.trim().is_empty() {
+        sanitise_filename(name)
+    } else {
+        person_id.trim().to_string()
+    };
+    let dir = ctx.image_root.join("people");
+    let path = dir.join(format!("{file}.jpg"));
+    if path.exists() {
+        match std::fs::read(&path) {
+            Ok(existing) if sha256(&existing) == sha256(&bytes) => {
+                return Ok(Some(path.display().to_string()));
+            }
+            _ => {}
+        }
+    }
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
+    std::fs::write(&path, &bytes)
+        .map_err(|error| PluginError::new(format!("writing {}: {error}", path.display())))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// A filesystem-safe name fallback for a person without a Jellyfin id.
+fn sanitise_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn sha256(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -673,11 +761,15 @@ mod tests {
     }
 
     #[test]
-    fn stages_map_from_collection_types() {
-        assert_eq!(stage_for(Some("movies")), ("movies", "Movies"));
-        assert_eq!(stage_for(Some("TVShows")), ("tv", "TV"));
-        assert_eq!(stage_for(Some("music")), ("music", "Music"));
-        assert_eq!(stage_for(Some("musicvideos")), ("music", "Music"));
-        assert_eq!(stage_for(None), ("library", "Library"));
+    fn provider_ids_become_match_ids() {
+        assert_eq!(
+            provider_match_id(&serde_json::json!({ "ProviderIds": { "Imdb": "tt123" } })).as_deref(),
+            Some("imdb:tt123")
+        );
+        assert_eq!(
+            provider_match_id(&serde_json::json!({ "ProviderIds": { "Tmdb": "456" } })).as_deref(),
+            Some("tmdb:456")
+        );
+        assert_eq!(provider_match_id(&serde_json::json!({})), None);
     }
 }

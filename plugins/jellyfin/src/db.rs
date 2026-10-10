@@ -471,6 +471,102 @@ impl MediaDb {
             .unwrap_or(0))
     }
 
+    /// Phase 2: record a freshly-written poster on the item(s) this source
+    /// reported. Keyed by the source's own jellyfin id so a re-walk never
+    /// touches another item.
+    pub async fn set_poster(
+        &self,
+        connection_id: i64,
+        jellyfin_id: &str,
+        poster_path: &str,
+    ) -> JfResult<u64> {
+        let items = self.t("media_items");
+        let sources = self.t("item_sources");
+        self.inner
+            .execute_params(
+                &format!(
+                    "UPDATE {items} SET poster_path = $1 WHERE id IN \
+                     (SELECT item_id FROM {sources} \
+                      WHERE connection_id = $2::integer AND jellyfin_id = $3)"
+                ),
+                &[
+                    Value::String(poster_path.to_string()),
+                    Value::from(connection_id),
+                    Value::String(jellyfin_id.to_string()),
+                ],
+            )
+            .await
+    }
+
+    /// Phase 1: record an item's cast — a row per person (by name) plus the
+    /// item link with role/character/order. People images are fetched in
+    /// phase 2 and stored on the same rows.
+    pub async fn upsert_people(&self, item_id: i64, raw: &Value) -> JfResult<()> {
+        let Some(people) = raw.get("People").and_then(Value::as_array) else {
+            return Ok(());
+        };
+        let people_t = self.t("people");
+        let links = self.t("item_people");
+        for (index, person) in people.iter().enumerate() {
+            let name = person.get("Name").and_then(Value::as_str).unwrap_or("").trim();
+            if name.is_empty() {
+                continue;
+            }
+            self.inner
+                .execute_params(
+                    &format!("INSERT INTO {people_t} (name) VALUES ($1) ON CONFLICT (name) DO NOTHING"),
+                    &[Value::String(name.to_string())],
+                )
+                .await?;
+            let row = self
+                .inner
+                .fetch_params(
+                    &format!("SELECT id FROM {people_t} WHERE name = $1"),
+                    &[Value::String(name.to_string())],
+                )
+                .await?;
+            let Some(row) = row.first() else { continue };
+            let Some(person_id) = row["id"].as_i64() else { continue };
+            let role_type = person.get("Type").and_then(Value::as_str).unwrap_or("").to_string();
+            let role = person.get("Role").and_then(Value::as_str).unwrap_or("").to_string();
+            let sort_order = person
+                .get("SortOrder")
+                .and_then(Value::as_i64)
+                .unwrap_or(index as i64);
+            self.inner
+                .execute_params(
+                    &format!(
+                        "INSERT INTO {links} (item_id, person_id, role_type, role, character, sort_order) \
+                         VALUES ($1::bigint, $2::bigint, $3, $4, $4, $5) \
+                         ON CONFLICT (item_id, person_id, role_type, role) DO NOTHING"
+                    ),
+                    &[
+                        Value::from(item_id),
+                        Value::from(person_id),
+                        Value::String(role_type),
+                        Value::String(role),
+                        Value::from(sort_order),
+                    ],
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Phase 2: record a freshly-written person image on that person's row.
+    pub async fn set_people_image(&self, name: &str, image_path: &str) -> JfResult<u64> {
+        let people = self.t("people");
+        self.inner
+            .execute_params(
+                &format!("UPDATE {people} SET image_path = $1 WHERE name = $2"),
+                &[
+                    Value::String(image_path.to_string()),
+                    Value::String(name.to_string()),
+                ],
+            )
+            .await
+    }
+
     /// Replace a source's files (and their streams/chapters) from the raw
     /// Jellyfin media sources.
     pub async fn replace_files(&self, source_id: i64, raw: &Value) -> JfResult<u64> {

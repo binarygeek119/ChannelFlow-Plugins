@@ -208,6 +208,27 @@ impl JellyfinClient {
             .map_err(|error| PluginError::new(format!("fetching {kind} image: {error}")))?;
         Ok(bytes.to_vec())
     }
+
+    /// A person's primary image, by their person id when known, else by name.
+    pub async fn person_image(&self, person_id: &str, name: &str) -> Result<Vec<u8>, PluginError> {
+        let path = if person_id.trim().is_empty() {
+            let encoded: String =
+                url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
+            format!("/Persons/{encoded}/Images/Primary")
+        } else {
+            format!("/Items/{}/Images/Primary", person_id.trim())
+        };
+        let bytes = self
+            .get(&path)
+            .send()
+            .await
+            .and_then(|response| response.error_for_status())
+            .map_err(|error| PluginError::new(format!("fetching person image: {error}")))?
+            .bytes()
+            .await
+            .map_err(|error| PluginError::new(format!("fetching person image: {error}")))?;
+        Ok(bytes.to_vec())
+    }
 }
 
 #[derive(Debug, Deserialize)]
