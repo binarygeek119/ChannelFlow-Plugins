@@ -533,7 +533,9 @@ impl MediaDb {
                         jf_num(&source, "RunTimeTicks"),
                         Value::from(if source.get("IsRemote").and_then(|v| v.as_bool()).unwrap_or(false) { 1 } else { 0 }),
                         Value::String(jf(&source, "Protocol")),
-                        Value::String(jf(&source, "Height")),
+                        // Height is numeric; jf() would hand an empty string to
+                        // an integer column when Jellyfin omits it.
+                        Value::from(source.get("Height").and_then(|value| value.as_i64()).unwrap_or(0)),
                         Value::String(jf(&source, "VideoCodec")),
                         Value::String(jf(&source, "VideoRange")),
                     ],
