@@ -125,6 +125,28 @@ fn catalog_kind(type_name: &str) -> Option<&'static str> {
     }
 }
 
+/// A cross-source identity from Jellyfin's `ProviderIds`, so the base can match
+/// the same media across sources (tmdb/imdb for video, MusicBrainz for music).
+fn provider_match_id(raw: &Value) -> Option<String> {
+    let providers = raw.get("ProviderIds")?;
+    for key in [
+        "Imdb",
+        "Tmdb",
+        "Tvdb",
+        "MusicBrainzAlbum",
+        "MusicBrainzArtist",
+        "MusicBrainzReleaseGroup",
+    ] {
+        if let Some(value) = providers.get(key).and_then(Value::as_str) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(format!("{}:{}", key.to_ascii_lowercase(), value));
+            }
+        }
+    }
+    None
+}
+
 /// Fill the base media catalog for one library from a light top-level query,
 /// reporting the titles first and then the posters as they arrive. The heavy
 /// per-item detail sync below leaves the catalog alone.
@@ -149,7 +171,8 @@ async fn sync_catalog(
             CatalogItem::new(kind, remote, title)
                 .year(year)
                 .overview(overview)
-                .library(&library.name),
+                .library(&library.name)
+                .match_id(provider_match_id(&raw)),
         );
     }
 

@@ -165,7 +165,7 @@ impl JellyfinClient {
     /// streams, people or chapters. It is fast, so a big TV library's full
     /// detail sync does not hold the Media page up.
     pub async fn catalog(&self, library_id: &str) -> Result<Vec<serde_json::Value>, PluginError> {
-        let fields = "Overview,ProductionYear";
+        let fields = "Overview,ProductionYear,ProviderIds";
         let types = "Movie,Series,MusicAlbum,MusicArtist,MusicVideo";
         let listing = if self.user_id.is_empty() {
             "/Items".to_string()
