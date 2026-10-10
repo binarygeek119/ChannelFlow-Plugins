@@ -14,6 +14,7 @@ routes under `/api/plugins/{id}`.
 | [`plugins/ai`](plugins/ai) | `com.channelflow.ai` | The AI Provider Suite — OpenAI-compatible endpoints, tests, and priority-ordered failover |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | ErsatzTV Transcoding Engine — ffmpeg and normalization settings |
 | [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract) |
+| [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media (1.0.0's EBS settings as a plugin) |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
 
 ## How the base builds against this repo

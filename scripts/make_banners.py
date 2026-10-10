@@ -174,6 +174,14 @@ PLUGINS = [
         "bottom": (212, 120, 60),  # amber-600
         "mark": (64, 20, 10),    # deep brown
     },
+    {
+        "id": "com.channelflow.offair",
+        "title": "Off Air",
+        "subtitle": "What plays when a channel has no scheduled media",
+        "top": (55, 61, 65),     # slate gray
+        "bottom": (30, 41, 59),  # deep navy
+        "mark": (235, 235, 235), # near-white play mark
+    },
 ]
 
 
