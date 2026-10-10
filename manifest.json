@@ -124,5 +124,35 @@
         }
       }
     ]
+  },
+  {
+    "id": "com.channelflow.offair",
+    "guid": "com.channelflow.offair",
+    "name": "Off Air",
+    "description": "What plays when a channel has no scheduled media \u2014 slate, color bars, or static, with music, noise, silence, or a beep",
+    "owner": "ChannelFlow",
+    "category": "presentation",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.offair.png",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-10T06:20:56Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/offair-v2.0.0/com.channelflow.offair-v2.0.0-linux-x86_64.zip",
+            "checksum": "sha256:47a107625de5af3eefac765452a1b50a6ce54b4975d87d15343a5c93efee89f9",
+            "size": 569897
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/offair-v2.0.0/com.channelflow.offair-v2.0.0-windows-x86_64.zip",
+            "checksum": "sha256:cec241c66fe50992e1839bc5438cd7f2fb4b62969f6685478b1d3d60f70be0e9",
+            "size": 607548
+          }
+        }
+      }
+    ]
   }
 ]
