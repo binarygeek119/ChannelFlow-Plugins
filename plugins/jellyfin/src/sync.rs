@@ -626,7 +626,7 @@ async fn write_poster(
     if path.exists() {
         match std::fs::read(&path) {
             Ok(existing) if sha256(&existing) == sha256(&bytes) => {
-                return Ok(Some(path.display().to_string()));
+                return Ok(Some(store_path(&ctx.image_root, &path)));
             }
             _ => {}
         }
@@ -635,7 +635,16 @@ async fn write_poster(
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
         .map_err(|error| PluginError::new(format!("writing {}: {error}", path.display())))?;
-    Ok(Some(path.display().to_string()))
+    Ok(Some(store_path(&ctx.image_root, &path)))
+}
+
+/// The form a stored image path takes: relative to the images root, as the
+/// web UI's `/api/media/image` expects (`posters/Movies/x.jpg`), never a
+/// host-dependent absolute or working-directory-relative path.
+fn store_path(image_root: &std::path::Path, path: &std::path::Path) -> String {
+    path.strip_prefix(image_root)
+        .map(|relative| relative.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string())
 }
 
 /// A cast member's picture, saved under `<config>/Images/people/` keyed by the
@@ -660,7 +669,7 @@ async fn write_people_image(
     if path.exists() {
         match std::fs::read(&path) {
             Ok(existing) if sha256(&existing) == sha256(&bytes) => {
-                return Ok(Some(path.display().to_string()));
+                return Ok(Some(store_path(&ctx.image_root, &path)));
             }
             _ => {}
         }
@@ -669,7 +678,7 @@ async fn write_people_image(
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
         .map_err(|error| PluginError::new(format!("writing {}: {error}", path.display())))?;
-    Ok(Some(path.display().to_string()))
+    Ok(Some(store_path(&ctx.image_root, &path)))
 }
 
 /// A filesystem-safe name fallback for a person without a Jellyfin id.
