@@ -57,7 +57,9 @@ impl JellyfinClient {
     }
 
     /// Distinguishes unreachable / bad url / auth failure so the UI can
-    /// explain what is wrong.
+    /// explain what is wrong. Auth tries both the header form and the
+    /// `?api_key=` query form; very new Jellyfin builds and some proxies
+    /// ignore the headers, and only one of the two forms is honored.
     pub async fn test(&self) -> TestVerdict {
         match self
             .http
@@ -69,7 +71,22 @@ impl JellyfinClient {
             Ok(response) if response.status().is_success() => {}
             Ok(_) => return TestVerdict::BadUrl,
         }
-        match self.get("/Users").send().await {
+        let header_ok = self.get("/Users").send().await;
+        match header_ok {
+            Ok(response) if response.status().is_success() => return TestVerdict::Ok,
+            Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {}
+            Ok(_) => return TestVerdict::BadUrl,
+            Err(_) => return TestVerdict::Unreachable,
+        }
+        // Headers were refused — try the API key on the query string, the way
+        // a browser test does.
+        match self
+            .http
+            .get(format!("{}/Users?api_key={}", self.base, self.token))
+            .header("Accept", "application/json")
+            .send()
+            .await
+        {
             Ok(response) if response.status().is_success() => TestVerdict::Ok,
             Ok(response) if response.status() == StatusCode::UNAUTHORIZED => TestVerdict::AuthFailed,
             Ok(_) => TestVerdict::BadUrl,
