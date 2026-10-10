@@ -182,6 +182,14 @@ PLUGINS = [
         "bottom": (30, 41, 59),  # deep navy
         "mark": (235, 235, 235), # near-white play mark
     },
+    {
+        "id": "com.channelflow.commercialbrainz",
+        "title": "CommercialBrainz",
+        "subtitle": "Ad avails synced from CommercialBrainz",
+        "top": (146, 64, 14),    # burnt orange
+        "bottom": (217, 119, 6), # amber-600
+        "mark": (46, 16, 4),     # deep brown
+    },
 ]
 
 
