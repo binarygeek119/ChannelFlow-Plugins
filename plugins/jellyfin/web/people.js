@@ -124,11 +124,11 @@ async function ensureSourceIndex() {
   return sourceIndex;
 }
 
-function personItemCard(item, matchKey) {
+function personItemCard(item, matchKey, posterPath) {
   const card = document.createElement("div");
   const clickable = Boolean(matchKey);
   card.className = "people-item" + (clickable ? "" : " unlinked");
-  const url = peoplePhotoUrl(item.poster_path);
+  const url = peoplePhotoUrl(posterPath || item.poster_path);
   const poster = url
     ? `<div class="people-item-poster" style="background-image:url('${escapeHtml(url)}')"></div>`
     : `<div class="people-item-poster people-item-poster-fallback"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="10" cy="10" r="2"/><path d="M4 18l4.5-4.5 3 3L16 12l4 4"/></svg></div>`;
@@ -215,11 +215,15 @@ async function renderPerson(name) {
   titles.className = "people-items";
   (person.items || []).forEach((item) => {
     const key = `jellyfin:${item.connection_id}:${item.jellyfin_id}`;
-    const matchKey = index[key] || null;
+    const entry = index[key] || null;
+    const matchKey = entry && entry.match_key ? entry.match_key : null;
+    // The catalog item carries the poster (the plugin's own rows usually do
+    // not), so borrow it when the plugin has none.
+    const poster = (entry && entry.poster_path) || item.poster_path || null;
     const dedup = matchKey || `${item.media_type}:${item.title}:${item.year}`;
     if (seen.has(dedup)) return;
     seen.add(dedup);
-    titles.appendChild(personItemCard(item, matchKey));
+    titles.appendChild(personItemCard(item, matchKey, poster));
   });
   if (!titles.children.length) {
     grid.appendChild(libraryCard('<p class="hint">No catalog titles for this person yet.</p>'));
