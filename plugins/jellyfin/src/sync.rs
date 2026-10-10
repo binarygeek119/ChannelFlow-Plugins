@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use channelflow_plugin_api::database::PluginDatabase;
-use channelflow_plugin_api::media::{SyncCtx, SyncReport};
+use channelflow_plugin_api::media::{CatalogItem, SyncCtx, SyncReport};
 use channelflow_plugin_api::PluginError;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -76,6 +76,42 @@ pub fn stage_for(collection_type: Option<&str>) -> (&'static str, &'static str) 
     }
 }
 
+/// Collects the normalized items one library reported, deduplicated, ready to
+/// hand to the base's media catalog at the end of a library's sync.
+#[derive(Default)]
+struct CatalogCollector {
+    items: Vec<CatalogItem>,
+    seen: std::collections::HashSet<String>,
+}
+
+impl CatalogCollector {
+    /// Queue one catalog item unless an identical (kind, remote id) row is
+    /// already present — albums/artists repeat on every track of a list.
+    fn push(
+        &mut self,
+        kind: &str,
+        remote_id: &str,
+        title: &str,
+        year: Option<i32>,
+        overview: Option<String>,
+        poster_path: Option<String>,
+        library: &str,
+    ) {
+        let key = format!("{kind}:{remote_id}");
+        if self.seen.contains(&key) {
+            return;
+        }
+        self.seen.insert(key);
+        self.items.push(
+            CatalogItem::new(kind, remote_id, title)
+                .year(year)
+                .overview(overview)
+                .poster_path(poster_path)
+                .library(library),
+        );
+    }
+}
+
 pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
     let progress = progress_state();
     {
@@ -122,6 +158,7 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
             state.total = 0;
         }
         let mut offset = 0usize;
+        let mut collector = CatalogCollector::default();
         loop {
             let page = match client.items(&library.remote_id, offset).await {
                 Ok(page) => page,
@@ -144,7 +181,7 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
                     let mut state = progress.lock().unwrap();
                     state.current += 1;
                 }
-                match upsert(&media, ctx, &client, raw, &synced_at).await {
+                match upsert(&media, ctx, &client, raw, &synced_at, library, &mut collector).await {
                     Ok(created) => {
                         if created {
                             report.added += 1;
@@ -167,6 +204,21 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
             offset += PAGE;
             if offset >= page.total_record_count {
                 break;
+            }
+        }
+        // The base's Media page reads its own catalog, so report this library's
+        // synced items once the library's pages are done.
+        if let Some(catalog) = &ctx.catalog {
+            if let Err(error) = catalog
+                .replace_library(
+                    ctx.connection_id,
+                    &library.name,
+                    std::mem::take(&mut collector.items),
+                )
+                .await
+            {
+                tracing::warn!(error = %error, "jellyfin: could not update the base media catalog");
+                report.errors += 1;
             }
         }
         {
@@ -198,6 +250,8 @@ async fn upsert(
     client: &JellyfinClient,
     raw: &Value,
     synced_at: &str,
+    library: &channelflow_plugin_api::media::Library,
+    collector: &mut CatalogCollector,
 ) -> Result<bool, PluginError> {
     let jellyfin_id = raw
         .get("Id")
@@ -206,6 +260,7 @@ async fn upsert(
     let media_type = map_type(raw.get("Type").and_then(Value::as_str).unwrap_or(""));
     let title = raw.get("Name").and_then(Value::as_str).unwrap_or("").to_string();
     let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
+    let overview = raw.get("Overview").and_then(Value::as_str).map(str::to_string);
 
     let dedup_key = if media_type == "episode" {
         dedup::episode_key(
@@ -247,6 +302,26 @@ async fn upsert(
         .replace_files(source_id, raw)
         .await
         .map_err(plugin_database)?;
+
+    // The base's Media page shows stored items per kind, so a movie becomes a
+    // Movies row, a series a TV row, an album or artist a Music row, and a
+    // music video a Music Videos row. Episodes/seasons stay under their series.
+    if ctx.catalog.is_some() {
+        match media_type {
+            "movie" => collector.push("movie", &dedup_key, &title, year, overview, poster_path, &library.name),
+            "series" => collector.push("series", &dedup_key, &title, year, overview, poster_path, &library.name),
+            "musicvideo" => collector.push("musicvideo", &dedup_key, &title, year, overview, poster_path, &library.name),
+            "track" => {
+                if let Some(album) = album_title(raw) {
+                    collector.push("album", &dedup::key("album", &album, year), &album, year, None, None, &library.name);
+                }
+                if let Some(artist) = album_artist(raw) {
+                    collector.push("artist", &dedup::key("artist", &artist, None), &artist, None, None, None, &library.name);
+                }
+            }
+            _ => {}
+        }
+    }
 
     // Jellyfin nests every track under an album; build the album → artist
     // nodes and link this track into them (best-effort — a lone track stays
