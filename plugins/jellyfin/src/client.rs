@@ -126,9 +126,15 @@ impl JellyfinClient {
     pub async fn items(&self, library_id: &str, offset: usize) -> Result<ItemPage, PluginError> {
         let fields = "Path,Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,ProductionYear,RunTimeTicks,CommunityRating,CriticRating,OfficialRating,Taglines,OriginalTitle,SortName,Container,PremiereDate,IndexNumber,ParentIndexNumber,SeriesName,SeriesId,AlbumId,AlbumArtist";
         let types = "Movie,Series,Episode,Audio,MusicVideo";
+        // Without a sync user the bare /Items endpoint is right (an admin API
+        // key). /Users//Items - the empty-user form - 404s on newer Jellyfin.
+        let listing = if self.user_id.is_empty() {
+            format!("{}/Items", self.base)
+        } else {
+            format!("{}/Users/{}/Items", self.base, self.user_id)
+        };
         let url = format!(
-            "/Users/{}/Items?ParentId={}&Recursive=true&IncludeItemTypes={}&Fields={}&StartIndex={}&Limit=200",
-            self.user_id, library_id, types, fields, offset
+            "{listing}?ParentId={library_id}&Recursive=true&IncludeItemTypes={types}&Fields={fields}&StartIndex={offset}&Limit=200"
         );
         let response = self
             .get(&url)
