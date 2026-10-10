@@ -33,6 +33,7 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
         .route("/sync", post(sync_request))
         .route("/progress", get(progress_snapshot))
         .route("/people", get(people_list))
+        .route("/people/{name}", get(person_detail))
         .route("/item/{jellyfin_id}/detail", get(item_detail))
         .route(
             "/items/{id}/sources",
@@ -141,6 +142,20 @@ async fn people_list(State(state): State<Arc<RouteState>>) -> Response {
     let media = MediaDb::new(state.db.clone());
     match media.people_list().await {
         Ok(people) => Json(json!({ "people": people })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
+}
+
+/// One person and every catalog item they appear in.
+async fn person_detail(
+    State(state): State<Arc<RouteState>>,
+    Path(name): Path<String>,
+) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.person_filmography(&name).await {
+        Ok(Some(person)) => Json(json!({ "person": person })).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such person" })))
+            .into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
     }
 }

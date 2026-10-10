@@ -765,6 +765,48 @@ impl MediaDb {
             .map(|rows| rows.into_iter().next())
     }
 
+    /// One person plus the catalog items they appear in (their filmography),
+    /// newest first. Only the kinds the Media page shows, so every entry can
+    /// link to a real catalog item.
+    pub async fn person_filmography(&self, name: &str) -> JfResult<Option<Value>> {
+        let people = self.t("people");
+        let items = self.t("media_items");
+        let links = self.t("item_people");
+        let sources = self.t("item_sources");
+        let person = self
+            .inner
+            .fetch_params(
+                &format!("SELECT id, name, image_path FROM {people} WHERE name = $1"),
+                &[Value::String(name.to_string())],
+            )
+            .await?;
+        let Some(row) = person.into_iter().next() else {
+            return Ok(None);
+        };
+        let person_id = row["id"].as_i64().unwrap_or(0);
+        let filmography = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT m.media_type, m.title, m.year, m.poster_path, \
+                            s.connection_id, s.jellyfin_id, ip.character \
+                     FROM {links} ip \
+                     JOIN {items} m ON m.id = ip.item_id \
+                     JOIN {sources} s ON s.item_id = m.id \
+                     WHERE ip.person_id = $1::bigint \
+                       AND m.media_type IN ('movie', 'series', 'musicvideo', 'album', 'artist') \
+                     ORDER BY m.year DESC NULLS LAST, m.title"
+                ),
+                &[Value::from(person_id)],
+            )
+            .await?;
+        Ok(Some(serde_json::json!({
+            "name": row["name"],
+            "image_path": row["image_path"],
+            "items": filmography,
+        })))
+    }
+
     /// Replace a source's files (and their streams/chapters) from the raw
     /// Jellyfin media sources.
     pub async fn replace_files(&self, source_id: i64, raw: &Value) -> JfResult<u64> {
