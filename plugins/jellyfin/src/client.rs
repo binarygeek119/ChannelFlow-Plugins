@@ -159,8 +159,12 @@ impl JellyfinClient {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct LibraryPayload {
+    // Older Jellyfin calls the library id "ItemId"; newer builds (the 12/13
+    // line) use "Id". Accept both so a newer server is not an empty catalog.
+    #[serde(alias = "Id")]
     pub item_id: String,
     pub name: String,
+    #[serde(default)]
     pub collection_type: Option<String>,
 }
 
