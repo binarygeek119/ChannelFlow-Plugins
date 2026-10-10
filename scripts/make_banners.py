@@ -206,6 +206,14 @@ PLUGINS = [
         "bottom": (128, 222, 234), # cyan-300
         "mark": (12, 74, 110),   # deep blue
     },
+    {
+        "id": "com.channelflow.news",
+        "title": "News",
+        "subtitle": "The FlowWire newscast — headlines, read with TTS",
+        "top": (30, 58, 138),    # news navy
+        "bottom": (37, 99, 235), # blue-600
+        "mark": (255, 255, 255), # white play mark
+    },
 ]
 
 

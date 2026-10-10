@@ -1,0 +1,26 @@
+[package]
+name = "channelflow-plugin-news"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "News — the FlowWire newscast: headlines, TTS, and RSS feeds"
+
+# `rlib` keeps the crate usable as a git dependency of the base (compiled in);
+# `cdylib` produces the per-platform shared library the install flow ships.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+channelflow-plugin-api = { git = "https://github.com/binarygeek119/ChannelFlow", branch = "2.0.0" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tracing = "0.1"
+
+[features]
+# Present so the release build can pass --features abi uniformly; this plugin
+# declares no exported ABI symbols yet.
+abi = []

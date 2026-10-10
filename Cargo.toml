@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["plugins/ai", "plugins/ersatztv", "plugins/jellyfin", "plugins/offair", "plugins/commercialbrainz", "plugins/emergency", "plugins/weather"]
+members = ["plugins/ai", "plugins/ersatztv", "plugins/jellyfin", "plugins/offair", "plugins/commercialbrainz", "plugins/emergency", "plugins/weather", "plugins/news"]
 
 [profile.release]
 lto = "thin"

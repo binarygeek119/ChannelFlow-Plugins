@@ -18,6 +18,7 @@ routes under `/api/plugins/{id}`.
 | [`plugins/commercialbrainz`](plugins/commercialbrainz) | `com.channelflow.commercialbrainz` | CommercialBrainz — ad avails, pool mode, and content filters (1.0.0's connection as a plugin) |
 | [`plugins/emergency`](plugins/emergency) | `com.channelflow.emergency` | Emergency Broadcast System — how weather alerts overlay programming (1.0.0's alert overlay as a plugin) |
 | [`plugins/weather`](plugins/weather) | `com.channelflow.weather` | Weather — WeatherStar look, source, location, units, and screens (1.0.0's Weather tab as a plugin) |
+| [`plugins/news`](plugins/news) | `com.channelflow.news` | News — the FlowWire newscast: RSS headlines, TTS, feeds (1.0.0's News tab as a plugin) |
 | [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
 
 ## How the base builds against this repo
