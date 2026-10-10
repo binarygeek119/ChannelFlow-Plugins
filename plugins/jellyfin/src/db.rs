@@ -567,6 +567,17 @@ impl MediaDb {
             .await
     }
 
+    /// Every synced person, alphabetical by name (case-insensitive), with the
+    /// picture each has if one was fetched.
+    pub async fn people_list(&self) -> JfResult<Vec<Value>> {
+        let people = self.t("people");
+        self.inner
+            .fetch(&format!(
+                "SELECT name, image_path FROM {people} ORDER BY lower(name) ASC, name ASC"
+            ))
+            .await
+    }
+
     /// Replace a source's files (and their streams/chapters) from the raw
     /// Jellyfin media sources.
     pub async fn replace_files(&self, source_id: i64, raw: &Value) -> JfResult<u64> {

@@ -32,6 +32,7 @@ pub fn router(db: Arc<dyn PluginDatabase>) -> Router {
         .route("/libraries", post(libraries_request))
         .route("/sync", post(sync_request))
         .route("/progress", get(progress_snapshot))
+        .route("/people", get(people_list))
         .route(
             "/items/{id}/sources",
             get(item_sources).post(item_sources),
@@ -132,6 +133,15 @@ struct SyncRequest {
 async fn progress_snapshot() -> Json<serde_json::Value> {
     let state = crate::sync::progress_state().lock().unwrap();
     Json(serde_json::json!({ "progress": state.clone() }))
+}
+
+/// All synced people, alphabetical by name.
+async fn people_list(State(state): State<Arc<RouteState>>) -> Response {
+    let media = MediaDb::new(state.db.clone());
+    match media.people_list().await {
+        Ok(people) => Json(json!({ "people": people })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
+    }
 }
 
 /// Run one sync pass against the listed libraries.
