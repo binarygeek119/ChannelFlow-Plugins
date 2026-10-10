@@ -25,7 +25,7 @@ impl MediaDb {
 /// database (the file store) there is no prefix; fall back to the plain name
 /// so the caller can fail softly rather than panicking.
     pub fn t(&self, name: &str) -> String {
-        self.inner.table_of(name).unwrap_or_else(|_| name.to_string())
+        self.inner.table_of(name).unwrap_or_else(|| name.to_string())
     }
 
     /// Create every table if it does not already exist.
