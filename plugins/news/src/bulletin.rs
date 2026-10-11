@@ -22,6 +22,7 @@ use serde_json::Value;
 use crate::api;
 use crate::settings::NewsSettings;
 use crate::NewsState;
+use channelflow_plugin_api::core::TtsProvider;
 
 /// Where the plugin's bulletin ledger lives in its namespaced storage.
 pub const LEDGER_KEY: &str = "bulletin-ledger";
@@ -198,7 +199,8 @@ pub async fn run(
     let output = folder.join(format!("news-{stamp}.mp4"));
     let staging = output.with_extension("mp4.partial");
 
-    match render_bulletin(&settings, &state.http, &encoded, &work_dir, &staging).await {
+    let ai_provider = state.core.tts_provider().await.ok().flatten();
+    match render_bulletin(&settings, &state.http, &encoded, &work_dir, &staging, ai_provider).await {
         Ok(()) => {}
         Err(error) => {
             state
@@ -334,6 +336,7 @@ async fn render_bulletin(
     stories: &[Value],
     work_dir: &Path,
     staging: &Path,
+    ai_provider: Option<TtsProvider>,
 ) -> Result<(), String> {
     std::fs::create_dir_all(work_dir).map_err(|error| error.to_string())?;
     let logo = work_dir.join("logo.png");
@@ -384,8 +387,8 @@ async fn render_bulletin(
     texts.push(outro_line.clone());
 
     // The anchor's copy is read aloud: Google TTS by default, or the AI engine
-    // when it is chosen and an endpoint is set (AI falls back to Google if it
-    // is not configured or fails).
+    // when it is chosen. AI TTS uses the provider from the AI tab (via core)
+    // if available, otherwise falls back to Google.
     let ai_engine = matches!(settings.tts_engine, crate::settings::TtsEngine::Ai);
     let mut speech: Vec<Option<(PathBuf, f64)>> = vec![None; texts.len()];
     if settings.tts_enabled {
@@ -399,17 +402,37 @@ async fn render_bulletin(
             } else {
                 &settings.ai_tts_voice
             };
-            let result = if ai_engine && !settings.ai_tts_base_url.trim().is_empty() {
-                crate::tts::synthesize_ai(
-                    http,
-                    text,
-                    &settings.ai_tts_base_url,
-                    &settings.ai_tts_api_key,
-                    &settings.ai_tts_model,
-                    audio_voice,
-                    &path,
-                )
-                .await
+            let result = if ai_engine {
+                // Use AI provider from core if available, otherwise fallback settings
+                let (base_url, api_key, model, voice) = if let Some(ref provider) = ai_provider {
+                    (
+                        provider.base_url.clone(),
+                        provider.api_key.clone(),
+                        provider.tts_model.clone(),
+                        if provider.voice.is_empty() { audio_voice.clone() } else { provider.voice.clone() }
+                    )
+                } else if !settings.ai_tts_base_url.trim().is_empty() {
+                    // Fallback to manually configured settings
+                    (
+                        settings.ai_tts_base_url.clone(),
+                        settings.ai_tts_api_key.clone(),
+                        settings.ai_tts_model.clone(),
+                        audio_voice.clone(),
+                    )
+                } else {
+                    // No AI provider available, fallback to Google
+                    match crate::tts::synthesize(http, text, &settings.tts_voice, &path).await {
+                        Ok(count) => {
+                            if count > 0 {
+                                let duration = probe_seconds(&path).unwrap_or(0.0);
+                                speech[index] = Some((path, duration));
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                };
+                crate::tts::synthesize_ai(http, text, &base_url, &api_key, &model, &voice, &path).await
             } else {
                 crate::tts::synthesize(http, text, &settings.tts_voice, &path).await
             };

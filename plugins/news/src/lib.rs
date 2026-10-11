@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use axum::Router;
 use channelflow_plugin_api::contrib::PresetContribution;
+use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;
@@ -72,6 +73,8 @@ pub struct NewsState {
     /// The base config root (`<config>`), so the bulletin task can write its
     /// mp4s to `<config>/news` as 1.0.0 did.
     pub config_root: PathBuf,
+    /// Read-only access to core data (channels, AI providers).
+    pub core: Arc<dyn channelflow_plugin_api::core::CoreData>,
 }
 
 impl NewsPlugin {
@@ -140,6 +143,7 @@ impl Plugin for NewsPlugin {
             logger: api.logger.clone(),
             headline_cache: Mutex::new(None),
             config_root,
+            core: api.core.clone(),
         }));
         // The bulletin scheduler: every 30 seconds, fire at each configured
         // mark (once per mark), so the day's first build always runs and the
