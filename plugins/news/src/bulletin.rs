@@ -41,6 +41,21 @@ const HEADLINE_BAR_PNG: &[u8] = include_bytes!("../web/media/headline_bar.png");
 const STORY_BAR_PNG: &[u8] = include_bytes!("../web/media/story_bar.png");
 const MAP_MUTE_PNG: &[u8] = include_bytes!("../web/media/map_mute.png");
 
+/// The scrolling world map is a panorama that loops forever: two copies are laid
+/// end to end and slid left, and the scroll position wraps at one tile width so
+/// the copy that has run off the left is immediately replaced on the right.
+const MAP_SRC_W: u32 = 3884;
+const MAP_SRC_H: u32 = 648;
+/// The trailing columns of `map.png` fade to transparent; they are cropped off
+/// so the end of one copy butts cleanly against the start of the next and no
+/// translucent seam is left behind.
+const MAP_OPAQUE_W: u32 = 3880;
+/// The width every copy is scaled to (also the tile pitch, so the copies meet
+/// exactly) and how fast the map slides left, in pixels per second.
+const MAP_TILE_W: u32 = 6480;
+const MAP_SCROLL_SPEED: u32 = 150;
+const _: () = assert!(MAP_OPAQUE_W <= MAP_SRC_W);
+
 /// The FlowWire intro/outro music, from v1.0.0's FlowWire_News audio.
 const INTRO_MP3: &[u8] = include_bytes!("../web/audio/FlowWire_News/FlowWire-intro.mp3");
 const OUTRO_MP3: &[u8] = include_bytes!("../web/audio/FlowWire_News/FlowWire-outro.mp3");
@@ -573,9 +588,7 @@ async fn render_bulletin(
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
          [src]split[base][bg];\
-         [1:v]scale=6480:1080[mp];\
-         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];\
-         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];\
+         {map}\
          [2:v]scale=650:650[p];\
          [m2][p]overlay=650:221[l1];\
          [3:v]scale=1920:1080[hb];\
@@ -593,6 +606,7 @@ async fn render_bulletin(
         lead = lead,
         ass = escape_filter_path(&ass_path),
         audio = audio,
+        map = map_layer(),
     );
 
     let mut args: Vec<String> = vec![
@@ -755,6 +769,23 @@ fn escape_filter_path(path: &Path) -> String {
         .replace('\\', "/")
         .replace(':', "\\:")
         .replace('\'', "\\'")
+}
+
+/// The scrolling-map layer: crop the soft (transparent) right edge off, scale
+/// every copy to one tile width, split the stream in two, then lay the copies
+/// end to end and slide them left. The scroll position wraps at exactly one tile
+/// width, so as the first copy leaves the frame the second is already in place
+/// and a fresh copy takes over on the right — the map never runs out.
+fn map_layer() -> String {
+    format!(
+        "[1:v]crop={opaque}:{height},scale={tile}:1080,split[ma][mb];\
+         [bg][ma]overlay=x='-mod(t*{speed},{tile})':y=0[m1];\
+         [m1][mb]overlay=x='-mod(t*{speed},{tile})+{tile}':y=0[m2];",
+        opaque = MAP_OPAQUE_W,
+        height = MAP_SRC_H,
+        tile = MAP_TILE_W,
+        speed = MAP_SCROLL_SPEED,
+    )
 }
 
 /// One on-screen beat: the headline shown and the spoken copy crawled under it.
@@ -1103,5 +1134,28 @@ mod tests {
         assert!(keep.exists(), "the new bulletin is kept");
         assert!(unrelated.exists(), "unrelated files are left alone");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_map_is_split_so_both_copies_are_drawn() {
+        // Reusing one label for both map overlays left the second copy undrawn,
+        // so the map ran out mid-build and the frame showed black. The stream
+        // must be split, and the two copies laid exactly one tile apart.
+        let layer = map_layer();
+        assert!(
+            layer.contains("split[ma][mb]"),
+            "the map must be split before tiling: {layer}"
+        );
+        assert!(layer.contains("[bg][ma]overlay"), "the first copy is drawn");
+        assert!(layer.contains("[m1][mb]overlay"), "the second copy is drawn");
+        assert!(
+            layer.contains(&format!("+{}", MAP_TILE_W)),
+            "the second copy starts one full tile to the right: {layer}"
+        );
+        // The soft transparent edge is cropped so the copies butt together.
+        assert!(
+            layer.contains(&format!("crop={MAP_OPAQUE_W}:{MAP_SRC_H}")),
+            "the transparent edge is cropped: {layer}"
+        );
     }
 }
