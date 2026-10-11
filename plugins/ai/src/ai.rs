@@ -431,6 +431,15 @@ fn cleaned(mut provider: AiProvider) -> Result<AiProvider, AiError> {
     } else if provider.scheduling_only {
         provider.tts_only = false;
     }
+    // A scheduling-only provider carries no TTS fields; a TTS-only provider
+    // carries no chat model.
+    if provider.scheduling_only {
+        provider.tts_model.clear();
+        provider.voice.clear();
+    }
+    if provider.tts_only {
+        provider.chat_model.clear();
+    }
     provider.name = provider.name.trim().to_string();
     if provider.name.is_empty() {
         return Err(AiError("provider name cannot be empty".to_string()));
@@ -444,18 +453,20 @@ fn cleaned(mut provider: AiProvider) -> Result<AiProvider, AiError> {
     }
     provider.api_key = provider.api_key.trim().to_string();
     provider.chat_model = provider.chat_model.trim().to_string();
-    if provider.chat_model.is_empty() {
+    if !provider.tts_only && provider.chat_model.is_empty() {
         return Err(AiError(
             "chat model cannot be empty, for example gpt-4o-mini".to_string(),
         ));
     }
-    provider.tts_model = provider.tts_model.trim().to_string();
-    if provider.tts_model.is_empty() {
-        return Err(AiError("TTS model cannot be empty, for example tts-1".to_string()));
-    }
-    provider.voice = provider.voice.trim().to_string();
-    if provider.voice.is_empty() {
-        return Err(AiError("voice cannot be empty, for example nova".to_string()));
+    if !provider.scheduling_only {
+        provider.tts_model = provider.tts_model.trim().to_string();
+        if provider.tts_model.is_empty() {
+            return Err(AiError("TTS model cannot be empty, for example tts-1".to_string()));
+        }
+        provider.voice = provider.voice.trim().to_string();
+        if provider.voice.is_empty() {
+            return Err(AiError("voice cannot be empty, for example nova".to_string()));
+        }
     }
     Ok(provider)
 }
@@ -653,10 +664,13 @@ mod tests {
             }))
             .unwrap();
         assert!(created.scheduling_only, "a create body may set it");
+        assert_eq!(created.tts_model, "", "scheduling-only drops the TTS fields");
+        // Turning it back into a general provider re-requires the TTS fields.
         let updated = config
-            .update(&created.id, &json!({ "scheduling_only": false }))
+            .update(&created.id, &json!({ "scheduling_only": false, "tts_model": "tts-1", "voice": "nova" }))
             .unwrap();
         assert!(!updated.scheduling_only, "an update may clear it");
+        assert_eq!(updated.tts_model, "tts-1");
         assert!(
             config.view().providers[0].scheduling_only == false,
             "the view carries it for the page"
@@ -696,6 +710,22 @@ mod tests {
             .unwrap();
         assert!(updated.tts_only, "TTS-only sticks once set");
         assert!(!updated.scheduling_only);
+    }
+
+    #[test]
+    fn scheduling_only_providers_need_no_tts_fields() {
+        let mut config = AiConfig::default();
+        let created = config
+            .create(&json!({
+                "name": "Sched Engine", "priority": 1, "base_url": "https://example.test/v1",
+                "scheduling_only": true, "chat_model": "gpt-4o-mini",
+                "tts_model": "", "voice": ""
+            }))
+            .unwrap();
+        assert!(created.scheduling_only);
+        assert_eq!(created.tts_model, "", "no TTS model for a scheduling provider");
+        assert_eq!(created.voice, "", "no voice for a scheduling provider");
+        assert_eq!(created.chat_model, "gpt-4o-mini");
     }
 
     #[test]

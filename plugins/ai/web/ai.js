@@ -90,6 +90,7 @@ function fillAiForm(provider) {
     els.aiDelete.hidden = true;
   }
   syncAiOllama();
+  syncAiModelFields();
   els.aiApiKey.value = "";
   els.aiApiKey.type = "password";
   els.aiKeyReveal.textContent = "Show";
@@ -122,6 +123,23 @@ function fillModelList(id, models) {
     option.value = model;
     datalist.appendChild(option);
   });
+}
+
+// A scheduling-only provider takes no TTS model or voice; a TTS-only provider
+// takes no chat model. Disable (and blank) the fields it won't use.
+function syncAiModelFields() {
+  if (!els.aiSchedulingOnly || !els.aiTtsOnly) return;
+  const schedulingOnly = els.aiSchedulingOnly.checked;
+  const ttsOnly = els.aiTtsOnly.checked;
+  [els.aiTtsModel, els.aiVoice].forEach((el) => {
+    if (!el) return;
+    el.disabled = schedulingOnly;
+    if (schedulingOnly) el.value = "";
+  });
+  if (els.aiChatModel) {
+    els.aiChatModel.disabled = ttsOnly;
+    if (ttsOnly) els.aiChatModel.value = "";
+  }
 }
 
 // Grab the models the provider lists (Ollama's /v1/models included) and offer
@@ -340,12 +358,14 @@ const aiTtsOnly = $("ai-tts-only");
 if (aiTtsOnly) {
   aiTtsOnly.addEventListener("change", () => {
     if (aiTtsOnly.checked && $("ai-scheduling-only")) $("ai-scheduling-only").checked = false;
+    syncAiModelFields();
   });
 }
 const aiSchedulingOnlyCb = $("ai-scheduling-only");
 if (aiSchedulingOnlyCb) {
   aiSchedulingOnlyCb.addEventListener("change", () => {
     if (aiSchedulingOnlyCb.checked && aiTtsOnly) aiTtsOnly.checked = false;
+    syncAiModelFields();
   });
 }
 els.aiOllama.addEventListener("change", syncAiOllama);
