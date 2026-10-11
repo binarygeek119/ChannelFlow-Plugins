@@ -84,6 +84,11 @@ const INTRO_FADE_SECONDS: f64 = 1.2;
 /// outro music plays; once it finishes the picture fades to black over this
 /// many seconds (the video runs on past the music to allow it).
 const OUTRO_FADE_SECONDS: f64 = 1.2;
+/// How far the two story lines are raised off the bottom of the frame (the ASS
+/// `MarginV`): line 1, then line 2 nearest the bottom. Both sit down in the
+/// marked story areas.
+const STORY_LINE1_MARGIN_V: i32 = 126;
+const STORY_LINE2_MARGIN_V: i32 = 17;
 
 /// The plugin's record of what it has broadcast, so a run can tell new
 /// stories from ones already on air.
@@ -929,11 +934,10 @@ fn build_ass(beats: &[Beat]) -> String {
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
     // Headline: top-centre, smaller font to fit more, positioned in the bar.
     // Story1/Story2: bottom-centre, one line in each marked story area — the
-    // first line sits in the green box (MarginV 144), the second in the red box
-    // at the very bottom (MarginV 35).
+    // first line in the green box, the second in the red box at the very bottom.
     ass.push_str("Style: Headline, Liberation Sans, 44, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 100, 100, 110, 1\n");
-    ass.push_str("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 144, 1\n");
-    ass.push_str("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 35, 1\n\n");
+    ass.push_str(&format!("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, {STORY_LINE1_MARGIN_V}, 1\n"));
+    ass.push_str(&format!("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, {STORY_LINE2_MARGIN_V}, 1\n\n"));
     ass.push_str("[Events]\n");
     ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     ass.push_str(&events);
@@ -1261,5 +1265,16 @@ mod tests {
             INTRO_FADE_SECONDS > 0.0,
             "the intro logo should ease in, not pop in"
         );
+    }
+
+    #[test]
+    fn the_story_lines_sit_down_in_their_boxes() {
+        // The copy sits a little lower in the marked story areas than it used
+        // to: line 1 was MarginV 144, line 2 was 35.
+        assert_eq!(STORY_LINE1_MARGIN_V, 126);
+        assert_eq!(STORY_LINE2_MARGIN_V, 17);
+        // The two lines keep their spacing and the second stays on screen.
+        assert!(STORY_LINE1_MARGIN_V > STORY_LINE2_MARGIN_V);
+        assert!(STORY_LINE2_MARGIN_V > 0);
     }
 }
