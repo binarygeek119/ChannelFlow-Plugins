@@ -26,11 +26,21 @@
             </div>
             <div class="field">
               <label class="field-label" for="news-intro">Anchor intro</label>
-              <textarea id="news-intro" rows="2" placeholder="I'm Catherine Wolfe. You're watching FlowWire News."></textarea>
+              <textarea id="news-intro" rows="2" placeholder="I'm Catherine Wolfe, And you're watching FlowWire News At @@"></textarea>
             </div>
             <div class="field">
               <label class="field-label" for="news-outro">Anchor outro</label>
-              <textarea id="news-outro" rows="2" placeholder="I'm Catherine Wolfe. Stay with FlowWire News."></textarea>
+              <textarea id="news-outro" rows="2" placeholder="I'm Catherine Wolfe, This was FlowWire News At @@"></textarea>
+            </div>
+            <div class="field">
+              <span class="field-label">Build time in the script</span>
+              <p class="field-note">
+                Put <code>@@</code> in the intro or outro and the anchor says the time the video was
+                built (for example <code>8 A M</code>). Leave both boxes empty to use the FlowWire lines above.
+              </p>
+              <label class="field-note" for="news-24h">
+                <input id="news-24h" type="checkbox"> Use 24-hour time (<code>15:00</code>) instead of 12-hour (<code>3 P M</code>)
+              </label>
             </div>
             <div class="field">
               <span class="field-label">Announce and read</span>

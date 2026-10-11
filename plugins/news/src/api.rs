@@ -19,6 +19,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::{Local, Timelike};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -91,12 +92,54 @@ pub fn resolve_show_name(header: &str) -> String {
     value.to_string()
 }
 
-fn default_intro(show_name: &str) -> String {
-    format!("I'm Catherine Wolfe. You're watching {show_name}.")
+/// The token in the anchor's intro/outro that the build time replaces, so the
+/// anchor can say when the newscast went to air.
+pub const TIME_TOKEN: &str = "@@";
+
+/// The default anchor open, with the `@@` time token.
+pub fn default_intro(show_name: &str) -> String {
+    format!("I'm Catherine Wolfe, And you're watching {show_name} At {TIME_TOKEN}")
 }
 
-fn default_outro(show_name: &str) -> String {
-    format!("I'm Catherine Wolfe. Stay with {show_name}.")
+/// The default anchor close, with the `@@` time token.
+pub fn default_outro(show_name: &str) -> String {
+    format!("I'm Catherine Wolfe, This was {show_name} At {TIME_TOKEN}")
+}
+
+/// A time as the anchor says it. 24-hour keeps `15:00`; 12-hour becomes
+/// `3 P M`. The AM/PM letters are spaced so the TTS reads them as letters
+/// rather than the words "am"/"pm".
+pub fn spoken_time(hour: u32, minute: u32, use_24_hour: bool) -> String {
+    if use_24_hour {
+        return format!("{hour:02}:{minute:02}");
+    }
+    let period = if hour % 24 < 12 { "A M" } else { "P M" };
+    let mut twelve = hour % 12;
+    if twelve == 0 {
+        twelve = 12;
+    }
+    if minute == 0 {
+        format!("{twelve} {period}")
+    } else {
+        format!("{twelve}:{minute:02} {period}")
+    }
+}
+
+/// Resolve one anchor line: the custom text when set, otherwise the default,
+/// with every `@@` replaced by the time the bulletin was built.
+pub fn anchor_line(
+    custom: &str,
+    default: String,
+    hour: u32,
+    minute: u32,
+    use_24_hour: bool,
+) -> String {
+    let line = if custom.trim().is_empty() {
+        default
+    } else {
+        custom.trim().to_string()
+    };
+    line.replace(TIME_TOKEN, &spoken_time(hour, minute, use_24_hour))
 }
 
 /// Fetch every enabled feed and build the newscast show — the stories plus
@@ -104,16 +147,21 @@ fn default_outro(show_name: &str) -> String {
 async fn preview_newscast(State(state): State<Arc<NewsState>>) -> Response {
     let settings = state.settings.lock().await.clone();
     let show_name = resolve_show_name(&settings.header);
-    let intro = if settings.anchor_intro.trim().is_empty() {
-        default_intro(&show_name)
-    } else {
-        settings.anchor_intro.trim().to_string()
-    };
-    let outro = if settings.anchor_outro.trim().is_empty() {
-        default_outro(&show_name)
-    } else {
-        settings.anchor_outro.trim().to_string()
-    };
+    let now = Local::now();
+    let intro = anchor_line(
+        &settings.anchor_intro,
+        default_intro(&show_name),
+        now.hour(),
+        now.minute(),
+        settings.use_24_hour,
+    );
+    let outro = anchor_line(
+        &settings.anchor_outro,
+        default_outro(&show_name),
+        now.hour(),
+        now.minute(),
+        settings.use_24_hour,
+    );
 
     let stories = cached_stories(&state, &settings).await;
     Json(json!({
@@ -460,6 +508,39 @@ mod tests {
         assert_eq!(resolve_show_name(""), "FlowWire News");
         assert_eq!(resolve_show_name("The Evening News"), "The Evening News");
         assert_eq!(resolve_show_name("ChannelFlow News"), "FlowWire News");
+    }
+
+    #[test]
+    fn the_anchor_time_is_spelled_for_speech() {
+        // 12-hour keeps the letters apart so the TTS says "A M", not "am".
+        assert_eq!(spoken_time(8, 0, false), "8 A M");
+        assert_eq!(spoken_time(15, 0, false), "3 P M");
+        assert_eq!(spoken_time(0, 0, false), "12 A M");
+        assert_eq!(spoken_time(12, 0, false), "12 P M");
+        assert_eq!(spoken_time(8, 30, false), "8:30 A M");
+        // 24-hour keeps the clock notation.
+        assert_eq!(spoken_time(15, 0, true), "15:00");
+        assert_eq!(spoken_time(6, 0, true), "06:00");
+    }
+
+    #[test]
+    fn the_build_time_fills_the_anchor_lines() {
+        let intro = anchor_line("", default_intro("FlowWire News"), 8, 0, false);
+        assert_eq!(
+            intro,
+            "I'm Catherine Wolfe, And you're watching FlowWire News At 8 A M"
+        );
+        let outro = anchor_line("", default_outro("FlowWire News"), 15, 0, false);
+        assert_eq!(outro, "I'm Catherine Wolfe, This was FlowWire News At 3 P M");
+        // A custom line keeps the token, and 24-hour keeps the colon.
+        assert_eq!(
+            anchor_line("Good evening, it's @@ now.", String::new(), 20, 0, false),
+            "Good evening, it's 8 P M now."
+        );
+        assert_eq!(
+            anchor_line("It's @@.", String::new(), 15, 0, true),
+            "It's 15:00."
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use chrono::{Local, TimeZone};
+use chrono::{Local, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -129,7 +129,6 @@ where
 
 /// Whether the current local time is one of the configured bulletin marks.
 pub fn at_a_mark(settings: &NewsSettings, now: chrono::DateTime<Local>) -> bool {
-    use chrono::Timelike;
     settings.bulletin_hours().contains(&now.hour()) && now.minute() == 0
 }
 
@@ -216,7 +215,19 @@ pub async fn run(
     let staging = output.with_extension("mp4.partial");
 
     let ai_provider = state.core.tts_provider().await.ok().flatten();
-    match render_bulletin(&settings, &state.http, &encoded, &work_dir, &staging, ai_provider).await {
+    let (hour, minute) = (now.hour(), now.minute());
+    match render_bulletin(
+        &settings,
+        &state.http,
+        &encoded,
+        &work_dir,
+        &staging,
+        ai_provider,
+        hour,
+        minute,
+    )
+    .await
+    {
         Ok(()) => {}
         Err(error) => {
             state
@@ -390,6 +401,8 @@ async fn render_bulletin(
     work_dir: &Path,
     staging: &Path,
     ai_provider: Option<TtsProvider>,
+    hour: u32,
+    minute: u32,
 ) -> Result<(), String> {
     std::fs::create_dir_all(work_dir).map_err(|error| error.to_string())?;
     let logo = work_dir.join("logo.png");
@@ -410,16 +423,20 @@ async fn render_bulletin(
     std::fs::write(&outro_mp3, OUTRO_MP3).map_err(|error| error.to_string())?;
 
     let show_name = api::resolve_show_name(&settings.header);
-    let intro_line = if settings.anchor_intro.trim().is_empty() {
-        format!("I'm Catherine Wolfe. You're watching {show_name}.")
-    } else {
-        settings.anchor_intro.trim().to_string()
-    };
-    let outro_line = if settings.anchor_outro.trim().is_empty() {
-        format!("I'm Catherine Wolfe. Stay with {show_name}.")
-    } else {
-        settings.anchor_outro.trim().to_string()
-    };
+    let intro_line = api::anchor_line(
+        &settings.anchor_intro,
+        api::default_intro(&show_name),
+        hour,
+        minute,
+        settings.use_24_hour,
+    );
+    let outro_line = api::anchor_line(
+        &settings.anchor_outro,
+        api::default_outro(&show_name),
+        hour,
+        minute,
+        settings.use_24_hour,
+    );
 
     let intro_music_len = probe_seconds(&intro_mp3)
         .filter(|len| *len > 0.5)

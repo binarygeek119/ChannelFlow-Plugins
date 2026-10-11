@@ -38,6 +38,7 @@ function collectNewsSettings() {
     tts_voice: $("news-voice").value,
     anchor_intro: $("news-intro").value.trim(),
     anchor_outro: $("news-outro").value.trim(),
+    use_24_hour: $("news-24h").checked,
     tts_enabled: $("news-tts").checked,
     tts_engine: $("news-tts-engine").value,
     ai_tts_base_url: $("news-ai-tts-url").value.trim(),
@@ -66,6 +67,7 @@ async function loadNews() {
     $("news-refresh").value = settings.refresh_minutes;
     $("news-intro").value = settings.anchor_intro || "";
     $("news-outro").value = settings.anchor_outro || "";
+    setNewsCheck("news-24h", settings.use_24_hour);
     setNewsCheck("news-tts", settings.tts_enabled);
     $("news-ai-tts-url").value = settings.ai_tts_base_url || "";
     $("news-ai-tts-key").value = "";

@@ -40,6 +40,8 @@ pub struct NewsSettings {
     pub tts_voice: String,
     pub anchor_intro: String,
     pub anchor_outro: String,
+    /// Speak the build time as 24-hour (`15:00`) instead of 12-hour (`3 P M`).
+    pub use_24_hour: bool,
     pub tts_enabled: bool,
     pub tts_engine: TtsEngine,
     /// The OpenAI-compatible endpoint when `tts_engine` is the AI engine.
@@ -71,6 +73,7 @@ impl Default for NewsSettings {
             tts_voice: "en-US".to_string(),
             anchor_intro: String::new(),
             anchor_outro: String::new(),
+            use_24_hour: false,
             tts_enabled: true,
             tts_engine: TtsEngine::default(),
             ai_tts_base_url: String::new(),
