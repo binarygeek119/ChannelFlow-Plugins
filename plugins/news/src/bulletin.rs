@@ -29,6 +29,9 @@ pub const LEDGER_KEY: &str = "bulletin-ledger";
 /// The anchor's portrait, embedded so the renderer needs no external file.
 const PRESENTER_JPEG: &[u8] = include_bytes!("../web/media/Catherine_Wolfe.jpg");
 
+/// The FlowWire logo, shown as a centered bumper for the intro.
+const LOGO_PNG: &[u8] = include_bytes!("../web/logos/FlowWire.png");
+
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const FPS: u32 = 30;
@@ -319,6 +322,8 @@ fn render_bulletin(
     std::fs::create_dir_all(work_dir).map_err(|error| error.to_string())?;
     let presenter = work_dir.join("presenter.jpg");
     std::fs::write(&presenter, PRESENTER_JPEG).map_err(|error| error.to_string())?;
+    let logo = work_dir.join("logo.png");
+    std::fs::write(&logo, LOGO_PNG).map_err(|error| error.to_string())?;
 
     let show_name = api::resolve_show_name(&settings.header);
     let intro = if settings.anchor_intro.trim().is_empty() {
@@ -336,12 +341,18 @@ fn render_bulletin(
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
+    // The FlowWire logo is the intro bumper (centered), then the anchor's
+    // portrait centers for the rest of the show; the logo overlay runs after
+    // the portrait's, so it sits on top during the intro window.
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
          [1:v]scale=520:-1[p];\
-         [bg][p]overlay=(W-w)/2:(H-h)/2[vp];\
-         [vp]ass='{ass}'[vout]",
+         [2:v]scale=460:-1[lg];\
+         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{intro})'[vp];\
+         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{intro})'[vout];\
+         [vout]ass='{ass}'[final]",
         total = total,
+        intro = INTRO_SECONDS,
         ass = escape_filter_path(&ass_path)
     );
 
@@ -362,10 +373,18 @@ fn render_bulletin(
         format!("{total}"),
         "-i".into(),
         presenter.to_string_lossy().to_string(),
+        "-loop".into(),
+        "1".into(),
+        "-framerate".into(),
+        FPS.to_string(),
+        "-t".into(),
+        format!("{total}"),
+        "-i".into(),
+        logo.to_string_lossy().to_string(),
         "-filter_complex".into(),
         filter,
         "-map".into(),
-        "[vout]".into(),
+        "[final]".into(),
         "-t".into(),
         format!("{total}"),
         "-c:v".into(),
