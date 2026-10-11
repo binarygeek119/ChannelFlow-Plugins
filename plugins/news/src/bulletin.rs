@@ -350,14 +350,19 @@ fn render_bulletin(
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
     // Logo bumper first, then the anchor; the FlowWire intro/outro mp3s play
-    // over the start and end (silence between them — speech lands later).
-    let outro_delay_ms = ((total - OUTRO_SECONDS) * 1000.0).round() as i64;
+    // over the start and end (silence between them — speech lands later). The
+    // outro's audible content starts after its quiet opening, so play the full
+    // file, delayed to end with the show.
+    let outro_len = probe_seconds(&outro_mp3)
+        .filter(|len| *len > 0.5)
+        .unwrap_or(OUTRO_SECONDS);
+    let outro_delay_ms = ((total - outro_len) * 1000.0).round().max(0.0) as i64;
     let audio = format!(
-        "[3:a]atrim=0:{intro},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
-         [4:a]atrim=0:{outro},asetpts=PTS-STARTPTS,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
+        "[3:a]atrim=0:{intro},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
+         [4:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
          [a0][a1]amix=inputs=2:duration=longest:normalize=0[aout]",
         intro = INTRO_SECONDS,
-        outro = OUTRO_SECONDS,
+        outro_len = outro_len,
         delay = outro_delay_ms,
     );
     let filter = format!(
@@ -468,6 +473,27 @@ fn encoder_path() -> PathBuf {
     } else {
         PathBuf::from("ffmpeg")
     }
+}
+
+/// The length of an audio file, if ffprobe is available.
+fn probe_seconds(path: &Path) -> Option<f64> {
+    let probe = {
+        let bundled = PathBuf::from("/usr/local/bin/ffprobe");
+        if bundled.exists() {
+            bundled
+        } else {
+            PathBuf::from("ffprobe")
+        }
+    };
+    let output = Command::new(probe)
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
 fn escape_filter_path(path: &Path) -> String {
