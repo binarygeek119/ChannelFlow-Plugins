@@ -12,6 +12,12 @@
               <input id="ai-name" type="text" autocomplete="off" spellcheck="false" placeholder="OpenAI">
               <small class="field-hint">The tab's title. Must not repeat another provider's.</small>
             </div>
+            <div class="field field-check">
+              <label class="field-label" for="ai-enabled">
+                <input id="ai-enabled" type="checkbox" checked> Enabled
+              </label>
+              <small class="field-hint">A disabled provider is saved but never used in failover.</small>
+            </div>
             <div class="field">
               <label class="field-label" for="ai-priority">Priority</label>
               <input id="ai-priority" type="number" min="0" step="1" inputmode="numeric">

@@ -37,6 +37,10 @@ pub struct AiProvider {
     /// addresses a provider by this rather than by name, so renaming one does
     /// not move it to a different tab.
     pub id: String,
+    /// Whether this provider takes part in failover. Disabled providers are
+    /// saved but never contacted.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// The tab's title. Unique across providers.
     #[serde(default)]
     pub name: String,
@@ -107,9 +111,14 @@ pub struct AiView {
     pub defaults: ProviderDefaults,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize)]
 pub struct ProviderView {
     pub id: String,
+    pub enabled: bool,
     pub name: String,
     pub priority: u32,
     pub base_url: String,
@@ -126,6 +135,7 @@ impl AiProvider {
     pub fn view(&self) -> ProviderView {
         ProviderView {
             id: self.id.clone(),
+            enabled: self.enabled,
             name: self.name.clone(),
             priority: self.priority,
             base_url: self.base_url.clone(),
@@ -156,6 +166,15 @@ impl AiConfig {
         let mut providers: Vec<&AiProvider> = self.providers.iter().collect();
         providers.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.name.cmp(&b.name)));
         providers
+    }
+
+    /// The providers the app actually uses in failover: every enabled one, in
+    /// order. Disabled providers are saved but never contacted.
+    pub fn enabled_in_order(&self) -> Vec<&AiProvider> {
+        self.ordered()
+            .into_iter()
+            .filter(|provider| provider.enabled)
+            .collect()
     }
 
     /// The first number not in use, so a new provider does not collide.
@@ -312,6 +331,8 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
     struct New {
         name: String,
         priority: u32,
+        #[serde(default = "default_true")]
+        enabled: bool,
         #[serde(default = "default_base_url")]
         base_url: String,
         #[serde(default)]
@@ -337,6 +358,7 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         .map_err(|error| AiError(format!("not a valid provider: {error}")))?;
     cleaned(AiProvider {
         id: Uuid::new_v4().to_string(),
+        enabled: input.enabled,
         name: input.name,
         priority: input.priority,
         base_url: input.base_url,
@@ -356,6 +378,8 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Update {
+        #[serde(default)]
+        enabled: Option<bool>,
         #[serde(default)]
         name: Option<String>,
         #[serde(default)]
@@ -380,6 +404,9 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
 
     let update: Update = serde_json::from_value(body.clone())
         .map_err(|error| AiError(format!("not a valid provider update: {error}")))?;
+    if let Some(enabled) = update.enabled {
+        provider.enabled = enabled;
+    }
     if let Some(name) = update.name {
         provider.name = name;
     }
@@ -494,6 +521,7 @@ fn migrate(value: &Value) -> Result<AiConfig, AiError> {
     Ok(AiConfig {
         providers: vec![AiProvider {
             id: Uuid::new_v4().to_string(),
+            enabled: true,
             name: "Provider 1".to_string(),
             priority: 1,
             base_url: legacy.base_url,
@@ -651,6 +679,37 @@ mod tests {
         assert!(config
             .resolve(&created.id, &json!({ "priority": created.priority }))
             .is_ok());
+    }
+
+    #[test]
+    fn a_disabled_provider_keeps_its_place_but_is_skipped_in_failover() {
+        let mut config = AiConfig::default();
+        let first = config
+            .create(&json!({
+                "name": "OpenAI", "priority": 1, "base_url": "https://example.test/v1",
+                "chat_model": "gpt-4o-mini", "tts_model": "tts-1", "voice": "nova"
+            }))
+            .unwrap();
+        let second = config
+            .create(&json!({
+                "name": "Backup", "priority": 2, "base_url": "https://example.test/v2",
+                "enabled": false,
+                "chat_model": "gpt-4o-mini", "tts_model": "tts-1", "voice": "nova"
+            }))
+            .unwrap();
+        let off = config.find(&second.id).unwrap();
+        assert!(!off.enabled, "a create body may disable a provider");
+        assert_eq!(config.view().providers.len(), 2, "disabled ones are still listed");
+        assert_eq!(
+            config.enabled_in_order().len(),
+            1,
+            "failover only walks the enabled half"
+        );
+        assert_eq!(config.enabled_in_order()[0].id, first.id);
+        // An update may flip it back on.
+        let on = config.update(&second.id, &json!({ "enabled": true })).unwrap();
+        assert!(on.enabled);
+        assert_eq!(config.enabled_in_order().len(), 2);
     }
 
     #[test]

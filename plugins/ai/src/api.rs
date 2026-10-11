@@ -147,7 +147,7 @@ async fn test_all(
     State(state): State<StateRef>,
 ) -> Result<Json<openai::FailoverReport>, HttpError> {
     let config = state.lock().await;
-    let providers = config.ordered();
+    let providers = config.enabled_in_order();
     Ok(Json(openai::failover(&state.http, &providers).await))
 }
 

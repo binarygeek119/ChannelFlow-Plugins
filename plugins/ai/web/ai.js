@@ -55,8 +55,50 @@ function renderAiFailover() {
   }
   for (const provider of aiProviders) {
     const item = document.createElement("li");
-    item.textContent = `${provider.priority} · ${provider.name} — ${provider.base_url}`;
+    item.className = "ai-provider-row" + (provider.enabled === false ? " ai-provider-off" : "");
+    const info = document.createElement("span");
+    info.className = "ai-provider-info";
+    info.textContent = `${provider.priority} · ${provider.name} — ${provider.base_url}`;
+    const sw = document.createElement("label");
+    sw.className = "switch";
+    sw.title = provider.enabled === false ? "Provider is disabled" : "Provider is enabled";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = provider.enabled !== false;
+    input.dataset.providerId = provider.id;
+    input.addEventListener("change", () => toggleAiProvider(provider, input));
+    const track = document.createElement("span");
+    track.className = "track";
+    const thumb = document.createElement("span");
+    thumb.className = "thumb";
+    sw.appendChild(input);
+    sw.appendChild(track);
+    sw.appendChild(thumb);
+    item.appendChild(info);
+    item.appendChild(sw);
     els.aiFailover.appendChild(item);
+  }
+}
+
+// Flip a provider's enabled switch through the normal update (keep-everything
+// semantics), then reload so the failover order and tabs reflect it.
+async function toggleAiProvider(provider, input) {
+  input.disabled = true;
+  try {
+    await request(`${AI_API}/providers/${encodeURIComponent(provider.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled: !(provider.enabled !== false) }),
+    });
+    const updated = await request(AI_API);
+    aiProviders = (updated && updated.providers) || [];
+    renderAiFailover();
+    renderAiTabs();
+    setAiNote(provider.enabled !== false ? `${provider.name} disabled.` : `${provider.name} enabled.`, false);
+  } catch (error) {
+    setAiNote(error.message, true);
+    input.checked = provider.enabled !== false;
+  } finally {
+    input.disabled = false;
   }
 }
 
@@ -64,6 +106,7 @@ function renderAiFailover() {
 function fillAiForm(provider) {
   if (provider) {
     els.aiName.value = provider.name;
+    els.aiEnabled.checked = provider.enabled !== false;
     els.aiPriority.value = String(provider.priority);
     els.aiBaseUrl.value = provider.base_url;
     els.aiChatModel.value = provider.chat_model;
@@ -77,6 +120,7 @@ function fillAiForm(provider) {
     els.aiDelete.hidden = false;
   } else {
     els.aiName.value = "";
+    els.aiEnabled.checked = true;
     els.aiPriority.value = String(aiNextPriority);
     els.aiBaseUrl.value = aiDefaults.base_url;
     els.aiChatModel.value = aiDefaults.chat_model;
@@ -202,6 +246,7 @@ async function loadAi(selectId) {
 function aiBody() {
   const body = {
     name: els.aiName.value,
+    enabled: els.aiEnabled.checked,
     base_url: els.aiBaseUrl.value,
     chat_model: els.aiChatModel.value,
     tts_model: els.aiTtsModel.value,
