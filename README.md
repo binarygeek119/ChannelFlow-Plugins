@@ -11,15 +11,19 @@ routes under `/api/plugins/{id}`.
 
 | Crate | Plugin id | What it does |
 |---|---|---|
-| [`plugins/ai`](plugins/ai) | `com.channelflow.ai` | The AI Provider Suite — OpenAI-compatible endpoints, tests, and priority-ordered failover |
-| [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | ErsatzTV Transcoding Engine — ffmpeg and normalization settings |
-| [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract) |
-| [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media (1.0.0's EBS settings as a plugin) |
-| [`plugins/commercialbrainz`](plugins/commercialbrainz) | `com.channelflow.commercialbrainz` | CommercialBrainz — ad avails, pool mode, and content filters (1.0.0's connection as a plugin) |
+| [`plugins/ai`](plugins/ai) | `com.channelflow.ai` | The AI Provider Suite — OpenAI-compatible endpoints, tests, on/off per provider, and priority-ordered failover |
+| [`plugins/commercialbrainz`](plugins/commercialbrainz) | `com.channelflow.commercialbrainz` | CommercialBrainz — ad avails with content filters (1.0.0's connection as a plugin) |
 | [`plugins/emergency`](plugins/emergency) | `com.channelflow.emergency` | Emergency Broadcast System — how weather alerts overlay programming (1.0.0's alert overlay as a plugin) |
-| [`plugins/weather`](plugins/weather) | `com.channelflow.weather` | Weather — WeatherStar look, source, location, units, and screens (1.0.0's Weather tab as a plugin) |
+| [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | ErsatzTV Transcoding Engine — ffmpeg and normalization defaults plus per-channel overrides |
+| [`plugins/holidaychannel`](plugins/holidaychannel) | `com.channelflow.holidaychannel` | Holiday Channel — the active holiday, its windows, and today's lineup with the period logos from v1.0.0 |
+| [`plugins/jellyfin`](plugins/jellyfin) | `com.channelflow.jellyfin` | Jellyfin Media Source — sync movies, TV and music from a Jellyfin server (media-source contract) |
+| [`plugins/lists`](plugins/lists) | `com.channelflow.lists` | Named lists of catalog items to reuse across channels and presets |
+| [`plugins/local`](plugins/local) | `com.channelflow.local` | A media source for files on this machine — folders of Jellyfin-format `.nfo` files and posters |
 | [`plugins/news`](plugins/news) | `com.channelflow.news` | News — the FlowWire newscast: RSS headlines, TTS, feeds (1.0.0's News tab as a plugin) |
-| [`plugins/ersatztv`](plugins/ersatztv) | `com.channelflow.ersatztv` | The ErsatzTV Transcoding Engine — next's ffmpeg/normalization settings plus per-channel overrides |
+| [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media, with custom slates (1.0.0's EBS settings as a plugin) |
+| [`plugins/pasttense`](plugins/pasttense) | `com.channelflow.pasttense` | Past Tense News — home-movie coverage played as live breaking news from event folders |
+| [`plugins/presets`](plugins/presets) | `com.channelflow.presets` | Ready-made channels to get up and running quickly — a shortcut, not the only way to add channels |
+| [`plugins/weather`](plugins/weather) | `com.channelflow.weather` | Weather — WeatherStar look, source, location, units, and screens (1.0.0's Weather tab as a plugin) |
 
 ## How the base builds against this repo
 
