@@ -1,1 +1,11 @@
 /* page styles live here */
+
+/* The news anchor portrait. */
+.news-anchor-wrap { margin-top: 0.4rem; }
+.news-anchor {
+    border-radius: 0.4rem;
+    width: 11rem;
+    height: 11rem;
+    object-fit: cover;
+    box-shadow: 0 0.0725em 0.29em 0 rgba(0, 0, 0, 0.37);
+}
