@@ -80,4 +80,21 @@
             <p class="field-note" id="cb-result"></p>
           </form>
         </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Pool preview</h3>
+          </div>
+          <p class="hint">
+            What the settings would pull from the CommercialBrainz server — page through the
+            browse API and apply the saved filters, exactly as the sync would. The grid
+            shows a sample of the accepted ads.
+          </p>
+          <div class="actions">
+            <button type="button" class="ghost" id="cb-pool">Fetch pool preview</button>
+          </div>
+          <p class="hint" id="cb-pool-note"></p>
+          <div id="cb-pool-grid" class="cb-pool-grid"></div>
+          <div id="cb-pool-reasons"></div>
+        </div>
       </section>

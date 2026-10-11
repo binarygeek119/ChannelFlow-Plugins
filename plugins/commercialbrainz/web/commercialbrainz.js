@@ -102,8 +102,9 @@ function collectCbSettings() {
 }
 
 async function loadCommercialBrainz() {
+  renderCbPoolNote("");
   try {
-    const data = await request(CB_API + "/");
+    const data = await request(CB_API);
     if (data.options && data.options.pool_modes) {
       fillCbSelect("cb-pool-mode", data.options.pool_modes, data.settings && data.settings.pool_mode);
     }
@@ -114,12 +115,66 @@ async function loadCommercialBrainz() {
   }
 }
 
+// Pull the pool the way the sync would and show what would come in.
+async function previewCbPool() {
+  const button = $("cb-pool");
+  if (button) button.disabled = true;
+  renderCbPoolNote("Fetching the pool…");
+  try {
+    const data = await request(`${CB_API}/pool`);
+    if (!data.ok) {
+      renderCbPoolNote(data.error || "Could not fetch the pool.");
+      return;
+    }
+    const accepted = data.accepted || 0;
+    const filtered = data.filtered || 0;
+    renderCbPoolNote(
+      `${accepted} accepted · ${filtered} filtered (${data.total_on_server || 0} on the server)`
+    );
+    const grid = $("cb-pool-grid");
+    if (grid) {
+      grid.textContent = "";
+      (data.sample || []).forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "cb-pool-card";
+        const thumb = item.thumbnail_url
+          ? `<img src="${escapeHtml(item.thumbnail_url)}" alt="" loading="lazy" onerror="this.remove()">`
+          : "";
+        card.innerHTML =
+          `${thumb}<div class="cb-pool-title" title="${escapeHtml(item.title || "")}">${escapeHtml(item.title || "")}</div>` +
+          (item.brand ? `<div class="cb-pool-brand">${escapeHtml(item.brand)}</div>` : "") +
+          (item.youtube_url ? `<a class="link" href="${escapeHtml(item.youtube_url)}" target="_blank" rel="noopener">Watch</a>` : "");
+        grid.appendChild(card);
+      });
+    }
+    const reasons = $("cb-pool-reasons");
+    if (reasons) {
+      reasons.textContent = "";
+      (data.reasons || []).forEach(([reason, count]) => {
+        const line = document.createElement("div");
+        line.className = "cb-pool-reason";
+        line.textContent = `${count} rejected: ${reason}`;
+        reasons.appendChild(line);
+      });
+    }
+  } catch (error) {
+    renderCbPoolNote(error.message || "Could not fetch the pool.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderCbPoolNote(message) {
+  const note = $("cb-pool-note");
+  if (note) note.textContent = message || "";
+}
+
 async function saveCommercialBrainz(event) {
   event.preventDefault();
   const save = $("cb-save");
   save.disabled = true;
   try {
-    await request(CB_API + "/", { method: "PUT", body: JSON.stringify(collectCbSettings()) });
+    await request(CB_API, { method: "PUT", body: JSON.stringify(collectCbSettings()) });
     $("cb-result").textContent = "Saved.";
   } catch (error) {
     $("cb-result").textContent = error.message;
@@ -134,7 +189,7 @@ async function testCommercialBrainz() {
   test.textContent = "Testing…";
   try {
     // Save first so the server tests what the form holds.
-    await request(CB_API + "/", { method: "PUT", body: JSON.stringify(collectCbSettings()) });
+    await request(CB_API, { method: "PUT", body: JSON.stringify(collectCbSettings()) });
     const data = await request(CB_API + "/test");
     const result = data.result || {};
     $("cb-result").textContent = `${result.ok ? "OK" : "Failed"}: ${result.detail || ""}`;
@@ -151,6 +206,8 @@ async function testCommercialBrainz() {
   if (form) form.addEventListener("submit", saveCommercialBrainz);
   const test = $("cb-test");
   if (test) test.addEventListener("click", testCommercialBrainz);
+  const pool = $("cb-pool");
+  if (pool) pool.addEventListener("click", previewCbPool);
 }
 
 

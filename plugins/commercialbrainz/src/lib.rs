@@ -7,6 +7,7 @@
 //! the plugin and the tab appears.
 
 mod api;
+mod pool;
 mod settings;
 
 use std::sync::Arc;

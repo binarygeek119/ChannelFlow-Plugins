@@ -20,6 +20,7 @@ pub fn router(state: Arc<CommercialBrainzState>) -> Router {
     Router::new()
         .route("/", get(get_settings).put(put_settings))
         .route("/test", get(test_settings))
+        .route("/pool", get(pool_preview))
         .with_state(state)
 }
 
@@ -83,4 +84,72 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
 
 fn fail(status: StatusCode, message: String) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
+}
+
+/// Pull the pool the settings would sync the way v1.0.0 did: page through the
+/// browse endpoint up to the max results and apply the saved filters. The
+/// page shows how many would come in, why others were filtered, and a sample.
+async fn pool_preview(State(state): State<Arc<CommercialBrainzState>>) -> Response {
+    let settings = state.settings.lock().await.clone();
+    if !settings.enabled {
+        return Json(json!({ "ok": false, "error": "CommercialBrainz is disabled." })).into_response();
+    }
+    let mut offset: i64 = 0;
+    let page_size: i64 = 50;
+    let max_results = settings.max_sync_results.max(1) as i64;
+    let mut accepted: Vec<serde_json::Value> = Vec::new();
+    let mut filtered = 0i64;
+    let mut reasons: Vec<(String, i64)> = Vec::new();
+    let mut total_on_server = 0i64;
+    let mut reached_end = false;
+
+    while accepted.len() < max_results as usize {
+        match crate::pool::browse(&state.http, &settings, offset, page_size).await {
+            Ok(page) => {
+                total_on_server = page.total;
+                if page.items.is_empty() {
+                    reached_end = true;
+                    break;
+                }
+                for item in page.items {
+                    match crate::pool::filter(&settings, &item) {
+                        Ok(()) => accepted.push(crate::pool::item_view(&item, &settings.base_url)),
+                        Err(reason) => {
+                            filtered += 1;
+                            if let Some(slot) = reasons.iter_mut().find(|(name, _)| name == reason) {
+                                slot.1 += 1;
+                            } else {
+                                reasons.push((reason.to_string(), 1));
+                            }
+                        }
+                    }
+                    if accepted.len() >= max_results as usize {
+                        break;
+                    }
+                }
+                offset += page_size;
+                if offset >= total_on_server || offset >= 2000 {
+                    reached_end = true;
+                    break;
+                }
+            }
+            Err(error) => {
+                return Json(json!({ "ok": false, "error": error })).into_response();
+            }
+        }
+    }
+
+    let sample = accepted.iter().take(24).cloned().collect::<Vec<_>>();
+    Json(json!({
+        "ok": true,
+        "enabled": settings.enabled,
+        "base_url": settings.base_url,
+        "total_on_server": total_on_server,
+        "accepted": accepted.len(),
+        "filtered": filtered,
+        "reasons": reasons,
+        "paged_fully": reached_end,
+        "sample": sample,
+    }))
+    .into_response()
 }

@@ -1,1 +1,31 @@
 /* page styles live here */
+
+/* Commercial pool preview. */
+.cb-pool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.8rem;
+    margin-top: 0.5rem;
+}
+.cb-pool-card {
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.4rem;
+    font-size: 0.8rem;
+}
+.cb-pool-card img {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    background: #101010;
+}
+.cb-pool-title {
+    margin-top: 0.3rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cb-pool-brand { color: var(--muted); font-size: 0.75rem; }
+.cb-pool-reason { color: var(--muted); font-size: 0.8rem; margin-top: 0.2rem; }
