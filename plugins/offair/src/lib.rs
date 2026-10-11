@@ -180,12 +180,10 @@ fn serve_offline_media(api: &channelflow_plugin_api::plugin::PluginApi) {
             )
         };
     }
-    slate!("offline.jpg");
     slate!("offline_usa_16_9.jpg");
     slate!("offline_usa_4_3.jpg");
     slate!("offline_world_16_9.jpg");
     slate!("offline_world_4_3.jpg");
-    slate!("offlineusa.jpg");
 }
 
 #[cfg(test)]
