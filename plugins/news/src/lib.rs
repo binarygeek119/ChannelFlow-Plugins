@@ -32,8 +32,8 @@ fn flowwire_preset() -> PresetContribution {
     PresetContribution {
         id: FLOWWIRE_PRESET_ID.to_string(),
         plugin_id: "com.channelflow.news".to_string(),
-        legacy: 123.1,
-        subchannel: 119.8,
+        legacy: 123.0,
+        subchannel: 119.5,
         name: "FlowWire News".to_string(),
         category: "News".to_string(),
         description: "Live RSS news channel with optional TTS".to_string(),
