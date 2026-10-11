@@ -29,8 +29,12 @@ pub const LEDGER_KEY: &str = "bulletin-ledger";
 /// The anchor's portrait, embedded so the renderer needs no external file.
 const PRESENTER_JPEG: &[u8] = include_bytes!("../web/media/Catherine_Wolfe.jpg");
 
-/// The FlowWire logo, shown as a centered bumper for the intro.
-const LOGO_PNG: &[u8] = include_bytes!("../web/logos/FlowWire.png");
+/// The news-desktop assets: a scrolling world map behind everything, the top
+/// headline bar, the bottom story bar, and a mute overlay across the screen.
+const MAP_PNG: &[u8] = include_bytes!("../web/media/map.png");
+const HEADLINE_BAR_PNG: &[u8] = include_bytes!("../web/media/headline_bar.png");
+const STORY_BAR_PNG: &[u8] = include_bytes!("../web/media/story_bar.png");
+const MAP_MUTE_PNG: &[u8] = include_bytes!("../web/media/map_mute.png");
 
 /// The FlowWire intro/outro music, from v1.0.0's FlowWire_News audio.
 const INTRO_MP3: &[u8] = include_bytes!("../web/audio/FlowWire_News/FlowWire-intro.mp3");
@@ -191,8 +195,8 @@ pub async fn run(
     let output = folder.join(format!("news-{stamp}.mp4"));
     let staging = output.with_extension("mp4.partial");
 
-    let rendered = match render_bulletin(&settings, &encoded, &work_dir, &staging) {
-        Ok(()) => true,
+    match render_bulletin(&settings, &encoded, &work_dir, &staging) {
+        Ok(()) => {}
         Err(error) => {
             state
                 .logger
@@ -209,7 +213,7 @@ pub async fn run(
             )
             .await;
         }
-    };
+    }
     let _ = std::fs::remove_dir_all(&work_dir);
 
     if let Err(error) = std::fs::rename(&staging, &output) {
@@ -328,8 +332,14 @@ fn render_bulletin(
     std::fs::create_dir_all(work_dir).map_err(|error| error.to_string())?;
     let presenter = work_dir.join("presenter.jpg");
     std::fs::write(&presenter, PRESENTER_JPEG).map_err(|error| error.to_string())?;
-    let logo = work_dir.join("logo.png");
-    std::fs::write(&logo, LOGO_PNG).map_err(|error| error.to_string())?;
+    let map = work_dir.join("map.png");
+    std::fs::write(&map, MAP_PNG).map_err(|error| error.to_string())?;
+    let headline_bar = work_dir.join("headline_bar.png");
+    std::fs::write(&headline_bar, HEADLINE_BAR_PNG).map_err(|error| error.to_string())?;
+    let story_bar = work_dir.join("story_bar.png");
+    std::fs::write(&story_bar, STORY_BAR_PNG).map_err(|error| error.to_string())?;
+    let map_mute = work_dir.join("map_mute.png");
+    std::fs::write(&map_mute, MAP_MUTE_PNG).map_err(|error| error.to_string())?;
     let intro_mp3 = work_dir.join("intro.mp3");
     std::fs::write(&intro_mp3, INTRO_MP3).map_err(|error| error.to_string())?;
     let outro_mp3 = work_dir.join("outro.mp3");
@@ -365,26 +375,32 @@ fn render_bulletin(
     let total = show_total + outro_len;
     let outro_delay_ms = (show_total * 1000.0).round().max(0.0) as i64;
     let audio = format!(
-        "[3:a]atrim=0:{intro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
-         [4:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
+        "[6:a]atrim=0:{intro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
+         [7:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
          [a0][a1]amix=inputs=2:duration=longest:normalize=0[aout]",
         intro_len = intro_music_len,
         outro_len = outro_len,
         delay = outro_delay_ms,
     );
-    // Logo for the intro-lead-in and the closing outro; the anchor centers
-    // only while the show is on (after the intro music, before the outro).
+    // Layers, bottom to top: the scrolling map behind everything, the anchor
+    // centered, the headline bar over the top, the story bar over the bottom,
+    // the captions, then the mute overlay across the whole screen.
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
-         [1:v]scale=520:-1[p];\
-         [2:v]scale=460:-1[lg];\
-         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{lead})*lt(t\\,{show})'[vp];\
-         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{lead})+gte(t\\,{show})'[vout];\
-         [vout]ass='{ass}'[final];\
+         [1:v]scale=6480:1080[mp];\
+         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];\
+         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];\
+         [2:v]scale=520:-1[p];\
+         [m2][p]overlay=(W-w)/2:(H-h)/2[l1];\
+         [3:v]scale=1920:1080[hb];\
+         [l1][hb]overlay=0:0[l2];\
+         [4:v]scale=1920:1080[sb];\
+         [l2][sb]overlay=0:0[l3];\
+         [l3]ass='{ass}'[l4];\
+         [5:v]scale=1920:1080[mm];\
+         [l4][mm]overlay=0:0[final];\
          {audio}",
         total = total,
-        lead = intro_music_len,
-        show = show_total,
         ass = escape_filter_path(&ass_path),
         audio = audio,
     );
@@ -405,6 +421,14 @@ fn render_bulletin(
         "-t".into(),
         format!("{total}"),
         "-i".into(),
+        map.to_string_lossy().to_string(),
+        "-loop".into(),
+        "1".into(),
+        "-framerate".into(),
+        FPS.to_string(),
+        "-t".into(),
+        format!("{total}"),
+        "-i".into(),
         presenter.to_string_lossy().to_string(),
         "-loop".into(),
         "1".into(),
@@ -413,7 +437,23 @@ fn render_bulletin(
         "-t".into(),
         format!("{total}"),
         "-i".into(),
-        logo.to_string_lossy().to_string(),
+        headline_bar.to_string_lossy().to_string(),
+        "-loop".into(),
+        "1".into(),
+        "-framerate".into(),
+        FPS.to_string(),
+        "-t".into(),
+        format!("{total}"),
+        "-i".into(),
+        story_bar.to_string_lossy().to_string(),
+        "-loop".into(),
+        "1".into(),
+        "-framerate".into(),
+        FPS.to_string(),
+        "-t".into(),
+        format!("{total}"),
+        "-i".into(),
+        map_mute.to_string_lossy().to_string(),
         "-i".into(),
         intro_mp3.to_string_lossy().to_string(),
         "-i".into(),
@@ -522,10 +562,8 @@ struct Beat {
 }
 
 /// Build the ASS caption file and return it with the total show length.
-/// Mirrors 1.0.0's NewsAssBuilder: a Headline at the top, a Crawl of the
-/// spoken copy along the bottom, and the anchor's name throughout. The intro
-/// music plays first (a logo lead-in of `intro_music_len`), then the anchor's
-/// open, then the stories, then the anchor's outro.
+/// Headlines render in the top bar; the story's copy renders as two lines in
+/// the bottom bar, held longer when the copy is longer.
 fn build_ass(
     stories: &[Value],
     intro: &str,
@@ -534,19 +572,22 @@ fn build_ass(
     intro_music_len: f64,
 ) -> (String, f64) {
     let mut beats: Vec<Beat> = Vec::new();
-    let mut t = 0.0f64;
+    let lead = intro_music_len.max(0.5);
 
-    // The FlowWire intro music plays fully before the anchor's open.
-    t += intro_music_len.max(0.5);
-
-    // Anchor intro card.
+    // During the song, show only the show name; the anchor's open follows.
     beats.push(Beat {
-        start: t,
-        end: t + ANCHOR_INTRO_SECONDS,
+        start: 0.0,
+        end: lead,
+        title: show_name.to_string(),
+        body: String::new(),
+    });
+    beats.push(Beat {
+        start: lead,
+        end: lead + ANCHOR_INTRO_SECONDS,
         title: show_name.to_string(),
         body: intro.to_string(),
     });
-    t += ANCHOR_INTRO_SECONDS;
+    let mut t = lead + ANCHOR_INTRO_SECONDS;
 
     for story in stories {
         let title = story
@@ -559,13 +600,14 @@ fn build_ass(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        let duration = story_seconds(&body);
         beats.push(Beat {
             start: t,
-            end: t + SECONDS_PER_STORY,
+            end: t + duration,
             title,
             body,
         });
-        t += SECONDS_PER_STORY;
+        t += duration;
     }
 
     beats.push(Beat {
@@ -575,7 +617,7 @@ fn build_ass(
         body: outro.to_string(),
     });
     t += OUTRO_SECONDS;
-    let total = t.max(1.0);
+    let show_total = t;
 
     let mut events = String::new();
     for beat in &beats {
@@ -590,10 +632,10 @@ fn build_ass(
         let body = clean_text(&beat.body);
         if !body.is_empty() && !body.eq_ignore_ascii_case(beat.title.trim()) {
             events.push_str(&format!(
-                "Dialogue: 1,{},{},Crawl,,0,0,0,,{}\n",
+                "Dialogue: 1,{},{},Story,,0,0,0,,{}\n",
                 ass_time(beat.start),
                 ass_time(beat.end),
-                crawl(&body, beat.end - beat.start)
+                wrap_two(&body)
             ));
         }
     }
@@ -607,25 +649,60 @@ fn build_ass(
     ass.push_str(&format!("PlayResY: {HEIGHT}\n\n"));
     ass.push_str("[V4+ Styles]\n");
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
-    ass.push_str("Style: Headline, Liberation Sans, 52, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 60, 60, 40, 1\n");
-    ass.push_str("Style: Crawl, Liberation Sans, 64, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 2, 40, 40, 60, 1\n");
-    ass.push_str("Style: Presenter, Liberation Sans, 34, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 9, 24, 24, 24, 1\n\n");
+    // Headline sits at the top centre (inside the headline bar); Story is the
+    // bottom-centre two-line copy (inside the story bar).
+    ass.push_str("Style: Headline, Liberation Sans, 54, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 60, 60, 84, 1\n");
+    ass.push_str("Style: Story, Liberation Sans, 34, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 60, 120, 90, 1\n\n");
     ass.push_str("[Events]\n");
     ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     ass.push_str(&events);
-    (ass, total)
+    (ass, show_total)
 }
 
-/// The spoken copy as a bottom crawl that scrolls right-to-left.
-fn crawl(text: &str, duration: f64) -> String {
-    let line = escape_ass(text);
-    let y = HEIGHT - 140;
-    let x1 = WIDTH + 60;
-    let text_width = (WIDTH / 2).max((line.chars().count() as u32) * 40);
-    let seconds = duration.max(0.5);
-    let move_ms = ((seconds - 0.25).max(0.4) * 1000.0).round() as i64;
-    let x2 = -(text_width as i64);
-    format!("{{\\q2\\move({x1},{y},{x2},{y},0,{move_ms})}}{line}")
+/// A story's on-screen time grows with its copy, bounded so a long summary
+/// cannot stall the show: 4–14 seconds.
+fn story_seconds(body: &str) -> f64 {
+    let chars = clean_text(body).chars().count();
+    (3.0 + chars as f64 / 16.0).clamp(4.0, 14.0)
+}
+
+/// Greedy wrap of the copy into at most two lines (bottom bar), with an
+/// ellipsis when a line overflows.
+fn wrap_two(text: &str) -> String {
+    const MAX: usize = 62;
+    let mut words = text.split_whitespace();
+    let mut first = String::new();
+    while let Some(word) = words.next() {
+        if !first.is_empty() && first.len() + word.len() + 1 > MAX {
+            break;
+        }
+        if !first.is_empty() {
+            first.push(' ');
+        }
+        first.push_str(word);
+        if first.len() >= MAX {
+            break;
+        }
+    }
+    let mut second = String::new();
+    for word in words {
+        if !second.is_empty() && second.len() + word.len() + 1 > MAX {
+            second.push_str(" …");
+            break;
+        }
+        if !second.is_empty() {
+            second.push(' ');
+        }
+        second.push_str(word);
+    }
+    if second.is_empty() {
+        if first.len() > MAX {
+            first.push_str(" …");
+        }
+        first
+    } else {
+        format!("{first}\\N{second}")
+    }
 }
 
 fn ass_time(seconds: f64) -> String {
@@ -683,13 +760,29 @@ mod tests {
     }
 
     #[test]
-    fn ass_lays_out_a_headline_and_a_crawl_per_story() {
-        let stories = vec![json!({ "title": "Headline One", "summary": "Spoken copy." })];
+    fn ass_puts_the_headline_in_the_bar_and_the_copy_as_two_lines() {
+        let stories = vec![json!({ "title": "Headline One", "summary": "Spoken copy here." })];
         let (ass, total) = build_ass(&stories, "Intro.", "Outro.", "FlowWire News", 3.0);
         assert!(ass.contains("Headline One"));
-        assert!(ass.contains("Spoken copy."));
-        assert!(ass.contains("Crawl"));
-        // intro music (3) + anchor intro (4) + 1 story (6) + outro (3)
-        assert!((total - 16.0).abs() < 0.001);
+        assert!(ass.contains("Spoken copy here."));
+        assert!(ass.contains("Style: Story"));
+        assert!(!ass.contains("Crawl"), "the crawl is gone, two-line copy replaces it");
+        // lead (3) + anchor intro (4) + story (length-based) + outro (3)
+        assert!((total - 3.0 - 4.0 - 3.0) >= 4.0, "the story gets its own length-based window");
+    }
+
+    #[test]
+    fn shorter_copy_gets_a_shorter_window() {
+        let short = story_seconds("Short.");
+        let long = story_seconds("This is a considerably longer summary with many more words in it.");
+        assert!(long > short, "longer copy holds the screen longer");
+        assert!(short >= 4.0 && long <= 14.0, "bounded so it cannot stall the show");
+    }
+
+    #[test]
+    fn long_lines_wrap_onto_two_news_lines() {
+        let text = "word ".repeat(40) + "overflow";
+        let wrapped = wrap_two(&text);
+        assert!(wrapped.contains("\\N"), "overflow wraps to a second line");
     }
 }
