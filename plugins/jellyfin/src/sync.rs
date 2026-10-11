@@ -175,6 +175,95 @@ fn build_catalog_item(kind: &str, remote: &str, raw: &Value, library: &str) -> C
         .first_episode_year(first_episode_year)
         .studios(studios)
         .tags(tags)
+        .detail(item_detail(raw))
+        .people(item_people(raw))
+}
+
+/// The rich metadata a Jellyfin item carries beyond the summary fields, kept
+/// in the base catalog as one JSON blob: tagline, ratings, container and
+/// aspect, language, a music item's album/artist links, and the item's files
+/// with their streams and chapters.
+fn item_detail(raw: &Value) -> Option<Value> {
+    let text = |key: &str| raw.get(key).and_then(Value::as_str).map(str::to_string);
+    let mut detail = serde_json::Map::new();
+    let mut put = |key: &str, value: Value| {
+        if !value.is_null() {
+            detail.insert(key.to_string(), value);
+        }
+    };
+    put("tagline", raw.get("Taglines").and_then(Value::as_array).and_then(|lines| lines.first()).cloned().unwrap_or_else(|| text("Tagline").map(Value::String).unwrap_or(Value::Null)));
+    put("community_rating", raw.get("CommunityRating").cloned().unwrap_or(Value::Null));
+    put("critics_rating", raw.get("CriticRating").cloned().unwrap_or(Value::Null));
+    put("custom_rating", text("CustomRating").map(Value::String).unwrap_or(Value::Null));
+    put("container", text("Container").map(Value::String).unwrap_or(Value::Null));
+    put("original_aspect_ratio", text("AspectRatio").map(Value::String).unwrap_or(Value::Null));
+    put("language", text("PreferredMetadataLanguage").map(Value::String).unwrap_or(Value::Null));
+    put("original_language", text("OriginalLanguage").map(Value::String).unwrap_or(Value::Null));
+    // Music links: album → artist, track → album; the base music graph joins
+    // on these instead of the plugin's own tables.
+    put("album_id", text("AlbumId").map(Value::String).unwrap_or(Value::Null));
+    put("album_artist", text("AlbumArtist").map(Value::String).unwrap_or(Value::Null));
+    put("artist_id", text("ArtistId").map(Value::String).unwrap_or(Value::Null));
+    put("series_id", text("SeriesId").map(Value::String).unwrap_or(Value::Null));
+
+    // Files with their streams and chapters (the item's playable sources).
+    let files: Vec<Value> = raw
+        .get("MediaSources")
+        .and_then(Value::as_array)
+        .map(|sources| {
+            sources
+                .iter()
+                .map(|source| {
+                    serde_json::json!({
+                        "remote_id": source.get("Id"),
+                        "container": source.get("Container"),
+                        "path": source.get("Path"),
+                        "size_bytes": source.get("Size"),
+                        "bitrate": source.get("Bitrate"),
+                        "runtime_ticks": source.get("RunTimeTicks"),
+                        "media_streams": source.get("MediaStreams").cloned().unwrap_or(Value::Null),
+                        "chapters": source.get("Chapters").cloned().unwrap_or(Value::Null),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if !files.is_empty() {
+        put("files", Value::Array(files));
+    }
+    if raw.get("Chapters").is_some() {
+        put("chapters", raw.get("Chapters").cloned().unwrap_or(Value::Null));
+    }
+
+    if detail.is_empty() {
+        None
+    } else {
+        Some(Value::Object(detail))
+    }
+}
+
+/// The cast and crew a Jellyfin item reports.
+fn item_people(raw: &Value) -> Vec<channelflow_plugin_api::media::PersonCredit> {
+    raw.get("People")
+        .and_then(Value::as_array)
+        .map(|people| {
+            people
+                .iter()
+                .filter_map(|person| {
+                    let name = person.get("Name").and_then(Value::as_str)?.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    Some(channelflow_plugin_api::media::PersonCredit {
+                        name: name.to_string(),
+                        role_type: person.get("Type").and_then(Value::as_str).unwrap_or("").to_string(),
+                        role: person.get("Role").and_then(Value::as_str).unwrap_or("").to_string(),
+                        character: person.get("Role").and_then(Value::as_str).unwrap_or("").to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Which pass a `walk` is doing: either metadata (phase 1) or images (phase 2).
