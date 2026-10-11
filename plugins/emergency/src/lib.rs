@@ -41,6 +41,8 @@ pub struct EmergencyState {
     pub settings: Mutex<EmergencySettings>,
     pub storage: Arc<dyn PluginStorage>,
     pub logger: PluginLogger,
+    /// Outbound HTTP for fetching the weather alerts.
+    pub http: reqwest::Client,
 }
 
 impl EmergencyPlugin {
@@ -90,6 +92,10 @@ impl Plugin for EmergencyPlugin {
             settings: Mutex::new(settings),
             storage: api.storage.clone(),
             logger: api.logger.clone(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(20))
+                .build()
+                .map_err(|error| PluginError::new(format!("building the HTTP client: {error}")))?,
         }));
         api.logger.info("loaded");
         Ok(())

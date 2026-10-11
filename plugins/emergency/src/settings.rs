@@ -27,6 +27,21 @@ impl Default for AlertDisplay {
     }
 }
 
+/// Where the weather alerts come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherSource {
+    Auto,
+    Us,
+    World,
+}
+
+impl Default for WeatherSource {
+    fn default() -> Self {
+        WeatherSource::Auto
+    }
+}
+
 /// The whole Emergency Broadcast System settings document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -36,6 +51,10 @@ pub struct EmergencySettings {
     pub cutin_interval_minutes: u32,
     /// How long the alerts screen stays up, in seconds.
     pub cutin_duration_seconds: u32,
+    /// The location active alerts are fetched for (ZIP, city, or lat,lon).
+    pub location: String,
+    /// The alert source — NOAA in the US, Open-Meteo worldwide.
+    pub source: WeatherSource,
 }
 
 impl Default for EmergencySettings {
@@ -44,6 +63,8 @@ impl Default for EmergencySettings {
             alert_display: AlertDisplay::default(),
             cutin_interval_minutes: 15,
             cutin_duration_seconds: 20,
+            location: String::new(),
+            source: WeatherSource::default(),
         }
     }
 }
@@ -62,9 +83,10 @@ impl std::error::Error for EmergencyError {}
 impl EmergencySettings {
     /// Parse and validate a stored or posted document.
     pub fn parse(value: &serde_json::Value) -> Result<Self, EmergencyError> {
-        let settings: EmergencySettings = serde_json::from_value(value.clone()).map_err(
+        let mut settings: EmergencySettings = serde_json::from_value(value.clone()).map_err(
             |error| EmergencyError(format!("emergency settings are not valid: {error}")),
         )?;
+        settings.location = settings.location.trim().to_string();
         settings.validate()?;
         Ok(settings)
     }

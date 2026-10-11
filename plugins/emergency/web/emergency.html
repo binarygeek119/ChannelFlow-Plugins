@@ -21,6 +21,19 @@
               <label class="field-label" for="alert-cutin-duration">How long (seconds)</label>
               <input id="alert-cutin-duration" type="number" min="5" max="120" step="1" value="20">
             </div>
+            <div class="field">
+              <label class="field-label" for="alert-location">Alert location</label>
+              <input id="alert-location" type="text" placeholder="ZIP, city, or lat,lon">
+              <small class="field-hint">Where active weather alerts are fetched for.</small>
+            </div>
+            <div class="field">
+              <label class="field-label" for="alert-source">Alert source</label>
+              <select id="alert-source">
+                <option value="auto">Auto (NOAA in the US, Open-Meteo worldwide)</option>
+                <option value="us">United States</option>
+                <option value="world">World</option>
+              </select>
+            </div>
             <div class="ms-form-actions">
               <button type="button" class="ghost" id="alert-test">Test alerts</button>
               <button type="submit" class="primary" id="alert-save">Save Alert Settings</button>
@@ -31,11 +44,27 @@
 
         <div class="panel">
           <div class="panel-head">
+            <h3>Alert status</h3>
+          </div>
+          <p class="hint">
+            What the overlay would do right now — the mode, the active weather alerts for the
+            location, and the cut-in schedule.
+          </p>
+          <p class="hint" id="alert-status"></p>
+          <div id="alert-list" class="alert-list"></div>
+          <div class="actions">
+            <button type="button" class="ghost" id="alert-refresh">Refresh alerts</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
             <h3>Alert media</h3>
           </div>
           <p class="hint">
-            The EBS graphics the channel splices onto programming — the fullscreen alert, the
-            ticker strip, and the offline screens — carried over from v1.0.0.
+            The EBS graphics the channel splices onto programming — the fullscreen alert and
+            the ticker strip — carried over from v1.0.0. (The offline screens live with
+            Off Air.)
           </p>
           <div id="ebs-media" class="ebs-media-grid"></div>
         </div>

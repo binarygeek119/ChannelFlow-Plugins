@@ -47,3 +47,14 @@
     color: var(--muted);
 }
 .ebs-audio audio { width: 18rem; max-width: 100%; }
+/* Alert status cards. */
+.alert-list { display: grid; gap: 0.5rem; margin-top: 0.4rem; }
+.alert-card {
+    border: 1px solid var(--border);
+    border-left: 3px solid #e6473b;
+    border-radius: 0.35rem;
+    padding: 0.5rem 0.6rem;
+}
+.alert-card-title { font-weight: 600; }
+.alert-card-body { color: var(--muted); font-size: 0.84rem; margin-top: 0.2rem; }
+.alert-card-note { color: var(--muted); font-size: 0.76rem; margin-top: 0.15rem; }

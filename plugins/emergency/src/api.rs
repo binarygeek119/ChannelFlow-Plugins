@@ -20,6 +20,7 @@ pub fn router(state: Arc<EmergencyState>) -> Router {
     Router::new()
         .route("/", get(get_settings).put(put_settings))
         .route("/test", get(test_alerts))
+        .route("/alerts", get(current_alerts))
         .with_state(state)
 }
 
@@ -88,4 +89,187 @@ async fn test_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
 
 fn fail(status: StatusCode, message: String) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
+}
+
+/// What the overlay would do right now, the way v1.0.0's WeatherAlertOverlay
+/// Service did it: the mode, the active weather alerts for the location, and
+/// the cut-in schedule. v1 pulled alerts from NOAA; Open-Meteo's alerts feed
+/// covers the US and EU here.
+async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
+    let settings = state.settings.lock().await.clone();
+    let mode = match settings.alert_display {
+        AlertDisplay::Off => "off",
+        AlertDisplay::CutIn => "cutin",
+        AlertDisplay::Ticker => "ticker",
+    };
+    let next_cut_in_seconds = if mode == "cutin" {
+        settings.cutin_interval_minutes.saturating_mul(60)
+    } else {
+        0
+    };
+    if settings.location.trim().is_empty() {
+        return Json(json!({
+            "ok": false,
+            "mode": mode,
+            "error": "Set a location to fetch alerts.",
+            "alerts": [],
+            "next_cut_in_seconds": next_cut_in_seconds,
+            "cutin_duration_seconds": settings.cutin_duration_seconds,
+        }))
+        .into_response();
+    }
+
+    let place = match geocode(&state.http, &settings.location).await {
+        Ok(place) => place,
+        Err(error) => {
+            return Json(json!({
+                "ok": false,
+                "mode": mode,
+                "error": error,
+                "alerts": [],
+                "next_cut_in_seconds": next_cut_in_seconds,
+                "cutin_duration_seconds": settings.cutin_duration_seconds,
+            }))
+            .into_response();
+        }
+    };
+
+    // The source maps to units, not a different endpoint (Open-Meteo serves
+    // the US and worldwide).
+    let _ = settings.source;
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}\
+         &current=temperature_2m,weather_code,wind_speed_10m\
+         &alerts=true&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto",
+        place.latitude, place.longitude
+    );
+    let response = match state.http.get(&url).send().await {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            return Json(json!({
+                "ok": false,
+                "mode": mode,
+                "error": format!("the weather service answered {}", response.status()),
+                "alerts": [],
+                "next_cut_in_seconds": next_cut_in_seconds,
+                "cutin_duration_seconds": settings.cutin_duration_seconds,
+            }))
+            .into_response();
+        }
+        Err(_) => {
+            return Json(json!({
+                "ok": false,
+                "mode": mode,
+                "error": "could not reach the weather service",
+                "alerts": [],
+                "next_cut_in_seconds": next_cut_in_seconds,
+                "cutin_duration_seconds": settings.cutin_duration_seconds,
+            }))
+            .into_response();
+        }
+    };
+    let Ok(body) = response.json::<serde_json::Value>().await else {
+        return Json(json!({
+            "ok": false,
+            "mode": mode,
+            "error": "the weather service reply was unreadable",
+            "alerts": [],
+            "next_cut_in_seconds": next_cut_in_seconds,
+            "cutin_duration_seconds": settings.cutin_duration_seconds,
+        }))
+        .into_response();
+    };
+
+    let alerts: Vec<serde_json::Value> = body
+        .pointer("/alerts/alert")
+        .and_then(serde_json::Value::as_array)
+        .map(|alerts| {
+            alerts
+                .iter()
+                .map(|alert| {
+                    json!({
+                        "event": alert.get("event"),
+                        "headline": alert.get("headline"),
+                        "description": alert.get("description"),
+                        "severity": alert.get("severity"),
+                        "urgency": alert.get("urgency"),
+                        "starts_at": alert.get("start"),
+                        "ends_at": alert.get("end"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let current = body.get("current").cloned();
+
+    Json(json!({
+        "ok": true,
+        "mode": mode,
+        "location": { "name": place.name, "latitude": place.latitude, "longitude": place.longitude },
+        "alerts": alerts,
+        "count": alerts.len(),
+        "next_cut_in_seconds": next_cut_in_seconds,
+        "cutin_duration_seconds": settings.cutin_duration_seconds,
+        "current": current,
+    }))
+    .into_response()
+}
+
+/// Resolve a location query to coordinates via Open-Meteo's geocoder (or
+/// `latitude,longitude` directly).
+async fn geocode(http: &reqwest::Client, query: &str) -> Result<GeoPlace, String> {
+    let query = query.trim();
+    if let Some((latitude, longitude)) = parse_coordinates(query) {
+        return Ok(GeoPlace {
+            name: query.to_string(),
+            latitude,
+            longitude,
+        });
+    }
+    let url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1",
+        query.replace(' ', "+")
+    );
+    let response = http
+        .get(&url)
+        .send()
+        .await
+        .map_err(|_| "could not reach the location geocoder".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("the location geocoder answered {}", response.status()));
+    }
+    let body = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "the location geocoder reply was unreadable".to_string())?;
+    let Some(result) = body
+        .get("results")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|results| results.first())
+    else {
+        return Err(format!("could not find {query:?}"));
+    };
+    Ok(GeoPlace {
+        name: result
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(query)
+            .to_string(),
+        latitude: result.get("latitude").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
+        longitude: result.get("longitude").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
+    })
+}
+
+struct GeoPlace {
+    name: String,
+    latitude: f64,
+    longitude: f64,
+}
+
+fn parse_coordinates(query: &str) -> Option<(f64, f64)> {
+    let (latitude, longitude) = query.split_once(',')?;
+    Some((
+        latitude.trim().parse::<f64>().ok()?,
+        longitude.trim().parse::<f64>().ok()?,
+    ))
 }

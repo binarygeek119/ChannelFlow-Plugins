@@ -55,24 +55,78 @@ function collectEmergencySettings() {
     alert_display: $("alert-display").value,
     cutin_interval_minutes: Number($("alert-cutin-interval").value) || 15,
     cutin_duration_seconds: Number($("alert-cutin-duration").value) || 20,
+    location: ($("alert-location").value || "").trim(),
+    source: $("alert-source").value,
   };
 }
 
 async function loadEmergency() {
   renderEbsMedia();
   try {
-    const data = await request(EMERGENCY_API + "/");
+    const data = await request(EMERGENCY_API);
     const settings = data.settings || {};
     fillEmergencyDisplay(settings.alert_display);
     const interval = $("alert-cutin-interval");
     if (interval) interval.value = settings.cutin_interval_minutes;
     const duration = $("alert-cutin-duration");
     if (duration) duration.value = settings.cutin_duration_seconds;
+    const location = $("alert-location");
+    if (location) location.value = settings.location || "";
+    const source = $("alert-source");
+    if (source) source.value = settings.source || "auto";
     syncEmergencyFields();
     $("alert-result").textContent = "";
   } catch (error) {
     $("alert-result").textContent = error.message;
   }
+  renderAlertStatus();
+}
+
+// What the overlay would do right now: mode, schedule, and the active alerts.
+async function renderAlertStatus() {
+  const status = $("alert-status");
+  if (!status) return;
+  const list = $("alert-list");
+  if (!list) return;
+  status.textContent = "Checking alerts…";
+  list.textContent = "";
+  let data;
+  try {
+    data = await request(`${EMERGENCY_API}/alerts`);
+  } catch (error) {
+    status.textContent = error.message;
+    return;
+  }
+  if (!data.ok) {
+    status.textContent = data.error || "No alert status.";
+    return;
+  }
+  const mode = data.mode || "off";
+  const modeText = { off: "off", cutin: "cut-in", ticker: "ticker" }[mode] || mode;
+  status.textContent =
+    `${data.count || 0} active alert(s) · display is ${modeText}` +
+    (mode === "cutin"
+      ? ` · alert screen every ${Math.round((data.next_cut_in_seconds || 0) / 60)} minutes for ${data.cutin_duration_seconds || 0} seconds`
+      : "") +
+    (data.location && data.location.name ? ` · ${data.location.name}` : "");
+  (data.alerts || []).forEach((alert) => {
+    const card = document.createElement("div");
+    card.className = "alert-card";
+    const line = [
+      alert.event,
+      alert.severity ? `(${alert.severity})` : "",
+      alert.headline,
+    ].filter(Boolean).join(" — ");
+    card.innerHTML =
+      `<div class="alert-card-title">${escapeHtml(line)}</div>` +
+      (alert.description
+        ? `<div class="alert-card-body">${escapeHtml(alert.description)}</div>`
+        : "") +
+      (alert.ends_at
+        ? `<div class="alert-card-note">Ends ${escapeHtml(alert.ends_at)}</div>`
+        : "");
+    list.appendChild(card);
+  });
 }
 
 async function saveEmergency(event) {
@@ -80,9 +134,10 @@ async function saveEmergency(event) {
   const save = $("alert-save");
   if (save) save.disabled = true;
   try {
-    await request(EMERGENCY_API + "/", { method: "PUT", body: JSON.stringify(collectEmergencySettings()) });
+    await request(EMERGENCY_API, { method: "PUT", body: JSON.stringify(collectEmergencySettings()) });
     if ($("alert-result")) $("alert-result").textContent = "Saved.";
     syncEmergencyFields();
+    renderAlertStatus();
   } catch (error) {
     if ($("alert-result")) $("alert-result").textContent = error.message;
   } finally {
@@ -95,7 +150,7 @@ async function testEmergency() {
   if (test) test.disabled = true;
   try {
     // Save first so the test describes what the form holds.
-    await request(EMERGENCY_API + "/", { method: "PUT", body: JSON.stringify(collectEmergencySettings()) });
+    await request(EMERGENCY_API, { method: "PUT", body: JSON.stringify(collectEmergencySettings()) });
     const data = await request(EMERGENCY_API + "/test");
     const result = data.result || {};
     $("alert-result").textContent = result.detail || (result.ok ? "OK" : "Off");
@@ -113,6 +168,8 @@ async function testEmergency() {
   if (test) test.addEventListener("click", testEmergency);
   const display = $("alert-display");
   if (display) display.addEventListener("change", syncEmergencyFields);
+  const refresh = $("alert-refresh");
+  if (refresh) refresh.addEventListener("click", renderAlertStatus);
 }
 
 
