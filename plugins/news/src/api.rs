@@ -218,7 +218,7 @@ fn extract_stories(body: &str, feed_url: &str) -> Vec<Value> {
             .unwrap_or_default();
         let image = image_from(&block, feed_url);
         stories.push(json!({
-            "title": unescape(&title),
+            "title": clean(&title),
             "summary": unescape(&summary),
             "feed": feed_name(feed_url),
             "image": image,
@@ -344,11 +344,14 @@ fn feed_name(feed_url: &str) -> String {
         .to_string()
 }
 
-/// Trim HTML tags and collapse whitespace in a summary's text.
+/// Trim HTML tags and collapse whitespace in a summary's text. Entities are
+/// decoded first — an XML feed encodes tags as `&lt;b&gt;`, so undecoding after
+/// stripping the literal markup would leave the encoded tags on screen.
 fn clean(value: &str) -> String {
-    let mut text = String::with_capacity(value.len());
+    let decoded = unescape(value);
+    let mut text = String::with_capacity(decoded.len());
     let mut in_tag = false;
-    for ch in value.chars() {
+    for ch in decoded.chars() {
         if ch == '<' {
             in_tag = true;
             continue;
@@ -361,7 +364,7 @@ fn clean(value: &str) -> String {
             text.push(ch);
         }
     }
-    unescape(&text).split_whitespace().collect::<Vec<_>>().join(" ")
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn unescape(text: &str) -> String {
@@ -434,7 +437,16 @@ mod tests {
         assert_eq!(stories[0]["summary"], "Some & fine detail.");
         assert_eq!(stories[0]["image"], "https://media.example/a.jpg");
         assert_eq!(stories[1]["title"], "Second story");
-        assert_eq!(stories[1]["summary"], "Whole <b>story</b> here.");
+        assert_eq!(stories[1]["summary"], "Whole story here.");
+    }
+
+    #[test]
+    fn encoded_tags_are_stripped_from_summaries_and_titles() {
+        let body = "<item><title><![CDATA[Big &lt;b&gt;sale&lt;/b&gt; today]]></title>\
+            <description><![CDATA[<p>Now &lt;i&gt;everyone&lt;/i&gt; saves &amp; more.</p>]]></description></item>";
+        let stories = extract_stories(body, "https://feed.example/news");
+        assert_eq!(stories[0]["title"], "Big sale today", "no HTML left in the title");
+        assert_eq!(stories[0]["summary"], "Now everyone saves & more.", "no HTML left in the summary");
     }
 
     #[test]
