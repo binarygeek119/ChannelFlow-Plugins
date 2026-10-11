@@ -119,18 +119,29 @@ function renderLibraryTabs() {
       (connection) => connection.kind === source.type_id
     );
     if (!connections.length) return;
-    add(source.type_id, source.display_name, `/webui/library/${source.type_id}`);
-    // One tab per connection (deduped by id, and unnamed connections labeled
-    // so they don't look like the source tab twice).
+    // One tab per connection (deduped by id, unnamed connections labeled so
+    // they don't read as "the source tab twice"). A connection created with
+    // the source's display name (e.g. a "Past Tense News" connection) already
+    // produces that tab, so the source tab is only added when it actually
+    // groups several connections and none of their tabs already carry its name.
     const seen = new Set();
+    const named = [];
     connections.forEach((connection) => {
       if (!connection.id || seen.has(connection.id)) return;
       seen.add(connection.id);
       const label =
         (connection.config && connection.config.name) ||
         source.display_name + " — new";
-      const page = connPageId(source.type_id, connection.id);
-      add(page, label, `/webui/library/${source.type_id}/${connection.id}`);
+      named.push({ connection, label });
+    });
+    if (
+      named.length > 1 &&
+      !named.some((row) => row.label === source.display_name)
+    ) {
+      add(source.type_id, source.display_name, `/webui/library/${source.type_id}`);
+    }
+    named.forEach(({ connection, label }) => {
+      add(connPageId(source.type_id, connection.id), label, `/webui/library/${source.type_id}/${connection.id}`);
     });
   });
   tabs.querySelectorAll(".inner-tab").forEach((tab) => {
