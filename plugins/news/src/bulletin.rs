@@ -23,6 +23,7 @@ use crate::api;
 use crate::settings::NewsSettings;
 use crate::NewsState;
 use channelflow_plugin_api::core::TtsProvider;
+use channelflow_plugin_api::plugin::PluginLogger;
 
 /// Where the plugin's bulletin ledger lives in its namespaced storage.
 pub const LEDGER_KEY: &str = "bulletin-ledger";
@@ -235,6 +236,10 @@ pub async fn run(
         .await;
     }
 
+    // The new video is published, so the previous one has served its purpose:
+    // drop it now and leave `<config>/news` holding only the latest newscast.
+    remove_old_videos(&folder, &output, &state.logger);
+
     for story in &encoded {
         let key = story_key(story);
         if !key.is_empty() && !ledger.used.contains(&key) {
@@ -302,6 +307,39 @@ async fn finish_skip(
         reason: Some(reason),
         ran_at,
         required,
+    }
+}
+
+/// Delete every earlier bulletin video once `keep` has been published, so the
+/// news folder keeps only the newest newscast. Only `news-*.mp4` files are
+/// touched; the freshly written `keep` and anything unrelated are left alone.
+fn remove_old_videos(folder: &Path, keep: &Path, logger: &PluginLogger) {
+    let entries = match std::fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep {
+            continue;
+        }
+        let is_bulletin = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("news-") && name.ends_with(".mp4"));
+        if !is_bulletin {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => logger.info(&format!(
+                "removed the previous news video {}",
+                path.display()
+            )),
+            Err(error) => logger.warn(&format!(
+                "could not remove the previous news video {}: {error}",
+                path.display()
+            )),
+        }
     }
 }
 
@@ -970,5 +1008,27 @@ mod tests {
         let text = "word ".repeat(40) + "overflow";
         let wrapped = wrap_two(&text);
         assert!(wrapped.contains("\\N"), "overflow wraps to a second line");
+    }
+
+    #[test]
+    fn publishing_a_new_video_removes_the_old_one() {
+        let dir = std::env::temp_dir().join(format!("news-old-video-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("news-20260101-060000.mp4");
+        let keep = dir.join("news-20260102-060000.mp4");
+        std::fs::write(&old, b"old").unwrap();
+        std::fs::write(&keep, b"new").unwrap();
+        // A non-bulletin file beside them must survive the sweep.
+        let unrelated = dir.join("notes.txt");
+        std::fs::write(&unrelated, b"keep me").unwrap();
+
+        let logger = PluginLogger::new("com.channelflow.news");
+        remove_old_videos(&dir, &keep, &logger);
+
+        assert!(!old.exists(), "the previous bulletin is deleted");
+        assert!(keep.exists(), "the new bulletin is kept");
+        assert!(unrelated.exists(), "unrelated files are left alone");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
