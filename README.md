@@ -21,7 +21,7 @@ routes under `/api/plugins/{id}`.
 | [`plugins/local`](plugins/local) | `com.channelflow.local` | A media source for files on this machine — folders of Jellyfin-format `.nfo` files and posters |
 | [`plugins/news`](plugins/news) | `com.channelflow.news` | News — the FlowWire newscast: RSS headlines, TTS, feeds (1.0.0's News tab as a plugin) |
 | [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media, with custom slates (1.0.0's EBS settings as a plugin) |
-| [`plugins/pasttense`](plugins/pasttense) | `com.channelflow.pasttense` | Past Tense News — home-movie coverage played as live breaking news from event folders |
+| [`plugins/pasttense`](plugins/pasttense) | `com.channelflow.pasttense` | Past Tense News — old news from local event folders, played as if it's breaking now |
 | [`plugins/presets`](plugins/presets) | `com.channelflow.presets` | Ready-made channels to get up and running quickly — a shortcut, not the only way to add channels |
 | [`plugins/weather`](plugins/weather) | `com.channelflow.weather` | Weather — WeatherStar look, source, location, units, and screens (1.0.0's Weather tab as a plugin) |
 

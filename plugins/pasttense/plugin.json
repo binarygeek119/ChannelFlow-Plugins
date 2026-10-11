@@ -5,7 +5,7 @@
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
-  "description": "Home-movie news coverage played as live breaking news: pick a folder of events, each event folder holds its coverage videos",
+  "description": "Old news played as if it's breaking now: point ChannelFlow at local media files, each event folder holding that story's coverage",
   "homepage": "https://github.com/binarygeek119/ChannelFlow",
   "repository": {
     "type": "github",

@@ -3,7 +3,7 @@ name = "channelflow-plugin-pasttense"
 version = "2.0.2"
 edition = "2021"
 license = "MIT"
-description = "Past Tense News — home movie news coverage as events, each holding its coverage videos"
+description = "Past Tense News — old news from local files played as if it's breaking now"
 
 # `rlib` keeps the crate usable as a git dependency of the base (compiled in);
 # `cdylib` produces the per-platform shared library the install flow ships.
