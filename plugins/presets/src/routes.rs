@@ -31,7 +31,16 @@ struct PresetsQuery {
     /// numbers, 119) or "modern" (the v1 subchannels, 119.1). Defaults retro.
     #[serde(default)]
     mode: Option<String>,
+    /// Which WeatherStar contributes a channel: "channelflow-weatherstar4000"
+    /// (default) or "channelflow-weatherstar3000". Only meaningful when both
+    /// are contributed (the Weather plugin is installed); then exactly one
+    /// WeatherStar preset is offered for creation.
+    #[serde(default)]
+    weatherstar: Option<String>,
 }
+
+const WEATHERSTAR_4000: &str = "channelflow-weatherstar4000";
+const WEATHERSTAR_3000: &str = "channelflow-weatherstar3000";
 
 fn preset_number(legacy: f64, subchannel: f64, mode: &str) -> f64 {
     if mode == "modern" {
@@ -53,6 +62,7 @@ fn fmt_number(number: f64) -> String {
 
 /// One preset row for the page: built-in or contributed by another plugin
 /// (The Holiday Channel only appears while its plugin is installed).
+#[derive(Clone)]
 struct PresetRow<'a> {
     id: &'a str,
     legacy: f64,
@@ -114,20 +124,61 @@ async fn list_presets(
         Ok(installed) => installed.into_iter().collect::<std::collections::HashSet<_>>(),
         Err(_) => std::collections::HashSet::new(),
     };
-    let contributed = channelflow_plugin_api::contributed_presets();
-    rows.extend(
+    let contributed_values = channelflow_plugin_api::contributed_presets();
+    let contributed: Vec<PresetRow<'_>> = contributed_values
+        .iter()
+        .filter(|preset| installed.contains(&preset.plugin_id))
+        .map(|preset| PresetRow {
+            id: &preset.id,
+            legacy: preset.legacy,
+            subchannel: preset.subchannel,
+            name: &preset.name,
+            category: &preset.category,
+            description: &preset.description,
+        })
+        .collect();
+    // The two WeatherStars are one channel, not two: when both are contributed
+    // (the Weather plugin is installed) exactly one becomes a preset row, the
+    // one the page's switch has selected.
+    let both_weatherstars =
+        contributed.iter().any(|row| row.id == WEATHERSTAR_4000)
+            && contributed.iter().any(|row| row.id == WEATHERSTAR_3000);
+    let selected_weatherstar = if both_weatherstars
+        && query.weatherstar.as_deref() == Some(WEATHERSTAR_3000)
+    {
+        WEATHERSTAR_3000
+    } else if both_weatherstars {
+        WEATHERSTAR_4000
+    } else {
+        ""
+    };
+    let weatherstar_options: Vec<serde_json::Value> = if both_weatherstars {
         contributed
             .iter()
-            .filter(|preset| installed.contains(&preset.plugin_id))
-            .map(|preset| PresetRow {
-                id: &preset.id,
-                legacy: preset.legacy,
-                subchannel: preset.subchannel,
-                name: &preset.name,
-                category: &preset.category,
-                description: &preset.description,
-            }),
-    );
+            .filter(|row| row.id == WEATHERSTAR_4000 || row.id == WEATHERSTAR_3000)
+            .map(|row| {
+                json!({
+                    "id": row.id,
+                    "name": row.name,
+                    "retro": fmt_number(row.legacy),
+                    "modern": fmt_number(row.subchannel),
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for row in contributed {
+        let swap = both_weatherstars
+            && (row.id == WEATHERSTAR_4000 || row.id == WEATHERSTAR_3000);
+        if swap {
+            if row.id == selected_weatherstar {
+                rows.push(row);
+            }
+            continue;
+        }
+        rows.push(row);
+    }
     let presets: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| preset_row_json(PresetRow {
@@ -142,6 +193,11 @@ async fn list_presets(
     Json(json!({
         "mode": mode,
         "presets": presets,
+        "weatherstar": if both_weatherstars {
+            json!({ "options": weatherstar_options, "selected": selected_weatherstar })
+        } else {
+            serde_json::Value::Null
+        },
         "note": "Presets are a quick start — channels can also be added on the Channels tab.",
     }))
 }
