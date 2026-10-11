@@ -28,3 +28,12 @@
     color: var(--muted);
 }
 .news-audio audio { width: 18rem; max-width: 100%; }
+
+/* Newscast script preview. */
+.news-show-name { margin: 0 0 0.3rem; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.news-script-intro { color: var(--muted); font-style: italic; margin: 0.2rem 0 0.4rem; }
+.news-script-outro { color: var(--muted); font-style: italic; margin: 0.4rem 0 0; }
+.news-stories { display: grid; gap: 0.6rem; margin: 0.3rem 0; padding-left: 1.2rem; }
+.news-story-title { font-weight: 600; }
+.news-story-summary { color: var(--muted); font-size: 0.84rem; margin-top: 0.15rem; }
+.news-story-feed { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); margin-top: 0.1rem; }

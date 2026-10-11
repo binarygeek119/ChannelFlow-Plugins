@@ -52,7 +52,7 @@ function collectNewsSettings() {
 
 async function loadNews() {
   try {
-    const data = await request(NEWS_API + "/");
+    const data = await request(NEWS_API);
     const settings = data.settings || {};
     fillNewsSelect("news-voice", (data.options && data.options.tts_voices) || [], NEWS_VOICE_LABELS, settings.tts_voice);
     fillNewsSelect("news-tts-engine", (data.options && data.options.tts_engines) || [], { google: "Basic Google TTS", ai: "AI TTS" }, settings.tts_engine);
@@ -82,7 +82,7 @@ async function saveNews(event) {
   const save = $("news-save");
   if (save) save.disabled = true;
   try {
-    await request(NEWS_API + "/", { method: "PUT", body: JSON.stringify(collectNewsSettings()) });
+    await request(NEWS_API, { method: "PUT", body: JSON.stringify(collectNewsSettings()) });
     if ($("news-result")) $("news-result").textContent = "Saved.";
   } catch (error) {
     if ($("news-result")) $("news-result").textContent = error.message;
@@ -129,16 +129,78 @@ function renderNewsPreview(feeds) {
   $("news-result").textContent = total ? `${total} headline(s)` : "No headlines found.";
 }
 
+function renderNewsPreview(show) {
+  const list = $("news-preview-list");
+  if (!list) return;
+  list.textContent = "";
+  const stories = (show && show.stories) || [];
+  const script = document.createElement("div");
+  script.className = "ms-card";
+  if (show && show.show_header) {
+    const name = document.createElement("h3");
+    name.className = "news-show-name";
+    name.textContent = show.header || "";
+    script.appendChild(name);
+  }
+  const intro = document.createElement("p");
+  intro.className = "news-script-intro";
+  intro.textContent = (show && show.intro) || "";
+  script.appendChild(intro);
+  if (stories.length) {
+    const ol = document.createElement("ol");
+    ol.className = "news-stories";
+    stories.forEach((story) => {
+      const li = document.createElement("li");
+      const title = document.createElement("div");
+      title.className = "news-story-title";
+      title.textContent = story.title || "";
+      li.appendChild(title);
+      if (!(show && show.headlines_only) && story.summary) {
+        const summary = document.createElement("div");
+        summary.className = "news-story-summary";
+        summary.textContent = story.summary;
+        li.appendChild(summary);
+      }
+      if (story.feed) {
+        const feed = document.createElement("div");
+        feed.className = "news-story-feed";
+        feed.textContent = story.feed;
+        li.appendChild(feed);
+      }
+      ol.appendChild(li);
+    });
+    script.appendChild(ol);
+  }
+  const outro = document.createElement("p");
+  outro.className = "news-script-outro";
+  outro.textContent = (show && show.outro) || "";
+  script.appendChild(outro);
+  list.appendChild(script);
+  list.hidden = false;
+  $("news-result").textContent = stories.length
+    ? `${stories.length} storie(s) on the newscast`
+    : "No headlines found.";
+}
+
 async function previewNews() {
   const button = $("news-preview");
   if (button) button.disabled = true;
   try {
     // Save first so the preview uses the feeds the form holds.
-    await request(NEWS_API + "/", { method: "PUT", body: JSON.stringify(collectNewsSettings()) });
+    await request(NEWS_API, { method: "PUT", body: JSON.stringify(collectNewsSettings()) });
     const data = await request(NEWS_API + "/preview");
-    renderNewsPreview(data.feeds || []);
+    renderNewsPreview(data);
   } catch (error) {
-    $("news-result").textContent = error.message;
+    const list = $("news-preview-list");
+    if (list) {
+      list.hidden = false;
+      list.textContent = "";
+      const note = document.createElement("p");
+      note.className = "ms-status bad";
+      note.textContent = error.message;
+      list.appendChild(note);
+    }
+    $("news-result").textContent = "Could not preview.";
   } finally {
     if (button) button.disabled = false;
   }

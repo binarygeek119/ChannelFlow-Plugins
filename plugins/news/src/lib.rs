@@ -63,6 +63,9 @@ pub struct NewsState {
     pub storage: Arc<dyn PluginStorage>,
     pub http: reqwest::Client,
     pub logger: PluginLogger,
+    /// The last fetched newscast stories, keyed by the enabled feeds, with the
+    /// instant they were fetched — v1.0.0 cached headlines for ~2 minutes.
+    pub headline_cache: Mutex<Option<(String, std::time::Instant, Vec<serde_json::Value>)>>,
 }
 
 impl NewsPlugin {
@@ -121,6 +124,7 @@ impl Plugin for NewsPlugin {
             storage: api.storage.clone(),
             http,
             logger: api.logger.clone(),
+            headline_cache: Mutex::new(None),
         }));
         api.logger.info("loaded");
         Ok(())
