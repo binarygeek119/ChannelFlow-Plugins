@@ -13,12 +13,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::settings::{NewsSettings, SETTINGS_KEY};
@@ -382,11 +383,25 @@ async fn bulletin_status(State(state): State<Arc<NewsState>>) -> Response {
     Json(json!({ "bulletin": crate::bulletin::describe_ledger(&ledger, &settings) })).into_response()
 }
 
-/// The News page's "Build now": force a bulletin build regardless of the
-/// schedule and the new-story minimum.
-async fn bulletin_run(State(state): State<Arc<NewsState>>) -> Response {
+/// The run request: `?force=` decides whether the minimum-new-stories gate is
+/// bypassed. Defaults to forcing, so the News page's Build now keeps its
+/// "build regardless" meaning; a scheduled-style run passes `force=false`.
+#[derive(Deserialize)]
+struct BulletinRunQuery {
+    #[serde(default)]
+    force: Option<bool>,
+}
+
+/// Run one bulletin build. `force=true` (default) always re-encodes; without
+/// it the run goes through the same gate as a scheduled mark (once a day for
+/// sure, otherwise only when enough stories are new).
+async fn bulletin_run(
+    State(state): State<Arc<NewsState>>,
+    Query(query): Query<BulletinRunQuery>,
+) -> Response {
+    let force = query.force.unwrap_or(true);
     let root = state.config_root.clone();
-    let outcome = crate::bulletin::run(&state, &root, true).await;
+    let outcome = crate::bulletin::run(&state, &root, force).await;
     Json(json!({ "outcome": outcome })).into_response()
 }
 
