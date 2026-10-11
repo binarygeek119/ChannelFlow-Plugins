@@ -339,7 +339,7 @@ fn render_bulletin(
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
          [1:v]scale=520:-1[p];\
-         [bg][p]overlay=W-w-80:H-h-200[vp];\
+         [bg][p]overlay=(W-w)/2:(H-h)/2[vp];\
          [vp]ass='{ass}'[vout]",
         total = total,
         ass = escape_filter_path(&ass_path)
