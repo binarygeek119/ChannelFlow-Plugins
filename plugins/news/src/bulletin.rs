@@ -710,21 +710,56 @@ fn build_ass(beats: &[Beat]) -> String {
     let mut events = String::new();
     for beat in beats {
         if !beat.title.trim().is_empty() {
-            events.push_str(&format!(
-                "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\b1}}{}{{\\b0}}\n",
-                ass_time(beat.start),
-                ass_time(beat.end),
-                escape_ass(&beat.title)
-            ));
+            let title = escape_ass(&beat.title);
+            // Scroll headlines longer than 45 chars: animate right-to-left, loop if needed.
+            if title.chars().count() > 45 {
+                let duration = (beat.end - beat.start).max(4.0);
+                // Speed: ~30 chars per second, minimum 8s scroll
+                let scroll_ms = (title.chars().count() as f64 * 1000.0 / 30.0).max(8000.0) as i64;
+                // \move(x1,y1,x2,y2,t1,t2) - start right edge, end left edge
+                let move_tag = format!("{{\\move(1920,110,-800,110,0,{scroll_ms})}}");
+                events.push_str(&format!(
+                    "Dialogue: 0,{0},{1},Headline,,0,0,0,,{{\\b1}}{2}{3}{{\\b0}}\n",
+                    ass_time(beat.start),
+                    ass_time(beat.end),
+                    move_tag,
+                    title
+                ));
+            } else {
+                events.push_str(&format!(
+                    "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\b1}}{}{{\\b0}}\n",
+                    ass_time(beat.start),
+                    ass_time(beat.end),
+                    title
+                ));
+            }
         }
         let body = clean_text(&beat.body);
         if !body.is_empty() && !body.eq_ignore_ascii_case(beat.title.trim()) {
-            events.push_str(&format!(
-                "Dialogue: 1,{},{},Story,,0,0,0,,{}\n",
-                ass_time(beat.start),
-                ass_time(beat.end),
-                wrap_two(&body)
-            ));
+            let (line1, line2) = split_two_lines(&body);
+            if line2.is_empty() {
+                // Single line centered in the story bar
+                events.push_str(&format!(
+                    "Dialogue: 1,{},{},Story1,,0,0,0,,{}\n",
+                    ass_time(beat.start),
+                    ass_time(beat.end),
+                    escape_ass(&line1)
+                ));
+            } else {
+                // Two lines stacked
+                events.push_str(&format!(
+                    "Dialogue: 1,{},{},Story1,,0,0,0,,{}\n",
+                    ass_time(beat.start),
+                    ass_time(beat.end),
+                    escape_ass(&line1)
+                ));
+                events.push_str(&format!(
+                    "Dialogue: 2,{},{},Story2,,0,0,0,,{}\n",
+                    ass_time(beat.start),
+                    ass_time(beat.end),
+                    escape_ass(&line2)
+                ));
+            }
         }
     }
 
@@ -737,10 +772,11 @@ fn build_ass(beats: &[Beat]) -> String {
     ass.push_str(&format!("PlayResY: {HEIGHT}\n\n"));
     ass.push_str("[V4+ Styles]\n");
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
-    // Headline sits at the top centre (inside the headline bar); Story is the
-    // bottom-centre two-line copy (inside the story bar).
-    ass.push_str("Style: Headline, Liberation Sans, 54, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 60, 60, 84, 1\n");
-    ass.push_str("Style: Story, Liberation Sans, 58, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 60, 120, 90, 1\n\n");
+    // Headline: top-centre, smaller font to fit more, positioned in the bar.
+    // Story1/Story2: bottom-centre, tighter spacing for the two lines.
+    ass.push_str("Style: Headline, Liberation Sans, 44, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 100, 100, 110, 1\n");
+    ass.push_str("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 80, 1\n");
+    ass.push_str("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 115, 1\n\n");
     ass.push_str("[Events]\n");
     ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     ass.push_str(&events);
@@ -752,6 +788,38 @@ fn build_ass(beats: &[Beat]) -> String {
 fn story_seconds(body: &str) -> f64 {
     let chars = clean_text(body).chars().count();
     (3.0 + chars as f64 / 16.0).clamp(4.0, 14.0)
+}
+
+
+/// Split text into two balanced lines for the story bar, respecting word
+/// boundaries. Returns (line1, line2) where line2 may be empty.
+fn split_two_lines(text: &str) -> (String, String) {
+    const MAX_PER_LINE: usize = 48;
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return (String::new(), String::new());
+    }
+    let mut line1 = String::new();
+    let mut line2 = String::new();
+    let mut on_line1 = true;
+    for word in words {
+        let target = if on_line1 { &mut line1 } else { &mut line2 };
+        if target.is_empty() {
+            target.push_str(word);
+        } else if target.len() + 1 + word.len() <= MAX_PER_LINE {
+            target.push(' ');
+            target.push_str(word);
+        } else if on_line1 && line2.is_empty() {
+            // Switch to line 2
+            on_line1 = false;
+            line2.push_str(word);
+        } else {
+            // Line 2 full, append with ellipsis
+            line2.push_str(" …");
+            break;
+        }
+    }
+    (line1, line2)
 }
 
 /// Greedy wrap of the copy into at most two lines (bottom bar), with an
