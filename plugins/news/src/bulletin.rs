@@ -345,18 +345,18 @@ fn render_bulletin(
         settings.anchor_outro.trim().to_string()
     };
 
-    let (ass, total) = build_ass(stories, &intro, &outro, &show_name);
+    let (ass, show_total) = build_ass(stories, &intro, &outro, &show_name);
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
-    // Logo bumper first, then the anchor; the FlowWire intro/outro mp3s play
-    // over the start and end (silence between them — speech lands later). The
-    // outro's audible content starts after its quiet opening, so play the full
-    // file, delayed to end with the show.
+    // The outro music plays as a closing bumper *after* the anchor's outros:
+    // the show (intro, stories, anchor outro) runs for `show_total`, then the
+    // outro music extends the video to its very end.
     let outro_len = probe_seconds(&outro_mp3)
         .filter(|len| *len > 0.5)
         .unwrap_or(OUTRO_SECONDS);
-    let outro_delay_ms = ((total - outro_len) * 1000.0).round().max(0.0) as i64;
+    let total = show_total + outro_len;
+    let outro_delay_ms = (show_total * 1000.0).round().max(0.0) as i64;
     let audio = format!(
         "[3:a]atrim=0:{intro},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
          [4:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
@@ -365,16 +365,19 @@ fn render_bulletin(
         outro_len = outro_len,
         delay = outro_delay_ms,
     );
+    // Logo for the intro bumper and the closing outro; the anchor centers
+    // only while the show is on.
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
          [1:v]scale=520:-1[p];\
          [2:v]scale=460:-1[lg];\
-         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{intro})'[vp];\
-         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{intro})'[vout];\
+         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{intro})*lt(t\\,{show})'[vp];\
+         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{intro})+gte(t\\,{show})'[vout];\
          [vout]ass='{ass}'[final];\
          {audio}",
         total = total,
         intro = INTRO_SECONDS,
+        show = show_total,
         ass = escape_filter_path(&ass_path),
         audio = audio,
     );
