@@ -13,7 +13,7 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::settings::{CommercialBrainzSettings, SETTINGS_KEY, DEFAULT_BASE_URL};
+use crate::settings::{CommercialBrainzSettings, SETTINGS_KEY};
 use crate::CommercialBrainzState;
 
 pub fn router(state: Arc<CommercialBrainzState>) -> Router {
@@ -26,13 +26,7 @@ pub fn router(state: Arc<CommercialBrainzState>) -> Router {
 
 /// The settings plus the option lists the form renders from.
 fn view(settings: &CommercialBrainzSettings) -> serde_json::Value {
-    json!({
-        "settings": settings,
-        "options": {
-            "pool_modes": ["jellyfin_only", "commercial_brainz_only", "both"],
-            "default_base_url": DEFAULT_BASE_URL,
-        }
-    })
+    json!({ "settings": settings })
 }
 
 async fn get_settings(State(state): State<Arc<CommercialBrainzState>>) -> Response {

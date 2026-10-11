@@ -11,29 +11,14 @@ pub const SETTINGS_KEY: &str = "settings";
 /// The public CommercialBrainz server.
 pub const DEFAULT_BASE_URL: &str = "https://commercialbrainz.org";
 
-/// Where the commercial pool is drawn from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PoolMode {
-    JellyfinOnly,
-    CommercialBrainzOnly,
-    Both,
-}
-
-impl Default for PoolMode {
-    fn default() -> Self {
-        PoolMode::Both
-    }
-}
-
-/// The whole CommercialBrainz settings document.
+/// The whole CommercialBrainz settings document. The pool is always
+/// CommercialBrainz content — the v1 "pool mode" knob was removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CommercialBrainzSettings {
     pub enabled: bool,
     pub base_url: String,
     pub api_token: String,
-    pub pool_mode: PoolMode,
     pub max_sync_results: u32,
     pub min_year: Option<i32>,
     pub max_year: Option<i32>,
@@ -59,7 +44,6 @@ impl Default for CommercialBrainzSettings {
             enabled: true,
             base_url: DEFAULT_BASE_URL.to_string(),
             api_token: String::new(),
-            pool_mode: PoolMode::default(),
             max_sync_results: 500,
             min_year: None,
             max_year: None,
@@ -95,7 +79,14 @@ impl std::error::Error for CommercialBrainzError {}
 impl CommercialBrainzSettings {
     /// Parse, normalise, and validate a stored or posted document.
     pub fn parse(value: &serde_json::Value) -> Result<Self, CommercialBrainzError> {
-        let mut settings: CommercialBrainzSettings = serde_json::from_value(value.clone())
+        // The v1 "pool mode" knob is gone; the pool is always CommercialBrainz
+        // content. Ignore the value any earlier install left in storage so the
+        // settings still parse after an upgrade.
+        let mut document = value.clone();
+        if let Some(object) = document.as_object_mut() {
+            object.remove("pool_mode");
+        }
+        let mut settings: CommercialBrainzSettings = serde_json::from_value(document)
             .map_err(|error| {
                 CommercialBrainzError(format!("commercialbrainz settings are not valid: {error}"))
             })?;
@@ -142,7 +133,6 @@ mod tests {
         let settings = CommercialBrainzSettings::default();
         assert!(settings.enabled);
         assert_eq!(settings.base_url, DEFAULT_BASE_URL);
-        assert_eq!(settings.pool_mode, PoolMode::Both);
         assert_eq!(settings.max_sync_results, 500);
     }
 
@@ -168,5 +158,15 @@ mod tests {
     fn rejects_unknown_fields() {
         let bad = serde_json::json!({ "baseUrl": "https://x.example" });
         assert!(CommercialBrainzSettings::parse(&bad).is_err());
+    }
+
+    #[test]
+    fn ignores_a_leftover_pool_mode_from_an_older_install() {
+        let value = serde_json::json!({
+            "base_url": "https://commercialbrainz.org",
+            "pool_mode": "jellyfin_only",
+        });
+        let settings = CommercialBrainzSettings::parse(&value).expect("parses");
+        assert_eq!(settings.base_url, "https://commercialbrainz.org");
     }
 }

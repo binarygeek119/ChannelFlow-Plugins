@@ -10,28 +10,6 @@ function cbListField(id) {
   return value.split(",").map((part) => part.trim()).filter(Boolean);
 }
 
-function cbPoolLabel(value) {
-  const labels = {
-    jellyfin_only: "Jellyfin only",
-    commercialbrainz_only: "CommercialBrainz only",
-    both: "Both",
-  };
-  return labels[value] || String(value);
-}
-
-function fillCbSelect(id, values, selected) {
-  const select = $(id);
-  if (!select || !values) return;
-  select.textContent = "";
-  values.forEach((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = cbPoolLabel(value);
-    select.appendChild(option);
-  });
-  if (selected) select.value = selected;
-}
-
 function setCbValue(id, value) {
   const el = $(id);
   if (!el) return;
@@ -44,7 +22,6 @@ function setCbValue(id, value) {
 // them, and unknown-extra ones are ignored.
 function applyCbSettings(settings) {
   if (!settings) return;
-  fillCbSelect("cb-pool-mode", ["jellyfin_only", "commercial_brainz_only", "both"], settings.pool_mode);
   setCbValue("cb-base-url", settings.base_url);
   setCbValue("cb-api-token", settings.api_token);
   setCbValue("cb-max-sync", settings.max_sync_results);
@@ -80,7 +57,6 @@ function collectCbSettings() {
     enabled: cbBoolField("cb-enabled"),
     base_url: $("cb-base-url").value.trim(),
     api_token: $("cb-api-token").value,
-    pool_mode: $("cb-pool-mode").value,
     max_sync_results: Number($("cb-max-sync").value) || 500,
     min_year: cbIntField("cb-min-year"),
     max_year: cbIntField("cb-max-year"),
@@ -105,9 +81,6 @@ async function loadCommercialBrainz() {
   renderCbPoolNote("");
   try {
     const data = await request(CB_API);
-    if (data.options && data.options.pool_modes) {
-      fillCbSelect("cb-pool-mode", data.options.pool_modes, data.settings && data.settings.pool_mode);
-    }
     applyCbSettings(data.settings);
     $("cb-result").textContent = "";
   } catch (error) {
