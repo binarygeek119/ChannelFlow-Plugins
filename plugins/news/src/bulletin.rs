@@ -43,6 +43,8 @@ const INTRO_SECONDS: f64 = 3.0;
 const OUTRO_SECONDS: f64 = 3.0;
 const SECONDS_PER_STORY: f64 = 6.0;
 const MAX_TRACKED_STORIES: usize = 2000;
+/// The anchor's spoken open, after the intro music finishes.
+const ANCHOR_INTRO_SECONDS: f64 = 4.0;
 
 /// The plugin's record of what it has broadcast, so a run can tell new
 /// stories from ones already on air.
@@ -345,7 +347,12 @@ fn render_bulletin(
         settings.anchor_outro.trim().to_string()
     };
 
-    let (ass, show_total) = build_ass(stories, &intro, &outro, &show_name);
+    // The FlowWire intro music plays in full as the lead-in, then the anchor
+    // opens, then the stories, then the anchor outro and the outro music.
+    let intro_music_len = probe_seconds(&intro_mp3)
+        .filter(|len| *len > 0.5)
+        .unwrap_or(INTRO_SECONDS);
+    let (ass, show_total) = build_ass(stories, &intro, &outro, &show_name, intro_music_len);
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
@@ -358,25 +365,25 @@ fn render_bulletin(
     let total = show_total + outro_len;
     let outro_delay_ms = (show_total * 1000.0).round().max(0.0) as i64;
     let audio = format!(
-        "[3:a]atrim=0:{intro},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
+        "[3:a]atrim=0:{intro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
          [4:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
          [a0][a1]amix=inputs=2:duration=longest:normalize=0[aout]",
-        intro = INTRO_SECONDS,
+        intro_len = intro_music_len,
         outro_len = outro_len,
         delay = outro_delay_ms,
     );
-    // Logo for the intro bumper and the closing outro; the anchor centers
-    // only while the show is on.
+    // Logo for the intro-lead-in and the closing outro; the anchor centers
+    // only while the show is on (after the intro music, before the outro).
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
          [1:v]scale=520:-1[p];\
          [2:v]scale=460:-1[lg];\
-         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{intro})*lt(t\\,{show})'[vp];\
-         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{intro})+gte(t\\,{show})'[vout];\
+         [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{lead})*lt(t\\,{show})'[vp];\
+         [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{lead})+gte(t\\,{show})'[vout];\
          [vout]ass='{ass}'[final];\
          {audio}",
         total = total,
-        intro = INTRO_SECONDS,
+        lead = intro_music_len,
         show = show_total,
         ass = escape_filter_path(&ass_path),
         audio = audio,
@@ -516,19 +523,30 @@ struct Beat {
 
 /// Build the ASS caption file and return it with the total show length.
 /// Mirrors 1.0.0's NewsAssBuilder: a Headline at the top, a Crawl of the
-/// spoken copy along the bottom, and the anchor's name throughout.
-fn build_ass(stories: &[Value], intro: &str, outro: &str, show_name: &str) -> (String, f64) {
+/// spoken copy along the bottom, and the anchor's name throughout. The intro
+/// music plays first (a logo lead-in of `intro_music_len`), then the anchor's
+/// open, then the stories, then the anchor's outro.
+fn build_ass(
+    stories: &[Value],
+    intro: &str,
+    outro: &str,
+    show_name: &str,
+    intro_music_len: f64,
+) -> (String, f64) {
     let mut beats: Vec<Beat> = Vec::new();
     let mut t = 0.0f64;
 
-    // Intro card.
+    // The FlowWire intro music plays fully before the anchor's open.
+    t += intro_music_len.max(0.5);
+
+    // Anchor intro card.
     beats.push(Beat {
         start: t,
-        end: t + INTRO_SECONDS,
+        end: t + ANCHOR_INTRO_SECONDS,
         title: show_name.to_string(),
         body: intro.to_string(),
     });
-    t += INTRO_SECONDS;
+    t += ANCHOR_INTRO_SECONDS;
 
     for story in stories {
         let title = story
@@ -667,11 +685,11 @@ mod tests {
     #[test]
     fn ass_lays_out_a_headline_and_a_crawl_per_story() {
         let stories = vec![json!({ "title": "Headline One", "summary": "Spoken copy." })];
-        let (ass, total) = build_ass(&stories, "Intro.", "Outro.", "FlowWire News");
+        let (ass, total) = build_ass(&stories, "Intro.", "Outro.", "FlowWire News", 3.0);
         assert!(ass.contains("Headline One"));
         assert!(ass.contains("Spoken copy."));
         assert!(ass.contains("Crawl"));
-        // intro + 1 story + outro = 3 + 6 + 3
-        assert!((total - 12.0).abs() < 0.001);
+        // intro music (3) + anchor intro (4) + 1 story (6) + outro (3)
+        assert!((total - 16.0).abs() < 0.001);
     }
 }
