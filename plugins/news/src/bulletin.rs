@@ -639,7 +639,7 @@ async fn render_bulletin(
     let mut filter_parts = Vec::new();
     filter_parts.push(format!("[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];[src]split[base][bg];{map};[2:v]scale=650:650[p];[m2][p]overlay=650:221[l1];[3:v]scale=1920:1080[hb];[l1][hb]overlay=0:0[l2];[4:v]scale=1920:1080[sb];[l2][sb]overlay=0:0[l3];[5:v]scale=1920:1080[mm];[l3][mm]overlay=0:0[desk]", total=total, map=map_layer()));
     let mut cur = "desk".to_string();
-    let mut img_input_idx = 9 + speech.len(); // 0:color,1:map,2:pres,3:hb,4:sb,5:mm,6:logo,7:intro,8:outro, then speech inputs added before filter
+    let _img_input_idx = 9 + speech.len(); // placeholder (unused)
     // easier: track from args before adding; compute properly by counting speech we already added? speech count is number of flattened
     let speech_count = speech.iter().filter(|s| s.is_some()).count();
     let mut img_input = 7 + 2 + speech_count; // after logo(6),intro(7),outro(8) are 7,8? indices: 6 is logo (input 7 in ffmpeg list), 7 intro, 8 outro -> so total inputs before speech = 9 (0-8). speech adds 9..9+s. So first image input index = 9 + s
@@ -661,7 +661,7 @@ async fn render_bulletin(
             si += 1;
         }
     }
-    filter_parts.push(format!("[base][{cur}]overlay=0:0:enable='{desktop}'[v1];[6:v]scale=560:-1,{intro_fade}[lg];[v1][lg]overlay=(W-w)/2:(H-h)/2:enable='{logo}'[v2];[v2]ass='{ass}',fade=t=out:st={fade_start}:d={fade}[final];{audio}", desktop=desktop_enable(lead,show_total), logo=logo_enable(lead,show_total), intro_fade=logo_fade_in(), ass=escape_filter_path(&ass_path), fade_start=fade_start, fade=OUTRO_FADE_SECONDS, audio=audio));
+    filter_parts.push(format!("[6:v]scale=560:-1,{intro_fade}[lg];[base][lg]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];[v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',fade=t=in:st={lead}:d=0.8:alpha=1[v2];[v2]ass='{ass}'[v3];[v3][lg]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',fade=t=in:st={show_total}:d=0.8:alpha=1,fade=t=out:st={fade_start}:d={fade}[final];{audio}", intro_fade=logo_fade_in(), ass=escape_filter_path(&ass_path), fade_start=fade_start, fade=OUTRO_FADE_SECONDS, audio=audio, lead=lead, show_total=show_total));
     let filter = filter_parts.join(";");
 
     let mut args: Vec<String> = vec![
