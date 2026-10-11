@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.local",
   "name": "Local Files",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
@@ -21,15 +21,5 @@
     "linux-x86_64": "libchannelflow_plugin_local.so",
     "windows-x86_64": "channelflow_plugin_local.dll"
   },
-  "ui_contributions": [
-    {
-      "type": "page",
-      "id": "local",
-      "path": "/webui/local",
-      "title": "Local Files",
-      "icon": "folder",
-      "section": "main",
-      "component": "LocalFilesPage"
-    }
-  ]
+  "ui_contributions": []
 }

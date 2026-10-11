@@ -247,15 +247,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_manifest_is_valid_and_declares_a_page() {
+    fn bundled_manifest_is_valid_and_declares_no_nav_tab() {
         let plugin = LocalPlugin::new();
         let metadata = plugin.metadata();
         assert_eq!(metadata.id, "com.channelflow.local");
         assert!(metadata.compatible_with("2.0.0"));
-        assert!(metadata
-            .ui_contributions
-            .iter()
-            .any(|contribution| matches!(contribution, UiContribution::Page { id, .. } if id == "local")));
+        // The Local Files source is managed from the Library page's connection
+        // form, so it does not need (and no longer has) a nav tab of its own.
+        assert!(metadata.ui_contributions.is_empty());
     }
 
     #[test]
