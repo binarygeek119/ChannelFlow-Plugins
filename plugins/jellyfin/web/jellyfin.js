@@ -18,6 +18,13 @@ async function loadLibrary() {
     librarySources = [];
   }
   populateConnectionKinds();
+  // The kind dropdown redraws its fields on change, but nothing fires on a
+  // fresh page load — draw the initially selected source's fields here so the
+  // Add connection form isn't empty until you flip the kind.
+  renderConnectionFields(
+    $("ms-kind").value || (librarySources[0] && librarySources[0].type_id) || "",
+    {}
+  );
   await refreshLibraryConnections();
   renderLibraryTabs();
   applyLibraryPath();
