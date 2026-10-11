@@ -1,5 +1,28 @@
 /* page styles live here */
 
+/* On/off rows: the label sits on the left, the switch on the right, both
+   centered on one line. Mirrors the switch rows the other plugins use. */
+.news-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+}
+.field-label + .news-toggle { border-top: none; padding-top: 0.15rem; }
+.news-toggle-text { font-size: 0.9rem; line-height: 1.35; }
+.news-toggle-text code { font-size: 0.82rem; }
+
+.switch { position: relative; width: 2.5rem; height: 1.4rem; flex: 0 0 auto; cursor: pointer; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch .track { position: absolute; inset: 0; background: var(--off); border-radius: 999px; transition: background 0.15s; }
+.switch .thumb { position: absolute; top: 0.2rem; left: 0.25rem; width: 1rem; height: 1rem; background: #fff; border-radius: 50%; transition: transform 0.15s; }
+.switch input:checked ~ .track { background: var(--accent); }
+.switch input:checked ~ .thumb { transform: translateX(1.1rem); }
+.switch input:focus-visible ~ .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* The news anchor portrait. */
 .news-anchor-wrap { margin-top: 0.4rem; }
 .news-anchor {

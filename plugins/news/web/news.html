@@ -42,25 +42,44 @@
                 Put <code>@@</code> in the intro or outro and the anchor says the time the video was
                 built (for example <code>8 A M</code>). Leave both boxes empty to use the FlowWire lines above.
               </p>
-              <label class="field-note" for="news-24h">
-                <input id="news-24h" type="checkbox"> Use 24-hour time (<code>15:00</code>) instead of 12-hour (<code>3 P M</code>)
+              <label class="news-toggle" for="news-24h">
+                <span class="news-toggle-text">Use 24-hour time (<code>15:00</code>) instead of 12-hour (<code>3 P M</code>)</span>
+                <span class="switch"><input id="news-24h" type="checkbox"><span class="track"></span><span class="thumb"></span></span>
               </label>
             </div>
             <div class="field">
               <span class="field-label">Announce and read</span>
-              <label class="field-note" for="news-tts"><input id="news-tts" type="checkbox" checked> Enable TTS</label>
-              <label class="field-note" for="news-ai-rewrite"><input id="news-ai-rewrite" type="checkbox"> AI rewrite as one news show</label>
+              <label class="news-toggle" for="news-tts">
+                <span class="news-toggle-text">Enable TTS</span>
+                <span class="switch"><input id="news-tts" type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+              </label>
+              <label class="news-toggle" for="news-ai-rewrite">
+                <span class="news-toggle-text">AI rewrite as one news show</span>
+                <span class="switch"><input id="news-ai-rewrite" type="checkbox"><span class="track"></span><span class="thumb"></span></span>
+              </label>
               <p class="field-note">
                 Rewrite the fetched articles into one flowing broadcast with the AI chat provider
                 from the AI page. Needs a chat provider set up there.
               </p>
-              <label class="field-note" for="news-headlines-only"><input id="news-headlines-only" type="checkbox"> Read headlines only</label>
-              <label class="field-note" for="news-no-music"><input id="news-no-music" type="checkbox"> Play no music at all</label>
-              <label class="field-note" for="news-show-header"><input id="news-show-header" type="checkbox" checked> Show header on screen</label>
+              <label class="news-toggle" for="news-headlines-only">
+                <span class="news-toggle-text">Read headlines only</span>
+                <span class="switch"><input id="news-headlines-only" type="checkbox"><span class="track"></span><span class="thumb"></span></span>
+              </label>
+              <label class="news-toggle" for="news-no-music">
+                <span class="news-toggle-text">Play no music at all</span>
+                <span class="switch"><input id="news-no-music" type="checkbox"><span class="track"></span><span class="thumb"></span></span>
+              </label>
+              <label class="news-toggle" for="news-show-header">
+                <span class="news-toggle-text">Show header on screen</span>
+                <span class="switch"><input id="news-show-header" type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+              </label>
             </div>
             <div class="field">
               <span class="field-label">News video</span>
-              <label class="field-note" for="news-bulletin-enabled"><input id="news-bulletin-enabled" type="checkbox" checked> Create and keep a news video on a schedule</label>
+              <label class="news-toggle" for="news-bulletin-enabled">
+                <span class="news-toggle-text">Create and keep a news video on a schedule</span>
+                <span class="switch"><input id="news-bulletin-enabled" type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+              </label>
               <label class="field-label" for="news-bulletin-times">Build times (hours, 24h clock)</label>
               <input id="news-bulletin-times" type="text" placeholder="6,10,14,18,20,22">
               <label class="field-label" for="news-min-new">Minimum new stories</label>
