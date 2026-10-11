@@ -29,6 +29,9 @@ pub const LEDGER_KEY: &str = "bulletin-ledger";
 /// The anchor's portrait, embedded so the renderer needs no external file.
 const PRESENTER_JPEG: &[u8] = include_bytes!("../web/media/Catherine_Wolfe.jpg");
 
+/// The FlowWire logo, shown centered over black while the intro music plays.
+const LOGO_PNG: &[u8] = include_bytes!("../web/logos/FlowWire.png");
+
 /// The news-desktop assets: a scrolling world map behind everything, the top
 /// headline bar, the bottom story bar, and a mute overlay across the screen.
 const MAP_PNG: &[u8] = include_bytes!("../web/media/map.png");
@@ -333,6 +336,8 @@ async fn render_bulletin(
     staging: &Path,
 ) -> Result<(), String> {
     std::fs::create_dir_all(work_dir).map_err(|error| error.to_string())?;
+    let logo = work_dir.join("logo.png");
+    std::fs::write(&logo, LOGO_PNG).map_err(|error| error.to_string())?;
     let presenter = work_dir.join("presenter.jpg");
     std::fs::write(&presenter, PRESENTER_JPEG).map_err(|error| error.to_string())?;
     let map = work_dir.join("map.png");
@@ -399,12 +404,6 @@ async fn render_bulletin(
 
     // The timeline; speech stretches each segment's window.
     let mut beats: Vec<Beat> = Vec::new();
-    beats.push(Beat {
-        start: 0.0,
-        end: lead,
-        title: show_name.clone(),
-        body: String::new(),
-    });
     let mut starts: Vec<f64> = vec![lead];
     let mut t = lead;
     let intro_dur = speech[0]
@@ -459,12 +458,13 @@ async fn render_bulletin(
     let outro_ms = (show_total * 1000.0).round().max(0.0) as i64;
 
     // Audio: intro/outro music plus each speech segment at its window start.
+    // Input indices: 7 = intro, 8 = outro, 9+ = speech.
     let mut audio_parts: Vec<String> = vec![
-        format!("[6:a]atrim=0:{lead},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0]"),
-        format!("[7:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={outro_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1]"),
+        format!("[7:a]atrim=0:{lead},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0]"),
+        format!("[8:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={outro_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1]"),
     ];
     let mut labels: Vec<String> = vec!["a0".to_string(), "a1".to_string()];
-    let mut audio_input = 8usize;
+    let mut audio_input = 9usize;
     for (index, segment) in speech.iter().enumerate() {
         let Some((_, duration)) = segment else {
             continue;
@@ -487,9 +487,29 @@ async fn render_bulletin(
     // Layers, bottom to top: the scrolling map behind everything, the anchor
     // centered, the headline bar over the top, the story bar over the bottom,
     // the captions, then the mute overlay across the whole screen.
+    // While the intro music plays, only the FlowWire logo shows over black;
+    // after the lead the desktop (map, anchor, bars, captions, mute) fades in.
     let filter = format!(
-        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];         [1:v]scale=6480:1080[mp];         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];         [2:v]scale=760:760[p];         [m2][p]overlay=(W-w)/2:(H-h)/2[l1];         [3:v]scale=1920:1080[hb];         [l1][hb]overlay=0:0[l2];         [4:v]scale=1920:1080[sb];         [l2][sb]overlay=0:0[l3];         [l3]ass='{ass}'[l4];         [5:v]scale=1920:1080[mm];         [l4][mm]overlay=0:0[final];         {audio}",
+        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
+         [src]split[base][bg];\
+         [1:v]scale=6480:1080[mp];\
+         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];\
+         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];\
+         [2:v]scale=760:760[p];\
+         [m2][p]overlay=(W-w)/2:(H-h)/2[l1];\
+         [3:v]scale=1920:1080[hb];\
+         [l1][hb]overlay=0:0[l2];\
+         [4:v]scale=1920:1080[sb];\
+         [l2][sb]overlay=0:0[l3];\
+         [5:v]scale=1920:1080[mm];\
+         [l3][mm]overlay=0:0[desk];\
+         [base][desk]overlay=0:0:enable='gte(t\\,{lead})'[v1];\
+         [6:v]scale=560:-1[lg];\
+         [v1][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{lead})'[v2];\
+         [v2]ass='{ass}'[final];\
+         {audio}",
         total = total,
+        lead = lead,
         ass = escape_filter_path(&ass_path),
         audio = audio,
     );
@@ -543,6 +563,14 @@ async fn render_bulletin(
         format!("{total}"),
         "-i".into(),
         map_mute.to_string_lossy().to_string(),
+        "-loop".into(),
+        "1".into(),
+        "-framerate".into(),
+        FPS.to_string(),
+        "-t".into(),
+        format!("{total}"),
+        "-i".into(),
+        logo.to_string_lossy().to_string(),
         "-i".into(),
         intro_mp3.to_string_lossy().to_string(),
         "-i".into(),
