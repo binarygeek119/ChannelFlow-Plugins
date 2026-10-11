@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-holidaychannel"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 license = "MIT"
 description = "The Holiday Channel — seasonal holiday TV and movies from the v1.0.0 calendar, logos, and lineup"

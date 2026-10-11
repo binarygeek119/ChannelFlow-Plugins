@@ -11,9 +11,28 @@ mod calendar;
 mod routes;
 
 use axum::Router;
+use channelflow_plugin_api::contrib::PresetContribution;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::ui::UiContribution;
+use channelflow_plugin_api::{register_preset, unregister_preset};
+
+/// The id of the preset this plugin contributes to the Presets page. It is
+/// registered on load, so The Holiday Channel is only in the preset list
+/// while this plugin is installed.
+const HOLIDAY_PRESET_ID: &str = "channelflow-holiday";
+
+fn holiday_preset() -> PresetContribution {
+    PresetContribution {
+        id: HOLIDAY_PRESET_ID.to_string(),
+        legacy: 207.0,
+        subchannel: 203.4,
+        name: "The Holiday Channel".to_string(),
+        category: "Movies".to_string(),
+        description: "Seasonal holiday TV and movies; off-season plays The Holiday Channel.mkv"
+            .to_string(),
+    }
+}
 
 /// The shipped `plugin.json` is the single source of truth for the manifest.
 fn manifest() -> PluginManifest {
@@ -48,6 +67,9 @@ impl Plugin for HolidayChannelPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // Offer itself to the Presets page: The Holiday Channel becomes a
+        // preset (207 retro / 203.4 modern) while this plugin is installed.
+        register_preset(holiday_preset());
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
         api.web
@@ -89,6 +111,9 @@ impl Plugin for HolidayChannelPlugin {
     }
 
     fn on_unload(&mut self) {
+        // Its preset disappears with it: The Holiday Channel is in the preset
+        // list only while this plugin is installed.
+        unregister_preset(HOLIDAY_PRESET_ID);
         self.logger = None;
     }
 

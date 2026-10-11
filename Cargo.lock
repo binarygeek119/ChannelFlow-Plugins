@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-ai"
-version = "2.0.2"
+version = "2.0.3"
 dependencies = [
  "async-trait",
  "axum",
@@ -185,7 +185,7 @@ dependencies = [
 [[package]]
 name = "channelflow-plugin-api"
 version = "2.0.0"
-source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#d2c3b4f09afe0a2857e6ade97b241754910c78ce"
+source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#8587cfc27c22d502a8e27de16e9ef6fc73f6ec59"
 dependencies = [
  "async-trait",
  "axum",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-holidaychannel"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-presets"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "axum",

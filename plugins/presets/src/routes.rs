@@ -33,11 +33,11 @@ struct PresetsQuery {
     mode: Option<String>,
 }
 
-fn preset_number(preset: &crate::presets::Preset, mode: &str) -> f64 {
+fn preset_number(legacy: f64, subchannel: f64, mode: &str) -> f64 {
     if mode == "modern" {
-        preset.subchannel
+        subchannel
     } else {
-        preset.legacy
+        legacy
     }
 }
 
@@ -51,9 +51,42 @@ fn fmt_number(number: f64) -> String {
     }
 }
 
-/// Every ready-made preset, its number under both styles, and whether a
-/// channel already covers the selected number or its name. The page creates
-/// the missing ones through the base's own channel API.
+/// One preset row for the page: built-in or contributed by another plugin
+/// (The Holiday Channel only appears while its plugin is installed).
+struct PresetRow<'a> {
+    id: &'a str,
+    legacy: f64,
+    subchannel: f64,
+    name: &'a str,
+    category: &'a str,
+    description: &'a str,
+}
+
+fn preset_row_json(
+    row: PresetRow<'_>,
+    channels: &[channelflow_plugin_api::CoreChannel],
+    mode: &str,
+) -> serde_json::Value {
+    let number = preset_number(row.legacy, row.subchannel, mode);
+    let exists = channels.iter().any(|channel| {
+        channel.number == number || channel.name.trim().eq_ignore_ascii_case(row.name.trim())
+    });
+    json!({
+        "id": row.id,
+        "number": fmt_number(number),
+        "retro": fmt_number(row.legacy),
+        "modern": fmt_number(row.subchannel),
+        "name": row.name,
+        "category": row.category,
+        "description": row.description,
+        "exists": exists,
+    })
+}
+
+/// Every ready-made preset (built-in and plugin-contributed), its number under
+/// both styles, and whether a channel already covers the selected number or
+/// its name. The page creates the missing ones through the base's own channel
+/// API.
 async fn list_presets(
     State(state): State<Arc<RoutesState>>,
     Query(query): Query<PresetsQuery>,
@@ -63,25 +96,39 @@ async fn list_presets(
         Ok(channels) => channels,
         Err(_) => Vec::new(),
     };
-    let presets: Vec<serde_json::Value> = PRESETS
+    let mut rows: Vec<PresetRow<'_>> = PRESETS
         .iter()
-        .map(|preset| {
-            let number = preset_number(preset, mode);
-            let exists = channels.iter().any(|channel| {
-                channel.number == number
-                    || channel.name.trim().eq_ignore_ascii_case(preset.name.trim())
-            });
-            json!({
-                "id": preset.id,
-                "number": fmt_number(number),
-                "retro": fmt_number(preset.legacy),
-                "modern": fmt_number(preset.subchannel),
-                "name": preset.name,
-                "category": preset.category,
-                "description": preset.description,
-                "exists": exists,
-            })
+        .map(|preset| PresetRow {
+            id: preset.id,
+            legacy: preset.legacy,
+            subchannel: preset.subchannel,
+            name: preset.name,
+            category: preset.category,
+            description: preset.description,
         })
+        .collect();
+    // The ready-made channels other plugins contribute (The Holiday Channel
+    // registers itself here on load) — they are only present while that plugin
+    // is installed.
+    let contributed = channelflow_plugin_api::contributed_presets();
+    rows.extend(contributed.iter().map(|preset| PresetRow {
+        id: &preset.id,
+        legacy: preset.legacy,
+        subchannel: preset.subchannel,
+        name: &preset.name,
+        category: &preset.category,
+        description: &preset.description,
+    }));
+    let presets: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| preset_row_json(PresetRow {
+            id: row.id,
+            legacy: row.legacy,
+            subchannel: row.subchannel,
+            name: row.name,
+            category: row.category,
+            description: row.description,
+        }, &channels, mode))
         .collect();
     Json(json!({
         "mode": mode,

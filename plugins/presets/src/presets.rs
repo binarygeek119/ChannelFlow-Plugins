@@ -36,7 +36,6 @@ pub const PRESETS: &[Preset] = &[
     Preset { id: "channelflow-creature", legacy: 203.0, subchannel: 203.1, name: "Creature Double Feature", category: "Movies", description: "Creature and monster movies and TV (genre, plot, or tags)" },
     Preset { id: "channelflow-hero", legacy: 204.0, subchannel: 203.2, name: "Hero TV", category: "Movies", description: "Anyone who saves or protects people — heroes, rescuers, and champions" },
     Preset { id: "channelflow-funny", legacy: 205.0, subchannel: 203.3, name: "That's Funny", category: "Movies", description: "Stand-up comedy movies and shows" },
-    Preset { id: "channelflow-holiday", legacy: 207.0, subchannel: 203.4, name: "The Holiday Channel", category: "Movies", description: "Seasonal holiday TV and movies" },
     Preset { id: "channelflow-parody", legacy: 312.0, subchannel: 312.1, name: "The Parody Channel", category: "Music Videos", description: "Parody music videos" },
     Preset { id: "channelflow-rap", legacy: 313.0, subchannel: 312.2, name: "Rap On Tap", category: "Music Videos", description: "Rap and hip hop music videos" },
     Preset { id: "channelflow-music-video", legacy: 314.0, subchannel: 312.3, name: "HeadPhone Jack", category: "Music Videos", description: "All other music videos" },
