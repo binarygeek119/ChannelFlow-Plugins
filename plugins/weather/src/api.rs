@@ -20,6 +20,7 @@ pub fn router(state: Arc<WeatherState>) -> Router {
     Router::new()
         .route("/", get(get_settings).put(put_settings))
         .route("/test", get(test_forecast))
+        .route("/weather", get(weather_snapshot))
         .with_state(state)
 }
 
@@ -142,6 +143,49 @@ async fn test_forecast(State(state): State<Arc<WeatherState>>) -> Response {
 
 fn urlencoding(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join("+")
+}
+
+/// The live weather snapshot — current conditions and daily forecast for the
+/// saved location, the way v1.0.0's WeatherDataClient served it. Fetches are
+/// cached for a few minutes so the page doesn't hammer the weather API.
+async fn weather_snapshot(State(state): State<Arc<WeatherState>>) -> Response {
+    let settings = state.settings.lock().await.clone();
+    if settings.default_location.trim().is_empty() {
+        return Json(json!({
+            "ok": false,
+            "error": "Set a location first.",
+        }))
+        .into_response();
+    }
+    let key = format!(
+        "{}|{:?}|{:?}",
+        settings.default_location, settings.source, settings.units
+    );
+    {
+        let cache = state.weather_cache.lock().await;
+        if let Some((cached_key, taken_at, value)) = cache.as_ref() {
+            if cached_key == &key && taken_at.elapsed().as_secs() < 5 * 60 {
+                return Json(json!({ "ok": true, "snapshot": value, "cached": true })).into_response();
+            }
+        }
+    }
+    let place = match crate::forecast::geocode(&state.http, &settings.default_location).await {
+        Ok(place) => place,
+        Err(error) => return Json(json!({ "ok": false, "error": error })).into_response(),
+    };
+    let snapshot = match crate::forecast::snapshot(&state.http, &place, settings.source, settings.units).await {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            return Json(json!({ "ok": false, "error": error, "location": json!({ "name": place.name }) }))
+                .into_response();
+        }
+    };
+    let response = Json(json!({ "ok": true, "snapshot": snapshot, "cached": false }));
+    {
+        let mut cache = state.weather_cache.lock().await;
+        *cache = Some((key, std::time::Instant::now(), snapshot));
+    }
+    response.into_response()
 }
 
 fn fail(status: StatusCode, message: String) -> Response {

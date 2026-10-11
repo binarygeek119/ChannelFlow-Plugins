@@ -7,6 +7,7 @@
 //! plugin and the tab appears.
 
 mod api;
+mod forecast;
 mod settings;
 
 use std::sync::Arc;
@@ -73,6 +74,9 @@ pub struct WeatherState {
     pub storage: Arc<dyn PluginStorage>,
     pub http: reqwest::Client,
     pub logger: PluginLogger,
+    /// The last fetched snapshot, keyed by its (query, source, units), with
+    /// the instant it was taken — v1.0.0 cached weather for ~8 minutes.
+    pub weather_cache: Mutex<Option<(String, std::time::Instant, serde_json::Value)>>,
 }
 
 impl WeatherPlugin {
@@ -131,6 +135,7 @@ impl Plugin for WeatherPlugin {
             storage: api.storage.clone(),
             http,
             logger: api.logger.clone(),
+            weather_cache: Mutex::new(None),
         }));
         api.logger.info("loaded");
         Ok(())

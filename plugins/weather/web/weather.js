@@ -57,7 +57,7 @@ function collectWeatherSettings() {
 
 async function loadWeather() {
   try {
-    const data = await request(WEATHER_API + "/");
+    const data = await request(WEATHER_API);
     const settings = data.settings || {};
     const options = data.options || {};
     fillWxSelect("wx-variant", options.star_variants, { ws4kp: "WeatherStar 4000", ws3kp: "WeatherStar 3000" }, settings.weatherstar_variant);
@@ -70,6 +70,54 @@ async function loadWeather() {
   } catch (error) {
     $("wx-result").textContent = error.message;
   }
+  renderWxNow();
+}
+
+// The live conditions preview — the snapshot the WeatherStar channel would
+// show, fetched like v1.0.0 (current + daily from Open-Meteo).
+async function renderWxNow() {
+  const box = $("wx-now");
+  if (!box) return;
+  box.innerHTML = '<p class="hint">Loading conditions…</p>';
+  let data;
+  try {
+    data = await request(`${WEATHER_API}/weather`);
+  } catch (error) {
+    box.innerHTML = `<p class="hint bad">Could not load weather: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  if (!data.ok) {
+    box.innerHTML = data.error
+      ? `<p class="hint bad">${escapeHtml(data.error)}</p>`
+      : '<p class="hint">Set a location to fetch conditions.</p>';
+    return;
+  }
+  const s = data.snapshot || {};
+  const cur = s.current || {};
+  const unit = (s.units && s.units.temperature) || "°F";
+  const wind = (s.units && s.units.wind) || "mph";
+  box.innerHTML =
+    `<div class="wx-now-current">` +
+    `<div class="wx-now-temp">${cur.temperature != null ? Math.round(cur.temperature) : "—"}${escapeHtml(unit)}</div>` +
+    `<div class="wx-now-body">` +
+    `<div class="wx-now-name">${escapeHtml((s.location && s.location.name) || "Current")}</div>` +
+    `<div class="wx-now-condition">${escapeHtml(cur.condition || "")}</div>` +
+    `<div class="hint">Feels ${cur.feels_like != null ? Math.round(cur.feels_like) : "—"}${escapeHtml(unit)} · ${cur.humidity != null ? cur.humidity : "—"}% humidity · wind ${cur.wind_speed != null ? Math.round(cur.wind_speed) : "—"} ${escapeHtml(wind)}${cur.wind_direction != null ? ` (${cur.wind_direction}°)` : ""}</div>` +
+    `</div></div>` +
+    `<div class="wx-daily">` +
+    (s.daily || [])
+      .slice(0, 7)
+      .map(
+        (day) =>
+          `<div class="wx-day">` +
+          `<div class="wx-day-date">${escapeHtml(String(day.date || "").slice(5))}</div>` +
+          `<div class="wx-day-icon">${escapeHtml(day.icon || "")}</div>` +
+          `<div class="wx-day-condition">${escapeHtml(day.condition || "")}</div>` +
+          `<div class="wx-day-temps">H ${day.max != null ? Math.round(day.max) : "—"}° · L ${day.min != null ? Math.round(day.min) : "—"}°</div>` +
+          `</div>`
+      )
+      .join("") +
+    `</div>`;
 }
 
 async function saveWeather(event) {
@@ -77,7 +125,7 @@ async function saveWeather(event) {
   const save = $("wx-save");
   if (save) save.disabled = true;
   try {
-    await request(WEATHER_API + "/", { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
+    await request(WEATHER_API, { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
     if ($("wx-result")) $("wx-result").textContent = "Saved.";
   } catch (error) {
     if ($("wx-result")) $("wx-result").textContent = error.message;
@@ -91,7 +139,7 @@ async function testWeather() {
   if (test) test.disabled = true;
   try {
     // Save first so the test uses the form's location.
-    await request(WEATHER_API + "/", { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
+    await request(WEATHER_API, { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
     const data = await request(WEATHER_API + "/test");
     const result = data.result || {};
     $("wx-result").textContent = `${result.ok ? "OK" : "Failed"}: ${result.detail || ""}`;

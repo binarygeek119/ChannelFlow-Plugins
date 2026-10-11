@@ -1,1 +1,37 @@
 /* page styles live here */
+
+/* Current conditions preview. */
+.wx-now-current {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    margin: 0.5rem 0;
+    padding: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: linear-gradient(135deg, #0e2a4a, #123b63);
+}
+.wx-now-temp {
+    font-size: 2.6rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.wx-now-body { min-width: 0; }
+.wx-now-name { font-size: 1.1rem; font-weight: 600; }
+.wx-now-condition { color: #bfe3ff; margin: 0.15rem 0 0.3rem; }
+.wx-daily {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.6rem;
+}
+.wx-day {
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.8rem;
+}
+.wx-day-date { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
+.wx-day-icon { color: var(--accent); margin: 0.25rem 0; }
+.wx-day-condition { color: var(--muted); min-height: 2em; }
+.wx-day-temps { font-weight: 600; }

@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-weather"
-version = "2.0.7"
+version = "2.0.8"
 dependencies = [
  "async-trait",
  "axum",
