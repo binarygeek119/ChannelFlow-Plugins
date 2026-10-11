@@ -780,21 +780,17 @@ async function saveConnection(event) {
   const save = $("ms-save");
   save.disabled = true;
   try {
-    const response = await request(connectionEditingId ? `/api/connections/${connectionEditingId}` : "/api/connections", {
+    await request(connectionEditingId ? `/api/connections/${connectionEditingId}` : "/api/connections", {
       method: connectionEditingId ? "PUT" : "POST",
       body: JSON.stringify(connectionEditingId ? { config } : { kind, config }),
     });
-    const createdId = response && response.connection && response.connection.id;
     openConnectionForm(null);
     $("ms-result").textContent = "Saved.";
     await refreshLibraryConnections();
     renderLibraryTabs();
-    if (createdId) {
-      // Move the connection into its own tab under its source (Jellyfin,
-      // Local Files, Past Tense News).
-      history.pushState(null, "", `/webui/library/${kind}/${createdId}`);
-      libraryPage = connPageId(kind, createdId);
-    }
+    // Stay exactly where the user was — the save shows up in the tab bar and
+    // on the current page (Connections list, kind page, or the connection
+    // being edited) without navigating away.
     renderCurrentLibraryPage();
   } catch (error) {
     $("ms-result").textContent = error.message;
