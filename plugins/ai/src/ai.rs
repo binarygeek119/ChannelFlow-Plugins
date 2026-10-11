@@ -65,6 +65,9 @@ pub struct AiProvider {
     /// but is never asked for TTS.
     #[serde(default)]
     pub scheduling_only: bool,
+    /// TTS-only: this provider is asked for speech, never for scheduling.
+    #[serde(default)]
+    pub tts_only: bool,
     /// This is a local Ollama endpoint: no API key is sent, and the base URL
     /// defaults to Ollama's OpenAI-compatible gateway.
     #[serde(default)]
@@ -115,6 +118,7 @@ pub struct ProviderView {
     pub tts_model: String,
     pub voice: String,
     pub scheduling_only: bool,
+    pub tts_only: bool,
     pub ollama: bool,
 }
 
@@ -130,6 +134,7 @@ impl AiProvider {
             tts_model: self.tts_model.clone(),
             voice: self.voice.clone(),
             scheduling_only: self.scheduling_only,
+            tts_only: self.tts_only,
             ollama: self.ollama,
         }
     }
@@ -320,6 +325,9 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         /// Scheduling-only: this provider may drive scheduling, never TTS.
         #[serde(default)]
         scheduling_only: bool,
+        /// TTS-only: this provider is asked for speech, never scheduling.
+        #[serde(default)]
+        tts_only: bool,
         /// This is a local Ollama endpoint.
         #[serde(default)]
         ollama: bool,
@@ -337,6 +345,7 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         tts_model: input.tts_model,
         voice: input.voice,
         scheduling_only: input.scheduling_only,
+        tts_only: input.tts_only,
         ollama: input.ollama,
     })
 }
@@ -363,6 +372,8 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
         voice: Option<String>,
         #[serde(default)]
         scheduling_only: Option<bool>,
+        #[serde(default)]
+        tts_only: Option<bool>,
         #[serde(default)]
         ollama: Option<bool>,
     }
@@ -393,6 +404,9 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
     if let Some(scheduling_only) = update.scheduling_only {
         provider.scheduling_only = scheduling_only;
     }
+    if let Some(tts_only) = update.tts_only {
+        provider.tts_only = tts_only;
+    }
     if let Some(ollama) = update.ollama {
         provider.ollama = ollama;
     }
@@ -410,6 +424,12 @@ fn cleaned(mut provider: AiProvider) -> Result<AiProvider, AiError> {
             provider.base_url = DEFAULT_OLLAMA_BASE_URL.to_string();
         }
         provider.api_key.clear();
+    }
+    // A provider is either for scheduling or for TTS, not both.
+    if provider.tts_only {
+        provider.scheduling_only = false;
+    } else if provider.scheduling_only {
+        provider.tts_only = false;
     }
     provider.name = provider.name.trim().to_string();
     if provider.name.is_empty() {
@@ -471,6 +491,7 @@ fn migrate(value: &Value) -> Result<AiConfig, AiError> {
             tts_model: legacy.tts_model,
             voice: legacy.voice,
             scheduling_only: false,
+            tts_only: false,
             ollama: false,
         }],
     })
@@ -655,6 +676,26 @@ mod tests {
         assert_eq!(created.base_url, "http://localhost:11434/v1");
         assert_eq!(created.api_key, "", "an Ollama endpoint sends no key");
         assert!(config.view().providers[0].ollama);
+    }
+
+    #[test]
+    fn tts_only_providers_are_never_for_scheduling() {
+        let mut config = AiConfig::default();
+        let created = config
+            .create(&json!({
+                "name": "TTS Box", "priority": 1, "base_url": "https://example.test/v1",
+                "tts_only": true, "chat_model": "gpt-4o-mini", "tts_model": "tts-1", "voice": "nova"
+            }))
+            .unwrap();
+        assert!(created.tts_only);
+        assert!(!created.scheduling_only);
+        assert!(config.view().providers[0].tts_only);
+        // The two flags are mutually exclusive: setting both keeps TTS-only.
+        let updated = config
+            .update(&created.id, &json!({ "scheduling_only": true }))
+            .unwrap();
+        assert!(updated.tts_only, "TTS-only sticks once set");
+        assert!(!updated.scheduling_only);
     }
 
     #[test]

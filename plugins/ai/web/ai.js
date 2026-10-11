@@ -70,6 +70,7 @@ function fillAiForm(provider) {
     els.aiTtsModel.value = provider.tts_model;
     els.aiVoice.value = provider.voice;
     els.aiSchedulingOnly.checked = !!provider.scheduling_only;
+    els.aiTtsOnly.checked = !!provider.tts_only;
     els.aiOllama.checked = !!provider.ollama;
     aiKeySet = provider.api_key_set;
     els.aiSave.textContent = "Save provider";
@@ -82,6 +83,7 @@ function fillAiForm(provider) {
     els.aiTtsModel.value = aiDefaults.tts_model;
     els.aiVoice.value = aiDefaults.voice;
     els.aiSchedulingOnly.checked = false;
+    els.aiTtsOnly.checked = false;
     els.aiOllama.checked = false;
     aiKeySet = false;
     els.aiSave.textContent = "Add provider";
@@ -187,6 +189,7 @@ function aiBody() {
     tts_model: els.aiTtsModel.value,
     voice: els.aiVoice.value,
     scheduling_only: els.aiSchedulingOnly.checked,
+    tts_only: !!(els.aiTtsOnly && els.aiTtsOnly.checked),
     ollama: !!(els.aiOllama && els.aiOllama.checked),
   };
   const priority = els.aiPriority.value.trim();
@@ -333,6 +336,18 @@ function formatBytes(bytes) {
 }
 
 els.aiSave.addEventListener("click", saveAi);
+const aiTtsOnly = $("ai-tts-only");
+if (aiTtsOnly) {
+  aiTtsOnly.addEventListener("change", () => {
+    if (aiTtsOnly.checked && $("ai-scheduling-only")) $("ai-scheduling-only").checked = false;
+  });
+}
+const aiSchedulingOnlyCb = $("ai-scheduling-only");
+if (aiSchedulingOnlyCb) {
+  aiSchedulingOnlyCb.addEventListener("change", () => {
+    if (aiSchedulingOnlyCb.checked && aiTtsOnly) aiTtsOnly.checked = false;
+  });
+}
 els.aiOllama.addEventListener("change", syncAiOllama);
 els.aiFetchModels.addEventListener("click", fetchProviderModels);
 els.aiTest.addEventListener("click", testAi);
