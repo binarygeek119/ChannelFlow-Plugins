@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-local"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 license = "MIT"
 description = "Local — a media source for files on this machine, no media server (NFO metadata + poster.jpg/png)"

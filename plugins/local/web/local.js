@@ -32,6 +32,11 @@ async function browse(path) {
   }
 }
 
+function locationText(config) {
+  const folders = Array.isArray(config.folders) ? config.folders : [];
+  return folders.length ? folders.join(" · ") : config.url || "";
+}
+
 function localConnRow(connection) {
   const config = connection.config || {};
   const row = document.createElement("div");
@@ -40,7 +45,7 @@ function localConnRow(connection) {
   row.innerHTML =
     `<div class="name">${escapeHtml(config.name || "Local")}</div>` +
     `<span class="kind">${escapeHtml(KIND_LABEL[kind] || kind)}</span>` +
-    `<span class="path" title="${escapeHtml(config.url || "")}">${escapeHtml(config.url || "")}</span>` +
+    `<span class="path" title="${escapeHtml(locationText(config))}">${escapeHtml(locationText(config))}</span>` +
     `<span class="spacer"></span>` +
     `<button type="button" class="ghost local-sync">Sync</button>` +
     `<button type="button" class="ghost local-delete">Delete</button>`;
@@ -107,7 +112,7 @@ async function createLocal(event) {
       method: "POST",
       body: JSON.stringify({
         kind: "local",
-        config: { name, url: path, media_kind: kind },
+        config: { name, folders: [path], media_kind: kind },
       }),
     });
     if (result) result.textContent = "Added. Run Sync to scan the folder into the Media catalog.";

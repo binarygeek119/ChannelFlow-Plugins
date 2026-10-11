@@ -31,13 +31,18 @@ async function browse(path) {
   }
 }
 
+function ptnLocation(config) {
+  const folders = Array.isArray(config.folders) ? config.folders : [];
+  return folders.length ? folders.join(" · ") : config.url || "";
+}
+
 function connRow(connection) {
   const config = connection.config || {};
   const row = document.createElement("div");
   row.className = "ptn-conn";
   row.innerHTML =
     `<div class="name">${escapeHtml(config.name || "Past Tense News")}</div>` +
-    `<span class="path" title="${escapeHtml(config.url || "")}">${escapeHtml(config.url || "")}</span>` +
+    `<span class="path" title="${escapeHtml(ptnLocation(config))}">${escapeHtml(ptnLocation(config))}</span>` +
     `<span class="spacer"></span>` +
     `<button type="button" class="ghost ptn-sync">Scan</button>` +
     `<button type="button" class="ghost ptn-delete">Delete</button>`;
@@ -100,7 +105,7 @@ async function createFolder(event) {
       method: "POST",
       body: JSON.stringify({
         kind: "news",
-        config: { name: name || "Past Tense News", url: path },
+        config: { name: name || "Past Tense News", folders: [path] },
       }),
     });
     if (result) result.textContent = "Added. Run Scan to read the event folders into the media database.";

@@ -25,26 +25,7 @@
                 <label class="field-label" for="ms-kind">Media server</label>
                 <select id="ms-kind"></select>
               </div>
-              <div class="field">
-                <label class="field-label" for="ms-name">Connection name</label>
-                <input id="ms-name" type="text" placeholder="Home Jellyfin" required>
-              </div>
-              <div class="field">
-                <label class="field-label" for="ms-url">Server URL</label>
-                <input id="ms-url" type="url" placeholder="https://jellyfin.example.com" required>
-              </div>
-              <div class="field">
-                <label class="field-label" for="ms-api-key">API key</label>
-                <input id="ms-api-key" type="password" placeholder="(none)">
-              </div>
-              <div class="field">
-                <label class="field-label" for="ms-remaps">Path remaps</label>
-                <span class="field-hint">One per line: <code>/from -> /to</code></span>
-                <textarea id="ms-remaps" rows="3" placeholder="/media -> /mnt/library"></textarea>
-              </div>
-              <div class="field">
-                <label class="field-label" for="ms-verify-tls"><input id="ms-verify-tls" type="checkbox" checked> Verify TLS certificate</label>
-              </div>
+              <div id="ms-fields"></div>
               <div class="field">
                 <label class="field-label" for="ms-enabled"><input id="ms-enabled" type="checkbox" checked> Enabled</label>
               </div>

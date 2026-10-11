@@ -120,7 +120,18 @@ impl MediaSource for LocalPlugin {
     fn connection_fields(&self) -> Vec<FieldSpec> {
         vec![
             FieldSpec::text("name", "Connection name").required(),
-            FieldSpec::text("url", "Folder path").required(),
+            FieldSpec::repeated("folders", "Folder paths").required(),
+            FieldSpec::select(
+                "media_kind",
+                "What kind of media",
+                vec![
+                    ("movies".to_string(), "Movies".to_string()),
+                    ("tv".to_string(), "TV Shows".to_string()),
+                    ("music".to_string(), "Music".to_string()),
+                    ("musicvideos".to_string(), "Music Videos".to_string()),
+                ],
+            )
+            .required(),
         ]
     }
 
@@ -135,14 +146,18 @@ impl MediaSource for LocalPlugin {
     }
 
     async fn test_connection(&self, connection: &Connection, _api_key: &str) -> TestResult {
-        let path = connection.url.trim();
-        if path.is_empty() {
-            return TestResult::bad_url("enter a folder path");
-        }
-        if std::fs::metadata(path).map(|meta| meta.is_dir()).unwrap_or(false) {
-            TestResult::ok("folder is readable")
+        let folders: Vec<&str> = if connection.folders.is_empty() {
+            vec![connection.url.trim()]
         } else {
-            TestResult::bad_url("not a readable folder on this machine")
+            connection.folders.iter().map(|folder| folder.as_str()).collect()
+        };
+        let any_exists = folders.iter().any(|folder| {
+            !folder.is_empty() && std::fs::metadata(folder).map(|meta| meta.is_dir()).unwrap_or(false)
+        });
+        if any_exists {
+            TestResult::ok("folder(s) are readable")
+        } else {
+            TestResult::bad_url("enter readable folders on this machine")
         }
     }
 
@@ -161,8 +176,16 @@ impl MediaSource for LocalPlugin {
             report.errors += 1;
             return report;
         };
-        let folder = ctx.connection.url.trim();
-        if folder.is_empty() {
+        let mut folders: Vec<String> = if ctx.connection.folders.is_empty() {
+            if ctx.connection.url.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![ctx.connection.url.trim().to_string()]
+            }
+        } else {
+            ctx.connection.folders.clone()
+        };
+        if folders.is_empty() {
             report.errors += 1;
             return report;
         }
@@ -171,17 +194,22 @@ impl MediaSource for LocalPlugin {
             .first()
             .map(|library| library.name.clone())
             .unwrap_or_else(|| ctx.connection.media_kind.as_deref().unwrap_or("movies").to_string());
-        let scanned = scanner::scan_folder(folder, &library_name);
-        let mut items = Vec::with_capacity(scanned.len());
-        for scanned_item in scanned {
-            let mut item = scanned_item.catalog;
-            if let Some(poster) = scanned_item.poster {
-                if let Some(path) = write_poster(&ctx.image_root, &poster, &item.remote_id) {
-                    item.poster_path = Some(path);
-                }
+        let mut items = Vec::new();
+        for folder in &mut folders {
+            if folder.trim().is_empty() {
+                continue;
             }
-            report.added += 1;
-            items.push(item);
+            let scanned = scanner::scan_folder(folder, &library_name);
+            for scanned_item in scanned {
+                let mut item = scanned_item.catalog;
+                if let Some(poster) = scanned_item.poster {
+                    if let Some(path) = write_poster(&ctx.image_root, &poster, &item.remote_id) {
+                        item.poster_path = Some(path);
+                    }
+                }
+                report.added += 1;
+                items.push(item);
+            }
         }
         match catalog.replace_library(ctx.connection_id, &library_name, items).await {
             Ok(_) => {}

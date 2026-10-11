@@ -283,8 +283,13 @@ function connectionCard(connection) {
   head.append(title, kind);
   const meta = document.createElement("div");
   meta.className = "ms-meta";
+  const folders = Array.isArray(config.folders) ? config.folders : [];
+  const where = folders.length ? folders.join(" · ") : config.url || "";
+  const whereHtml = /^https?:\/\//i.test(where)
+    ? `<a href="${escapeHtml(where)}" target="_blank" rel="noopener" class="ms-url">${escapeHtml(where)}</a>`
+    : escapeHtml(where || "no location");
   meta.innerHTML =
-    `<a href="${escapeHtml(config.url || "#")}" target="_blank" rel="noopener" class="ms-url">${escapeHtml(config.url || "no URL")}</a>` +
+    whereHtml +
     (config.enabled === false ? `<span class="ms-status">disabled</span>` : "") +
     `<span class="ms-status">Not tested</span>`;
   card.append(head, meta, connectionActions(card, connection));
@@ -545,34 +550,132 @@ function remapsToLines(remaps) {
   return Object.entries(remaps).map(([from, to]) => `${from} -> ${to}`).join("\n");
 }
 
+function fieldElementId(key) {
+  return "ms-fld-" + String(key).replace(/[^a-z0-9_-]/gi, "_");
+}
+
+// Build one input for a source field: text/secret input, remaps textarea,
+// repeatable folder rows with an "add another" button, or a kind dropdown.
+function renderSourceField(field, config) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.textContent = field.label || field.key;
+  wrap.appendChild(label);
+  const value = config ? config[field.key] : undefined;
+  if (field.kind === "secret") {
+    const input = document.createElement("input");
+    input.type = "password";
+    input.id = fieldElementId(field.key);
+    input.value = value || "";
+    wrap.appendChild(input);
+  } else if (field.kind === "remaps") {
+    const textarea = document.createElement("textarea");
+    textarea.id = fieldElementId(field.key);
+    textarea.rows = 3;
+    textarea.placeholder = "/media -> /mnt/library";
+    textarea.value = remapsToLines(value);
+    wrap.appendChild(textarea);
+  } else if (field.kind === "repeated") {
+    const container = document.createElement("div");
+    container.id = fieldElementId(field.key);
+    container.className = "repeat-list";
+    const values = Array.isArray(value) ? value.slice() : value ? [String(value)] : [""];
+    let addRow = (initial) => {
+      const row = document.createElement("div");
+      row.className = "repeat-row";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = initial || "";
+      row.appendChild(input);
+      container.appendChild(row);
+    };
+    values.forEach(addRow);
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "ghost";
+    add.textContent = "Add another folder";
+    add.addEventListener("click", () => addRow(""));
+    wrap.appendChild(container);
+    wrap.appendChild(add);
+  } else if (field.kind === "select") {
+    const select = document.createElement("select");
+    select.id = fieldElementId(field.key);
+    (field.options || []).forEach((pair) => {
+      const option = document.createElement("option");
+      option.value = Array.isArray(pair) ? pair[0] : pair.value;
+      option.textContent = Array.isArray(pair) ? pair[1] : pair.label;
+      select.appendChild(option);
+    });
+    select.value = value || (field.options && field.options[0] && field.options[0][0]) || "";
+    wrap.appendChild(select);
+  } else {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = fieldElementId(field.key);
+    input.value = value || "";
+    wrap.appendChild(input);
+  }
+  return wrap;
+}
+
+// Render the selected source's fields into the connection form.
+function renderConnectionFields(kind, config) {
+  const source = librarySources.find((entry) => entry.type_id === kind) || {};
+  const host = $("ms-fields");
+  if (!host) return;
+  host.textContent = "";
+  (source.fields || []).forEach((field) => {
+    if (field.kind === "action") return;
+    host.appendChild(renderSourceField(field, config));
+  });
+}
+
 function currentFormConfig() {
-  return {
-    name: $("ms-name").value.trim(),
-    url: $("ms-url").value.trim(),
-    api_key: $("ms-api-key").value.trim(),
-    path_remaps: linesToRemaps($("ms-remaps").value),
-    verify_tls: $("ms-verify-tls").checked,
-    enabled: $("ms-enabled").checked,
-  };
+  const kind = $("ms-kind").value;
+  const source = librarySources.find((entry) => entry.type_id === kind) || {};
+  const config = { enabled: $("ms-enabled").checked };
+  (source.fields || []).forEach((field) => {
+    if (field.kind === "action") return;
+    if (field.kind === "repeated") {
+      const container = $(fieldElementId(field.key));
+      config[field.key] = container
+        ? Array.from(container.querySelectorAll("input"))
+            .map((input) => input.value.trim())
+            .filter(Boolean)
+        : [];
+      return;
+    }
+    if (field.kind === "remaps") {
+      const el = $(fieldElementId(field.key));
+      config[field.key] = el ? linesToRemaps(el.value) : {};
+      return;
+    }
+    const el = $(fieldElementId(field.key));
+    config[field.key] = el ? el.value.trim() : "";
+  });
+  return config;
 }
 
 function openConnectionForm(connection) {
   connectionEditingId = connection ? connection.id : null;
   $("ms-form-title").textContent = connection ? "Edit connection" : "Add connection";
   const config = (connection && connection.config) || {};
-  $("ms-kind").value = connection ? connection.kind : (librarySources[0] && librarySources[0].type_id) || "";
+  const kind =
+    connection
+      ? connection.kind
+      : $("ms-kind").value || (librarySources[0] && librarySources[0].type_id) || "";
+  $("ms-kind").value = kind;
   $("ms-kind").disabled = !!connection;
-  $("ms-name").value = config.name || "";
-  $("ms-url").value = config.url || "";
-  $("ms-api-key").value = config.api_key || "";
-  $("ms-remaps").value = remapsToLines(config.path_remaps);
-  $("ms-verify-tls").checked = config.verify_tls !== false;
+  renderConnectionFields(kind, config);
   $("ms-enabled").checked = config.enabled !== false;
   $("ms-test").hidden = !connection;
   $("ms-cancel").hidden = !connection;
   $("ms-result").textContent = "";
   $("ms-form").scrollIntoView({ block: "nearest" });
-  $("ms-name").focus();
+  const first = $("ms-fields").querySelector("input, select");
+  if (first) first.focus();
 }
 
 async function saveConnection(event) {
@@ -582,14 +685,21 @@ async function saveConnection(event) {
   const save = $("ms-save");
   save.disabled = true;
   try {
-    await request(connectionEditingId ? `/api/connections/${connectionEditingId}` : "/api/connections", {
+    const response = await request(connectionEditingId ? `/api/connections/${connectionEditingId}` : "/api/connections", {
       method: connectionEditingId ? "PUT" : "POST",
       body: JSON.stringify(connectionEditingId ? { config } : { kind, config }),
     });
+    const createdId = response && response.connection && response.connection.id;
     openConnectionForm(null);
     $("ms-result").textContent = "Saved.";
     await refreshLibraryConnections();
     renderLibraryTabs();
+    if (createdId) {
+      // Move the connection into its own tab under its source (Jellyfin,
+      // Local Files, Past Tense News).
+      history.pushState(null, "", `/webui/library/${kind}/${createdId}`);
+      libraryPage = connPageId(kind, createdId);
+    }
     renderCurrentLibraryPage();
   } catch (error) {
     $("ms-result").textContent = error.message;
@@ -613,6 +723,16 @@ async function testConnectionForm() {
 {
   const form = $("ms-form");
   if (form) form.addEventListener("submit", saveConnection);
+  const kindSelect = $("ms-kind");
+  if (kindSelect) {
+    // Switching source re-renders that source's own fields.
+    kindSelect.addEventListener("change", () => {
+      const kind = kindSelect.value;
+      renderConnectionFields(kind, {});
+      $("ms-test").hidden = !connectionEditingId;
+      $("ms-cancel").hidden = !connectionEditingId;
+    });
+  }
   const test = $("ms-test");
   if (test) test.addEventListener("click", testConnectionForm);
   const cancel = $("ms-cancel");

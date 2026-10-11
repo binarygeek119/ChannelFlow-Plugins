@@ -56,3 +56,7 @@
 .ms-status.bad { color: var(--danger); }
 .ms-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .ms-actions button { font-size: 0.8rem; padding: 0.28rem 0.7rem; }
+
+/* Repeatable path inputs (Local Files, Past Tense News). */
+.repeat-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.repeat-row input { width: 100%; }
