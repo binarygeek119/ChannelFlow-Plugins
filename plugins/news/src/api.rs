@@ -320,11 +320,14 @@ fn resolve_url(url: &str, feed_url: &str) -> String {
 }
 
 fn feed_name(feed_url: &str) -> String {
+    // The feed's host, as the on-air attribution (the settings keep only the
+    // feed url, so the host stands in for v1's feed name).
     feed_url
-        .trim_end_matches('/')
-        .rsplit('/')
+        .split("://")
+        .nth(1)
+        .unwrap_or(feed_url)
+        .split('/')
         .next()
-        .filter(|name| !name.is_empty() && !name.contains('.'))
         .unwrap_or(feed_url)
         .to_string()
 }
