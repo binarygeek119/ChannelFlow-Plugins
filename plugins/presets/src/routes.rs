@@ -41,6 +41,16 @@ fn preset_number(preset: &crate::presets::Preset, mode: &str) -> f64 {
     }
 }
 
+/// A dial number for display: whole numbers stay whole (`119`), subchannels
+/// keep their fraction (`119.1`).
+fn fmt_number(number: f64) -> String {
+    if number.fract() == 0.0 && number.is_finite() {
+        format!("{}", number as i64)
+    } else {
+        format!("{number}")
+    }
+}
+
 /// Every ready-made preset, its number under both styles, and whether a
 /// channel already covers the selected number or its name. The page creates
 /// the missing ones through the base's own channel API.
@@ -63,9 +73,9 @@ async fn list_presets(
             });
             json!({
                 "id": preset.id,
-                "number": number,
-                "retro": preset.legacy,
-                "modern": preset.subchannel,
+                "number": fmt_number(number),
+                "retro": fmt_number(preset.legacy),
+                "modern": fmt_number(preset.subchannel),
                 "name": preset.name,
                 "category": preset.category,
                 "description": preset.description,
