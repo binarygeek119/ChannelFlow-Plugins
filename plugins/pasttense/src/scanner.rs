@@ -91,7 +91,8 @@ fn remote_id(dir: &Path) -> String {
     dir.to_string_lossy().into_owned()
 }
 
-/// The text inside a simple `<name>…</name>` tag (no attributes) in an nfo.
+/// The text inside a simple `<name>…</name>` tag (no attributes) in an nfo,
+/// with the common XML entities decoded (`&amp;` → `&`, etc.).
 fn tag(xml: &str, name: &str) -> Option<String> {
     let open = format!("<{name}");
     let close = format!("</{name}>");
@@ -100,7 +101,19 @@ fn tag(xml: &str, name: &str) -> Option<String> {
     let gt = after.find('>')?;
     let content = &after[gt + 1..];
     let end = content.find(&close)?;
-    Some(content[..end].trim().to_string())
+    Some(unescape(&content[..end].trim()))
+}
+
+/// Decode the XML entities an nfo's text values carry.
+fn unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&#8217;", "\u{2019}")
 }
 
 /// The event's coverage videos, as the event page lists them (episode-style).
