@@ -80,9 +80,8 @@ function renderPresets() {
 async function loadPresets(mode, weatherStar) {
   presetMode = mode || "retro";
   if (weatherStar) presetWeatherStar = weatherStar;
-  document.querySelectorAll('input[name="presets-mode"]').forEach((radio) => {
-    radio.checked = radio.value === presetMode;
-  });
+  const dial = $("presets-dial-switch");
+  if (dial) dial.checked = presetMode === "modern";
   try {
     let url = `${PRESETS_ROUTE}?mode=${encodeURIComponent(presetMode)}`;
     if (presetWeatherStar) url += `&weatherstar=${encodeURIComponent(presetWeatherStar)}`;
@@ -144,11 +143,12 @@ async function applyPresets() {
 {
   const apply = $("presets-apply");
   if (apply) apply.addEventListener("click", applyPresets);
-  document.querySelectorAll('input[name="presets-mode"]').forEach((radio) => {
-    radio.addEventListener("change", () => {
-      if (radio.checked) loadPresets(radio.value, presetWeatherStar);
+  const dial = $("presets-dial-switch");
+  if (dial) {
+    dial.addEventListener("change", () => {
+      loadPresets(dial.checked ? "modern" : "retro", presetWeatherStar);
     });
-  });
+  }
 }
 
 CF.define("presets", { onShow: () => loadPresets(presetMode, presetWeatherStar) });

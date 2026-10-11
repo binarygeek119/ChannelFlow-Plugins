@@ -4,14 +4,17 @@
     <span class="count" id="presets-count"></span>
   </div>
   <p class="hint" id="presets-note"></p>
-  <div class="presets-modes">
+  <div class="presets-modes presets-dial-switch">
     <span class="field-label">Dial numbers</span>
-    <label class="presets-mode-toggle" title="Original whole-number positions (119, 120, 203)">
-      <input type="radio" name="presets-mode" value="retro" checked> Retro
-    </label>
-    <label class="presets-mode-toggle" title="v1 subchannel positions (119.1, 124.2, 312.3)">
-      <input type="radio" name="presets-mode" value="modern"> Modern
-    </label>
+    <span class="switch-with-labels">
+      <span class="switch-label">Retro</span>
+      <label class="switch" title="Whole-number dial positions (119) ⇄ modern subchannels (119.1)">
+        <input type="checkbox" id="presets-dial-switch">
+        <span class="track"></span>
+        <span class="thumb"></span>
+      </label>
+      <span class="switch-label">Modern</span>
+    </span>
   </div>
   <div class="presets-modes" id="weatherstar-modes" hidden></div>
   <div class="ms-form-actions">
