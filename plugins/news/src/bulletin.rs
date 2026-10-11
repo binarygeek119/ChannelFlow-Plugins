@@ -453,6 +453,26 @@ async fn render_bulletin(
     let outro_mp3 = work_dir.join("outro.mp3");
     std::fs::write(&outro_mp3, OUTRO_MP3).map_err(|error| error.to_string())?;
 
+    // Download story images when present.
+    let mut story_images: Vec<Option<PathBuf>> = vec![None; stories.len()];
+    for (i, story) in stories.iter().enumerate() {
+        if let Some(img_url) = story.get("image").and_then(|v| v.as_str()) {
+            let trimmed = img_url.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let p = work_dir.join(format!("story_img_{}.jpg", i));
+            if let Ok(resp) = http.get(trimmed).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        let _ = std::fs::write(&p, &bytes);
+                        story_images[i] = Some(p);
+                    }
+                }
+            }
+        }
+    }
+
     let show_name = api::resolve_show_name(&settings.header);
     let intro_line = api::anchor_line(
         &settings.anchor_intro,
@@ -616,33 +636,33 @@ async fn render_bulletin(
     // the outro music plays, just the FlowWire logo shows over black. The logo
     // eases up from black as the intro music starts, and the last
     // OUTRO_FADE_SECONDS of the video fade the whole picture to black.
-    let filter = format!(
-        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
-         [src]split[base][bg];\
-         {map}\
-         [2:v]scale=650:650[p];\
-         [m2][p]overlay=650:221[l1];\
-         [3:v]scale=1920:1080[hb];\
-         [l1][hb]overlay=0:0[l2];\
-         [4:v]scale=1920:1080[sb];\
-         [l2][sb]overlay=0:0[l3];\
-         [5:v]scale=1920:1080[mm];\
-         [l3][mm]overlay=0:0[desk];\
-         [base][desk]overlay=0:0:enable='{desktop}'[v1];\
-         [6:v]scale=560:-1,{intro_fade}[lg];\
-         [v1][lg]overlay=(W-w)/2:(H-h)/2:enable='{logo}'[v2];\
-         [v2]ass='{ass}',fade=t=out:st={fade_start}:d={fade}[final];\
-         {audio}",
-        total = total,
-        desktop = desktop_enable(lead, show_total),
-        logo = logo_enable(lead, show_total),
-        intro_fade = logo_fade_in(),
-        fade_start = fade_start,
-        fade = OUTRO_FADE_SECONDS,
-        ass = escape_filter_path(&ass_path),
-        audio = audio,
-        map = map_layer(),
-    );
+    let mut filter_parts = Vec::new();
+    filter_parts.push(format!("[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];[src]split[base][bg];{map};[2:v]scale=650:650[p];[m2][p]overlay=650:221[l1];[3:v]scale=1920:1080[hb];[l1][hb]overlay=0:0[l2];[4:v]scale=1920:1080[sb];[l2][sb]overlay=0:0[l3];[5:v]scale=1920:1080[mm];[l3][mm]overlay=0:0[desk]", total=total, map=map_layer()));
+    let mut cur = "desk".to_string();
+    let mut img_input_idx = 9 + speech.len(); // 0:color,1:map,2:pres,3:hb,4:sb,5:mm,6:logo,7:intro,8:outro, then speech inputs added before filter
+    // easier: track from args before adding; compute properly by counting speech we already added? speech count is number of flattened
+    let speech_count = speech.iter().filter(|s| s.is_some()).count();
+    let mut img_input = 7 + 2 + speech_count; // after logo(6),intro(7),outro(8) are 7,8? indices: 6 is logo (input 7 in ffmpeg list), 7 intro, 8 outro -> so total inputs before speech = 9 (0-8). speech adds 9..9+s. So first image input index = 9 + s
+    let mut story_img_inputs: Vec<usize> = Vec::new();
+    for _ in story_images.iter().flatten() {
+        story_img_inputs.push(img_input);
+        img_input += 1;
+    }
+    let mut si = 0;
+    for (i, img) in story_images.iter().enumerate() {
+        if img.is_some() {
+            let start = starts.get(i+1).copied().unwrap_or(lead + intro_dur);
+            let duration = beats.get(i+1).map(|b| b.end - b.start).unwrap_or(6.0).max(0.5);
+            let end = start + duration;
+            let in_name = format!("[{}:v]", story_img_inputs[si]);
+            let out_name = format!("si_{}", si);
+            filter_parts.push(format!("{in_name}scale='if(gt(iw/ih,1920/639),1920,-1)':'if(gt(iw/ih,1920/639),-1,639)',setsar=1[sc_{si}];[sc_{si}]fade=t=in:st={start}:d=0.4,fade=t=out:st={end}-0.4:d=0.4[tmp_{si}];[{cur}][tmp_{si}]overlay=(W-w)/2:(221+639-h)/2:enable='between(t,{start},{end})'[{out_name}]", start=start, end=end-0.4, si=si, cur=cur));
+            cur = out_name;
+            si += 1;
+        }
+    }
+    filter_parts.push(format!("[base][{cur}]overlay=0:0:enable='{desktop}'[v1];[6:v]scale=560:-1,{intro_fade}[lg];[v1][lg]overlay=(W-w)/2:(H-h)/2:enable='{logo}'[v2];[v2]ass='{ass}',fade=t=out:st={fade_start}:d={fade}[final];{audio}", desktop=desktop_enable(lead,show_total), logo=logo_enable(lead,show_total), intro_fade=logo_fade_in(), ass=escape_filter_path(&ass_path), fade_start=fade_start, fade=OUTRO_FADE_SECONDS, audio=audio));
+    let filter = filter_parts.join(";");
 
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
@@ -709,6 +729,17 @@ async fn render_bulletin(
     for segment in speech.iter().flatten() {
         args.push("-i".into());
         args.push(segment.0.to_string_lossy().to_string());
+    }
+    // add story images as inputs (looped)
+    for img in story_images.iter().flatten() {
+        args.push("-loop".into());
+        args.push("1".into());
+        args.push("-framerate".into());
+        args.push(FPS.to_string());
+        args.push("-t".into());
+        args.push(format!("{total}"));
+        args.push("-i".into());
+        args.push(img.to_string_lossy().to_string());
     }
     args.extend([
         "-filter_complex".into(),
