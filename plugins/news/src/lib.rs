@@ -95,6 +95,8 @@ impl Plugin for NewsPlugin {
         // the core serves it at /plugin/{id}/web/...
         api.web.serve_embedded("logos/FlowWire.png", "image/png", include_bytes!("../web/logos/FlowWire.png"));
         api.web.serve_embedded("media/Catherine_Wolfe.jpg", "image/jpeg", include_bytes!("../web/media/Catherine_Wolfe.jpg"));
+        api.web.serve_embedded("audio/FlowWire_News/FlowWire-intro.mp3", "audio/mpeg", include_bytes!("../web/audio/FlowWire_News/FlowWire-intro.mp3"));
+        api.web.serve_embedded("audio/FlowWire_News/FlowWire-outro.mp3", "audio/mpeg", include_bytes!("../web/audio/FlowWire_News/FlowWire-outro.mp3"));
         api.web.serve_embedded("news.css", "text/css", include_bytes!("../web/news.css"));
         api.web.serve_embedded("news.html", "text/html", include_bytes!("../web/news.html"));
         api.web.serve_embedded("news.js", "text/javascript", include_bytes!("../web/news.js"));

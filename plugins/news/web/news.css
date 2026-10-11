@@ -9,3 +9,22 @@
     object-fit: cover;
     box-shadow: 0 0.0725em 0.29em 0 rgba(0, 0, 0, 0.37);
 }
+
+/* The newscast intro/outro audio. */
+.news-audio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.4rem;
+}
+.news-audio figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.news-audio figcaption {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+.news-audio audio { width: 18rem; max-width: 100%; }
