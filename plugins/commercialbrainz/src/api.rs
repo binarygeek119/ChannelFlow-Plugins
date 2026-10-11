@@ -73,11 +73,24 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
     };
     let result = match request.send().await {
         Err(_) => json!({ "ok": false, "code": "unreachable", "detail": "Could not reach the server" }),
-        Ok(response) => match response.status().as_u16() {
-            200..=299 => json!({ "ok": true, "code": "ok", "detail": "Reachable, token accepted" }),
-            401 | 403 => json!({ "ok": false, "code": "auth_failed", "detail": "Server reachable, API token rejected" }),
-            status => json!({ "ok": false, "code": "bad_url", "detail": format!("Unexpected response ({status})") }),
-        },
+        Ok(response) => {
+            let status = response.status().as_u16();
+            if !(200..=299).contains(&status) {
+                if let Ok(text) = response.text().await {
+                    state.logger.warn(&format!(
+                        "commercialbrainz test saw HTTP {status}: {}",
+                        text.chars().take(200).collect::<String>()
+                    ));
+                } else {
+                    state.logger.warn(&format!("commercialbrainz test saw HTTP {status} (no body)"));
+                }
+            }
+            match status {
+                200..=299 => json!({ "ok": true, "code": "ok", "detail": "Reachable, token accepted" }),
+                401 | 403 => json!({ "ok": false, "code": "auth_failed", "detail": "Server reachable, API token rejected" }),
+                status => json!({ "ok": false, "code": "bad_url", "detail": format!("Unexpected response ({status})") }),
+            }
+        }
     };
     Json(json!({ "result": result })).into_response()
 }
