@@ -4,8 +4,10 @@
 //! ("1992 LA Riots News coverage", "Apollo 11 News coverage") — and inside
 //! that folder sit the event's coverage videos ("1992 Los Angeles riots news
 //! coverage.mkv", "NBC News Coverage of Apollo 11 Part 11.mkv"). Each event
-//! folder becomes one catalog item, shown like a TV show but without seasons.
-//! A `poster.jpg`/`poster.png` in the event folder is its artwork.
+//! folder becomes one catalog item (kind `news`), shown like a TV show; its
+//! coverage videos are listed like episodes, with artwork from the per-video
+//! `*.nfo` (title/plot/year/youtubeid) and the youtube-dl `*.info.json`
+//! (a real thumbnail and watch URL) that sit next to each file.
 
 use std::path::{Path, PathBuf};
 
@@ -17,6 +19,21 @@ const VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "mov", "m2ts", "ts", "webm", 
 pub struct ScannedEvent {
     pub catalog: CatalogItem,
     pub poster: Option<PathBuf>,
+}
+
+/// One coverage video inside an event folder, as the event page lists it.
+#[derive(Debug, Clone)]
+pub struct NewsFile {
+    pub title: String,
+    pub year: Option<i32>,
+    pub plot: Option<String>,
+    /// A watch URL (the youtube-dl `webpage_url`, or one built from the nfo's
+    /// youtube id) — this is what "Play" opens.
+    pub web_url: Option<String>,
+    /// Artwork for the file: the youtube-dl thumbnail, or a YouTube thumbnail
+    /// built from the nfo's youtube id.
+    pub thumb_url: Option<String>,
+    pub file: PathBuf,
 }
 
 fn poster_in(dir: &Path) -> Option<PathBuf> {
@@ -69,16 +86,98 @@ pub fn year_from(name: &str) -> Option<i32> {
 }
 
 fn remote_id(dir: &Path) -> String {
-    dir.file_name()
-        .map(|name| {
-            name.to_string_lossy()
-                .chars()
-                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-                .take(64)
-                .collect::<String>()
+    // The absolute folder path: the Media page passes it back to this plugin's
+    // /files endpoint to list the event's coverage videos.
+    dir.to_string_lossy().into_owned()
+}
+
+/// The text inside a simple `<name>…</name>` tag (no attributes) in an nfo.
+fn tag(xml: &str, name: &str) -> Option<String> {
+    let open = format!("<{name}");
+    let close = format!("</{name}>");
+    let start = xml.find(&open)?;
+    let after = &xml[start + open.len()..];
+    let gt = after.find('>')?;
+    let content = &after[gt + 1..];
+    let end = content.find(&close)?;
+    Some(content[..end].trim().to_string())
+}
+
+/// The event's coverage videos, as the event page lists them (episode-style).
+pub fn scan_event_files(dir: &Path) -> Vec<NewsFile> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut videos: Vec<(PathBuf, String)> = Vec::new();
+    for entry in read.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+            continue;
+        };
+        if !VIDEO_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
+            continue;
+        }
+        if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
+            let stem = stem.to_string();
+            videos.push((path, stem));
+        }
+    }
+    videos.sort_by(|left, right| left.1.cmp(&right.1));
+    videos
+        .into_iter()
+        .filter_map(|(path, stem)| {
+            let mut title = clean_title(&stem);
+            let mut year = None;
+            let mut plot = None;
+            let mut youtube_id = None;
+            if let Ok(nfo) = std::fs::read_to_string(dir.join(format!("{stem}.nfo"))) {
+                if let Some(value) = tag(&nfo, "title") {
+                    if !value.is_empty() {
+                        title = value;
+                    }
+                }
+                plot = tag(&nfo, "plot").filter(|value| !value.is_empty());
+                year = tag(&nfo, "year").and_then(|value| value.parse::<i32>().ok());
+                youtube_id = tag(&nfo, "youtubeid").filter(|value| !value.is_empty());
+            }
+            let mut thumb_url = None;
+            let mut web_url = None;
+            if let Ok(source) = std::fs::read_to_string(dir.join(format!("{stem}.info.json"))) {
+                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&source) {
+                    thumb_url = meta
+                        .get("thumbnail")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string);
+                    web_url = meta
+                        .get("webpage_url")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string);
+                    if web_url.is_none() {
+                        web_url = meta
+                            .get("id")
+                            .and_then(serde_json::Value::as_str)
+                            .map(|id| format!("https://www.youtube.com/watch?v={id}"));
+                    }
+                }
+            }
+            if thumb_url.is_none() {
+                if let Some(id) = youtube_id.as_deref() {
+                    thumb_url = Some(format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg"));
+                }
+            }
+            Some(NewsFile {
+                title,
+                year,
+                plot,
+                web_url,
+                thumb_url,
+                file: path,
+            })
         })
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "event".to_string())
+        .collect()
 }
 
 /// Scan the news folder: each subfolder is one event.
