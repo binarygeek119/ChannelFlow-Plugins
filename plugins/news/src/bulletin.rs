@@ -77,6 +77,10 @@ const SECONDS_PER_STORY: f64 = 6.0;
 const MAX_TRACKED_STORIES: usize = 2000;
 /// The anchor's spoken open, after the intro music finishes.
 const ANCHOR_INTRO_SECONDS: f64 = 4.0;
+/// After the anchor's close the desktop cuts to the logo on black while the
+/// outro music plays; once it finishes the picture fades to black over this
+/// many seconds (the video runs on past the music to allow it).
+const OUTRO_FADE_SECONDS: f64 = 1.2;
 
 /// The plugin's record of what it has broadcast, so a run can tell new
 /// stories from ones already on air.
@@ -571,11 +575,14 @@ async fn render_bulletin(
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
-    // The outro music plays after the anchor outro; the video extends with it.
+    // After the anchor's close the desktop cuts to the logo on black and the
+    // outro music plays; once it finishes the picture fades to black, so the
+    // video runs on a little past the music to make room for the fade.
     let outro_len = probe_seconds(&outro_mp3)
         .filter(|len| *len > 0.5)
         .unwrap_or(OUTRO_SECONDS);
-    let total = show_total + outro_len;
+    let total = show_total + outro_len + OUTRO_FADE_SECONDS;
+    let fade_start = total - OUTRO_FADE_SECONDS;
     let outro_ms = (show_total * 1000.0).round().max(0.0) as i64;
 
     // Audio: intro/outro music plus each speech segment at its window start.
@@ -608,8 +615,10 @@ async fn render_bulletin(
     // Layers, bottom to top: the scrolling map behind everything, the anchor
     // centered, the headline bar over the top, the story bar over the bottom,
     // the captions, then the mute overlay across the whole screen.
-    // While the intro music plays, only the FlowWire logo shows over black;
-    // after the lead the desktop (map, anchor, bars, captions, mute) fades in.
+    // The desktop (map, anchor, bars, captions, mute) is only on screen between
+    // the intro and the close: before the lead, and again after the close while
+    // the outro music plays, just the FlowWire logo shows over black. The last
+    // OUTRO_FADE_SECONDS of the video fade the whole picture to black.
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
          [src]split[base][bg];\
@@ -622,13 +631,16 @@ async fn render_bulletin(
          [l2][sb]overlay=0:0[l3];\
          [5:v]scale=1920:1080[mm];\
          [l3][mm]overlay=0:0[desk];\
-         [base][desk]overlay=0:0:enable='gte(t\\,{lead})'[v1];\
+         [base][desk]overlay=0:0:enable='{desktop}'[v1];\
          [6:v]scale=560:-1[lg];\
-         [v1][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{lead})'[v2];\
-         [v2]ass='{ass}'[final];\
+         [v1][lg]overlay=(W-w)/2:(H-h)/2:enable='{logo}'[v2];\
+         [v2]ass='{ass}',fade=t=out:st={fade_start}:d={fade}[final];\
          {audio}",
         total = total,
-        lead = lead,
+        desktop = desktop_enable(lead, show_total),
+        logo = logo_enable(lead, show_total),
+        fade_start = fade_start,
+        fade = OUTRO_FADE_SECONDS,
         ass = escape_filter_path(&ass_path),
         audio = audio,
         map = map_layer(),
@@ -794,6 +806,20 @@ fn escape_filter_path(path: &Path) -> String {
         .replace('\\', "/")
         .replace(':', "\\:")
         .replace('\'', "\\'")
+}
+
+/// The desktop (map, anchor, bars, captions, mute) is on screen only while the
+/// show runs: from the end of the intro music (`lead`) to the anchor's close
+/// (`show_total`).
+fn desktop_enable(lead: f64, show_total: f64) -> String {
+    format!("between(t\\,{lead}\\,{show_total})")
+}
+
+/// The FlowWire logo shows over black exactly when the desktop is not up — while
+/// the intro music plays, and again after the close while the outro music
+/// plays.
+fn logo_enable(lead: f64, show_total: f64) -> String {
+    format!("not(between(t\\,{lead}\\,{show_total}))")
 }
 
 /// The scrolling-map layer: crop the soft (transparent) right edge off, scale
@@ -1199,6 +1225,19 @@ mod tests {
             MAP_TILE_W,
             MAP_OPAQUE_W * MAP_BAND_H / MAP_SRC_H,
             "the tile keeps the map's aspect ratio for the band"
+        );
+    }
+
+    #[test]
+    fn the_logo_comes_back_for_the_outro_then_fades_to_black() {
+        // The desktop is up only for the show; the logo fills the gaps on both
+        // sides of it, so the close cuts to black + logo for the outro music.
+        assert_eq!(desktop_enable(3.5, 120.0), "between(t\\,3.5\\,120)");
+        assert_eq!(logo_enable(3.5, 120.0), "not(between(t\\,3.5\\,120))");
+        // The video runs on past the music so the picture can fade to black.
+        assert!(
+            OUTRO_FADE_SECONDS > 0.0,
+            "the outro needs room to fade to black"
         );
     }
 }
