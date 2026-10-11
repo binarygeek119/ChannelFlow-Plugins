@@ -1,4 +1,27 @@
 /* Presets page: the ready-made channel list. */
+.presets-modes {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0.5rem 0 0.7rem;
+}
+.presets-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    color: var(--muted);
+    user-select: none;
+}
+.presets-mode-toggle:has(input:checked) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
 #presets-list { margin-top: 0.3rem; overflow-x: auto; }
 #presets-list .data-table {
     width: 100%;

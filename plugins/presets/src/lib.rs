@@ -130,10 +130,32 @@ mod tests {
     }
 
     #[test]
-    fn presets_have_unique_whole_numbers() {
+    fn presets_carry_both_v1_numbering_styles() {
         use std::collections::BTreeSet;
-        let numbers: BTreeSet<u32> = presets::PRESETS.iter().map(|preset| preset.number).collect();
-        assert_eq!(numbers.len(), presets::PRESETS.len(), "preset numbers must be unique");
-        assert!(presets::PRESETS.iter().any(|preset| preset.number == 119));
+        let legacy: BTreeSet<u64> = presets::PRESETS
+            .iter()
+            .map(|preset| (preset.legacy * 10.0) as u64)
+            .collect();
+        let subchannels: BTreeSet<u64> = presets::PRESETS
+            .iter()
+            .map(|preset| (preset.subchannel * 10.0) as u64)
+            .collect();
+        assert_eq!(
+            legacy.len(),
+            presets::PRESETS.len(),
+            "retro numbers must be unique"
+        );
+        assert_eq!(
+            subchannels.len(),
+            presets::PRESETS.len(),
+            "modern numbers must be unique"
+        );
+        // The v1 numbers the user's switch toggles between.
+        assert!(presets::PRESETS
+            .iter()
+            .any(|preset| preset.legacy == 119.0 && preset.subchannel == 119.1));
+        assert!(presets::PRESETS
+            .iter()
+            .any(|preset| preset.legacy == 314.0 && preset.subchannel == 312.3));
     }
 }

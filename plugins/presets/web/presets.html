@@ -4,6 +4,15 @@
     <span class="count" id="presets-count"></span>
   </div>
   <p class="hint" id="presets-note"></p>
+  <div class="presets-modes">
+    <span class="field-label">Dial numbers</span>
+    <label class="presets-mode-toggle" title="Original whole-number positions (119, 120, 203)">
+      <input type="radio" name="presets-mode" value="retro" checked> Retro
+    </label>
+    <label class="presets-mode-toggle" title="v1 subchannel positions (119.1, 124.2, 312.3)">
+      <input type="radio" name="presets-mode" value="modern"> Modern
+    </label>
+  </div>
   <div class="ms-form-actions">
     <button type="button" class="primary" id="presets-apply">Create missing channels</button>
     <span class="field-note" id="presets-result"></span>

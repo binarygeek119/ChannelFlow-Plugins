@@ -5,6 +5,7 @@
 
 const PRESETS_ROUTE = "/api/plugins/com.channelflow.presets/presets";
 let presetRows = [];
+let presetMode = "retro";
 
 function renderPresets() {
   const list = $("presets-list");
@@ -29,14 +30,23 @@ function renderPresets() {
       .join("") +
     `</tbody></table>`;
   const note = $("presets-note");
-  if (note) note.textContent = presetRows.length ? "" : "The ready-made lineup is not available.";
+  if (note) {
+    const style = presetMode === "modern" ? "modern subchannel" : "retro whole-number";
+    note.textContent = presetRows.length
+      ? `Showing ${style} dial numbers.`
+      : "The ready-made lineup is not available.";
+  }
   const apply = $("presets-apply");
   if (apply) apply.disabled = !presetRows.some((preset) => !preset.exists);
 }
 
-async function loadPresets() {
+async function loadPresets(mode) {
+  presetMode = mode || "retro";
+  document.querySelectorAll('input[name="presets-mode"]').forEach((radio) => {
+    radio.checked = radio.value === presetMode;
+  });
   try {
-    const data = await request(PRESETS_ROUTE);
+    const data = await request(`${PRESETS_ROUTE}?mode=${encodeURIComponent(presetMode)}`);
     presetRows = data.presets || [];
     const note = $("presets-note");
     if (note && data.note) note.textContent = data.note;
@@ -76,7 +86,7 @@ async function applyPresets() {
       skipped += 1;
     }
   }
-  await loadPresets();
+  await loadPresets(presetMode);
   if (result) {
     result.textContent = `Created ${created} channel(s), skipped ${skipped} (taken or invalid).`;
   }
@@ -85,6 +95,11 @@ async function applyPresets() {
 {
   const apply = $("presets-apply");
   if (apply) apply.addEventListener("click", applyPresets);
+  document.querySelectorAll('input[name="presets-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      if (radio.checked) loadPresets(radio.value);
+    });
+  });
 }
 
-CF.define("presets", { onShow: loadPresets });
+CF.define("presets", { onShow: () => loadPresets(presetMode) });

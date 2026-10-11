@@ -185,7 +185,7 @@ dependencies = [
 [[package]]
 name = "channelflow-plugin-api"
 version = "2.0.0"
-source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#6c931ec104b71b720a625d630a38d829a7bd9440"
+source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#d2c3b4f09afe0a2857e6ade97b241754910c78ce"
 dependencies = [
  "async-trait",
  "axum",
@@ -328,11 +328,12 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-presets"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "axum",
  "channelflow-plugin-api",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
