@@ -1,0 +1,52 @@
+/* The Holiday Channel page. */
+.holiday-now { margin: 0.6rem 0; }
+.holiday-now-inner { display: flex; align-items: center; gap: 1rem; }
+.holiday-logo {
+    width: 9rem;
+    height: auto;
+    border-radius: 0.25em;
+    box-shadow: 0 0.0725em 0.29em 0 rgba(0, 0, 0, 0.37);
+    object-fit: contain;
+}
+.holiday-now-text h2 { margin: 0.15rem 0; }
+.holiday-kicker { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.holiday-section { margin: 1.1rem 0 0.5rem; }
+.holiday-year-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.9rem;
+}
+.holiday-year-card {
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    padding: 0.6rem;
+    text-align: center;
+}
+.holiday-year-card.holiday-active { border-color: var(--accent); }
+.holiday-year-logo { height: 4.6rem; max-width: 100%; object-fit: contain; }
+.holiday-year-name { font-weight: 600; margin-top: 0.3rem; font-size: 0.86rem; }
+.holiday-lineup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 1.1rem 0.9rem;
+}
+.holiday-poster {
+    aspect-ratio: 2 / 3;
+    background-size: cover;
+    background-position: center;
+    border-radius: 0.25em;
+    background-color: #141414;
+}
+.holiday-poster-fallback {
+    background:
+        linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)),
+        repeating-linear-gradient(45deg, #1c1c1c 0 10px, #141414 10px 20px);
+}
+.holiday-card-title {
+    margin-top: 0.4rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
