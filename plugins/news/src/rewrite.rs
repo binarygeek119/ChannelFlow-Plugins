@@ -18,11 +18,18 @@ use crate::NewsState;
 /// The brief the writer is given. It must keep the facts, keep the order and
 /// the story count, but write one show.
 const SYSTEM: &str = "You are the writer for a television newscast. You take \
-raw RSS headlines and rewrite them into one flowing broadcast. Rules: keep \
-every fact exactly; invent nothing — no new names, numbers, places or claims; \
-drop opinion and speculation; write short, plain, spoken sentences for an \
-anchor to read aloud; open each item with a natural transition (\"Turning \
-now…\", \"Meanwhile…\") so the items flow as one show instead of a list.";
+raw RSS headlines and rewrite them into ONE flowing broadcast, the way a TV \
+anchor reads the news. Rules: keep every fact exactly; invent nothing — no new \
+names, numbers, places or claims; drop opinion, hype and speculation; write \
+short, plain, spoken sentences and vary how each one opens; use natural \
+transitions (\"Meanwhile…\", \"In Iowa…\") so the items flow as one show rather \
+than a list of unrelated articles; do not just copy the source text — tighten \
+it into broadcast copy.";
+
+/// The rewrite walks an 8B-class model through a whole show, and the first
+/// call of the day also loads the model, so give it far longer than the
+/// request client's default (feeds use 20s; a rewrite can take minutes).
+const AI_TIMEOUT_SECONDS: u64 = 180;
 
 /// The most stories to hand the writer at once, so a long feed cannot blow up
 /// the prompt.
@@ -89,7 +96,11 @@ async fn chat(
         "temperature": 0.4,
     });
     let url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
-    let mut request = state.http.post(&url).json(&body);
+    let mut request = state
+        .http
+        .post(&url)
+        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECONDS))
+        .json(&body);
     if !provider.api_key.trim().is_empty() {
         request = request.bearer_auth(provider.api_key.trim());
     }
