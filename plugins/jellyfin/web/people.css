@@ -141,3 +141,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Lazy-load sentinel: bumped into view as you scroll, pulls the next page. */
+.people-sentinel {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.82rem;
+    padding: 1.2rem 0;
+    min-height: 0.5rem;
+}

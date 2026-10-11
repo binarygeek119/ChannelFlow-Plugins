@@ -4,7 +4,14 @@
 // item's Media-page detail.
 const PEOPLE_ROUTE = "/api/plugins/com.channelflow.jellyfin/people";
 const MEDIA_ITEM_BASE = "/webui/media/item/";
-let allPeople = [];
+const PEOPLE_PAGE = 200;
+let peopleList = [];
+let peopleTotal = 0;
+let peopleOffset = 0;
+let peopleFilter = "";
+let peopleLoading = false;
+let peopleObserver = null;
+let peopleFilterTimer = null;
 let sourceIndex = null;
 
 const PEOPLE_KIND_LABEL = {
@@ -82,22 +89,73 @@ function renderPeopleList() {
   const heading = $("people-heading");
   if (heading) heading.textContent = "People";
   const grid = $("people-grid");
-  const empty = $("people-empty");
-  const filter = $("people-filter") ? $("people-filter").value.trim().toLowerCase() : "";
-  const count = $("people-count");
-  if (count) count.textContent = `${allPeople.length} person(s)`;
   if (!grid) return;
   grid.className = "people-grid";
   grid.textContent = "";
-  const shown = filter
-    ? allPeople.filter((person) => String(person.name).toLowerCase().includes(filter))
-    : allPeople;
-  if (!shown.length) {
-    if (empty) empty.hidden = false;
-    return;
+  peopleFilter = $("people-filter") ? $("people-filter").value.trim() : "";
+  peopleSentinel();
+  loadPeoplePage(true);
+}
+
+// The element the observer watches; when it scrolls into view, fetch the next
+// page. Created once and parked after the grid.
+function peopleSentinel() {
+  let sentinel = $("people-sentinel");
+  if (!sentinel) {
+    const grid = $("people-grid");
+    if (!grid || !grid.parentElement) return null;
+    sentinel = document.createElement("div");
+    sentinel.id = "people-sentinel";
+    sentinel.className = "people-sentinel";
+    grid.parentElement.appendChild(sentinel);
+    if ("IntersectionObserver" in window) {
+      peopleObserver = new IntersectionObserver(
+        (entries) => entries.forEach((entry) => entry.isIntersecting && loadPeoplePage(false)),
+        { rootMargin: "700px" }
+      );
+      peopleObserver.observe(sentinel);
+    } else {
+      window.addEventListener("scroll", () => {
+        const rect = sentinel.getBoundingClientRect();
+        if (rect.top < window.innerHeight + 700) loadPeoplePage(false);
+      });
+    }
   }
-  if (empty) empty.hidden = true;
-  shown.forEach((person) => grid.appendChild(peopleCard(person)));
+  return sentinel;
+}
+
+// Fetch one page of people and append it. `reset` starts over (new filter).
+async function loadPeoplePage(reset) {
+  if (peopleLoading || personNameFromPath()) return;
+  const grid = $("people-grid");
+  if (!grid) return;
+  if (reset) {
+    peopleOffset = 0;
+    peopleList = [];
+    peopleTotal = 0;
+    grid.textContent = "";
+  }
+  if (peopleOffset > 0 && peopleTotal > 0 && peopleOffset >= peopleTotal) return;
+  peopleLoading = true;
+  const sentinel = peopleSentinel();
+  if (sentinel) sentinel.textContent = peopleOffset === 0 ? "Loading…" : "Loading more…";
+  try {
+    const params = new URLSearchParams({ offset: String(peopleOffset), limit: String(PEOPLE_PAGE) });
+    if (peopleFilter) params.set("q", peopleFilter);
+    const data = await request(`${PEOPLE_ROUTE}?${params}`);
+    peopleTotal = data.total || 0;
+    const page = data.people || [];
+    peopleList = peopleList.concat(page);
+    peopleOffset += page.length;
+    page.forEach((person) => grid.appendChild(peopleCard(person)));
+  } catch (error) {
+    if (sentinel) sentinel.textContent = error.message;
+  }
+  peopleLoading = false;
+  const count = $("people-count");
+  if (count) count.textContent = `${peopleTotal} person(s)`;
+  if ($("people-empty")) $("people-empty").hidden = peopleTotal > 0;
+  if (sentinel) sentinel.textContent = peopleOffset >= peopleTotal ? "" : "Loading more…";
 }
 
 // Toggle the list-only chrome (hint + filter) when a person page is open.
@@ -238,23 +296,18 @@ async function loadPeople() {
     await renderPerson(personName);
     return;
   }
-  if (!allPeople.length) {
-    try {
-      const data = await request(PEOPLE_ROUTE);
-      allPeople = (data.people || []).slice().sort((a, b) =>
-        String(a.name).localeCompare(String(b.name), undefined, { sensitivity: "base" })
-      );
-    } catch (error) {
-      allPeople = [];
-    }
-  }
   renderPeopleList();
 }
 
-// Live filtering without another trip to the server.
+// Filtering goes to the server (debounced), so a large cast list is never
+// filtered row-by-row in the browser.
 document.addEventListener("input", (event) => {
   if (event.target && event.target.id === "people-filter") {
-    renderPeopleList();
+    clearTimeout(peopleFilterTimer);
+    peopleFilterTimer = setTimeout(() => {
+      peopleFilter = $("people-filter").value.trim();
+      loadPeoplePage(true);
+    }, 250);
   }
 });
 

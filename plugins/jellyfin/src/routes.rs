@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -141,13 +141,37 @@ async fn progress_snapshot() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "progress": state.clone() }))
 }
 
-/// All synced people, alphabetical by name.
-async fn people_list(State(state): State<Arc<RouteState>>) -> Response {
+/// A page of synced people (alphabetical), with an optional `q` filter.
+async fn people_list(
+    State(state): State<Arc<RouteState>>,
+    Query(query): Query<PeopleQuery>,
+) -> Response {
     let media = MediaDb::new(state.db.clone());
-    match media.people_list().await {
-        Ok(people) => Json(json!({ "people": people })).into_response(),
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(200).clamp(1, 500);
+    match media
+        .people_page(offset, limit, query.q.as_deref().unwrap_or(""))
+        .await
+    {
+        Ok((people, total)) => Json(json!({
+            "people": people,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }))
+        .into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.0),
     }
+}
+
+#[derive(Deserialize)]
+struct PeopleQuery {
+    #[serde(default)]
+    offset: Option<i64>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    q: Option<String>,
 }
 
 /// One person and every catalog item they appear in.

@@ -716,15 +716,42 @@ impl MediaDb {
             .await
     }
 
-    /// Every synced person, alphabetical by name (case-insensitive), with the
-    /// picture each has if one was fetched.
-    pub async fn people_list(&self) -> JfResult<Vec<Value>> {
+    /// A page of synced people, alphabetical by name (case-insensitive), matching
+/// an optional `query` (substring, case-insensitive). Returns the page and the
+/// total match count so the page can lazy-load.
+    pub async fn people_page(
+        &self,
+        offset: i64,
+        limit: i64,
+        query: &str,
+    ) -> JfResult<(Vec<Value>, i64)> {
         let people = self.t("people");
-        self.inner
-            .fetch(&format!(
-                "SELECT name, image_path FROM {people} ORDER BY lower(name) ASC, name ASC"
-            ))
-            .await
+        let like = format!("%{}%", query.trim().to_lowercase());
+        let total = self
+            .inner
+            .fetch_params(
+                &format!("SELECT count(*) AS total FROM {people} WHERE lower(name) LIKE $1"),
+                &[Value::String(like.clone())],
+            )
+            .await?
+            .first()
+            .and_then(|row| row["total"].as_i64())
+            .unwrap_or(0);
+        let rows = self
+            .inner
+            .fetch_params(
+                &format!(
+                    "SELECT name, image_path FROM {people} WHERE lower(name) LIKE $1 \
+                     ORDER BY lower(name) ASC, name ASC LIMIT $2::int OFFSET $3::int"
+                ),
+                &[
+                    Value::String(like),
+                    Value::from(limit),
+                    Value::from(offset),
+                ],
+            )
+            .await?;
+        Ok((rows, total))
     }
 
     /// A synced person photo matching `name`, if one exists. Used when a music
