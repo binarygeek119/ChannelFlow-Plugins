@@ -21,8 +21,17 @@
               <input id="wx-location" type="text" placeholder="ZIP, city, or lat,lon">
             </div>
             <div class="field">
-              <label class="field-label" for="wx-units">Units</label>
-              <select id="wx-units"></select>
+              <span class="field-label">Temperature</span>
+              <span class="wx-units-switch switch-with-labels">
+                <span class="switch-label">°F</span>
+                <label class="switch" title="Fahrenheit ⇄ Celsius/metric">
+                  <input type="checkbox" id="wx-units-switch">
+                  <span class="track"></span>
+                  <span class="thumb"></span>
+                </label>
+                <span class="switch-label">°C</span>
+              </span>
+              <small class="field-hint">Fahrenheit (US units) or Celsius (metric); wind speed follows, in mph or km/h.</small>
             </div>
             <div class="field">
               <span class="field-label">Screens</span>

@@ -49,7 +49,7 @@ function collectWeatherSettings() {
     weatherstar_variant: $("wx-variant").value,
     source: $("wx-source").value,
     default_location: $("wx-location").value.trim(),
-    units: $("wx-units").value,
+    units: $("wx-units-switch").checked ? "si" : "us",
     auto_wide_169: $("wx-wide169").checked,
     screens: Array.from(document.querySelectorAll("#wx-screens input[data-wx-screen]:checked")).map((el) => el.dataset.wxScreen),
   };
@@ -62,7 +62,8 @@ async function loadWeather() {
     const options = data.options || {};
     fillWxSelect("wx-variant", options.star_variants, { ws4kp: "WeatherStar 4000", ws3kp: "WeatherStar 3000" }, settings.weatherstar_variant);
     fillWxSelect("wx-source", options.sources, { auto: "Auto (NOAA in the US, Open-Meteo worldwide)", us: "United States (NOAA)", world: "World (Open-Meteo)" }, settings.source);
-    fillWxSelect("wx-units", options.units, { us: "US", si: "Metric" }, settings.units);
+    const unitsSwitch = $("wx-units-switch");
+    if (unitsSwitch) unitsSwitch.checked = settings.units === "si";
     $("wx-location").value = settings.default_location || "";
     $("wx-wide169").checked = settings.auto_wide_169 !== false;
     renderWxScreens(settings.screens);
@@ -127,6 +128,7 @@ async function saveWeather(event) {
   try {
     await request(WEATHER_API, { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
     if ($("wx-result")) $("wx-result").textContent = "Saved.";
+    renderWxNow();
   } catch (error) {
     if ($("wx-result")) $("wx-result").textContent = error.message;
   } finally {
