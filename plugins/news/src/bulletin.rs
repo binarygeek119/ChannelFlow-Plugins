@@ -798,26 +798,24 @@ fn build_ass(beats: &[Beat]) -> String {
         let body = clean_text(&beat.body);
         if !body.is_empty() && !body.eq_ignore_ascii_case(beat.title.trim()) {
             let (line1, line2) = split_two_lines(&body);
-            if line2.is_empty() {
-                // Single line centered in the story bar
+            // The two story areas span nearly the whole frame. Size each line
+            // so it fills that width instead of sitting in the centre, and use
+            // one size for both so the two lines match.
+            let font = story_font_size(line1.chars().count().max(line2.chars().count()));
+            let size = format!("{{\\fs{font:.0}}}");
+            events.push_str(&format!(
+                "Dialogue: 1,{},{},Story1,,0,0,0,,{}{}\n",
+                ass_time(beat.start),
+                ass_time(beat.end),
+                size,
+                escape_ass(&line1)
+            ));
+            if !line2.is_empty() {
                 events.push_str(&format!(
-                    "Dialogue: 1,{},{},Story1,,0,0,0,,{}\n",
+                    "Dialogue: 2,{},{},Story2,,0,0,0,,{}{}\n",
                     ass_time(beat.start),
                     ass_time(beat.end),
-                    escape_ass(&line1)
-                ));
-            } else {
-                // Two lines stacked
-                events.push_str(&format!(
-                    "Dialogue: 1,{},{},Story1,,0,0,0,,{}\n",
-                    ass_time(beat.start),
-                    ass_time(beat.end),
-                    escape_ass(&line1)
-                ));
-                events.push_str(&format!(
-                    "Dialogue: 2,{},{},Story2,,0,0,0,,{}\n",
-                    ass_time(beat.start),
-                    ass_time(beat.end),
+                    size,
                     escape_ass(&line2)
                 ));
             }
@@ -854,35 +852,71 @@ fn story_seconds(body: &str) -> f64 {
 }
 
 
-/// Split text into two balanced lines for the story bar, respecting word
-/// boundaries. Returns (line1, line2) where line2 may be empty.
+/// Split the story copy into two balanced lines that fill the story bar,
+/// breaking at a word boundary near the middle of the copy. The old version
+/// capped each line at 48 characters, which left the text stranded in the
+/// centre of the wide bar; now the whole summary is used and `build_ass` sizes
+/// the lines to span the bar. Only genuinely long copy is trimmed.
 fn split_two_lines(text: &str) -> (String, String) {
-    const MAX_PER_LINE: usize = 48;
+    const MAX_PER_LINE: usize = 110;
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
         return (String::new(), String::new());
     }
-    let mut line1 = String::new();
-    let mut line2 = String::new();
-    let mut on_line1 = true;
-    for word in words {
-        let target = if on_line1 { &mut line1 } else { &mut line2 };
-        if target.is_empty() {
-            target.push_str(word);
-        } else if target.len() + 1 + word.len() <= MAX_PER_LINE {
-            target.push(' ');
-            target.push_str(word);
-        } else if on_line1 && line2.is_empty() {
-            // Switch to line 2
-            on_line1 = false;
-            line2.push_str(word);
-        } else {
-            // Line 2 full, append with ellipsis
-            line2.push_str(" …");
+    let widths: Vec<usize> = words.iter().map(|word| word.chars().count()).collect();
+    let total: usize = widths.iter().sum::<usize>() + words.len().saturating_sub(1);
+    if total <= MAX_PER_LINE {
+        return (words.join(" "), String::new());
+    }
+    // Cut near the halfway point so the two lines have a similar width.
+    let half = total / 2;
+    let mut cut = 0;
+    let mut used = 0;
+    for (index, width) in widths.iter().enumerate() {
+        let next = used + if index == 0 { 0 } else { 1 } + width;
+        if next > half {
             break;
         }
+        used = next;
+        cut = index + 1;
+    }
+    let cut = cut.clamp(1, words.len() - 1);
+    let mut line1 = words[..cut].join(" ");
+    let mut line2 = words[cut..].join(" ");
+    if line1.chars().count() > MAX_PER_LINE {
+        line1 = trim_at_word(&line1, MAX_PER_LINE);
+    }
+    if line2.chars().count() > MAX_PER_LINE {
+        line2 = format!("{} …", trim_at_word(&line2, MAX_PER_LINE - 2));
     }
     (line1, line2)
+}
+
+/// Cut `text` to at most `max` characters, dropping any partial trailing word.
+fn trim_at_word(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    match cut.rsplit_once(' ') {
+        Some((head, _)) if !head.is_empty() => head.to_string(),
+        _ => cut,
+    }
+}
+
+/// The story area spans almost the whole 1920-wide frame, so size each story
+/// line to fill that width rather than sit in the centre. Liberation Sans
+/// advances about 0.44 px per point per character, so a line of N characters
+/// needs roughly N * 0.44 * size pixels; solve for the size that reaches the
+/// target, capped so the text still fits inside the bars.
+fn story_font_size(chars: usize) -> f64 {
+    const TARGET_PX: f64 = 1700.0;
+    const MIN_PX: f64 = 30.0;
+    const MAX_PX: f64 = 48.0;
+    if chars == 0 {
+        return MAX_PX;
+    }
+    (TARGET_PX / (chars as f64 * 0.44)).clamp(MIN_PX, MAX_PX)
 }
 
 /// Greedy wrap of the copy into at most two lines (bottom bar), with an
@@ -1004,10 +1038,49 @@ mod tests {
     }
 
     #[test]
-    fn long_lines_wrap_onto_two_news_lines() {
-        let text = "word ".repeat(40) + "overflow";
-        let wrapped = wrap_two(&text);
-        assert!(wrapped.contains("\\N"), "overflow wraps to a second line");
+    fn story_copy_keeps_the_whole_summary_across_two_lines() {
+        // A long RSS summary must not be truncated to 48-character halves.
+        let text = "An ICE officer struck a man with an SUV in a Houston parking lot Saturday, \
+                    leaving the man with a broken leg after he fled from a vehicle agents were trying to stop.";
+        let (line1, line2) = split_two_lines(text);
+        assert!(!line2.is_empty(), "a long summary fills both story lines");
+        let shown = line1.chars().count() + line2.chars().count();
+        assert!(shown >= text.split_whitespace().count() * 4, "most of the copy survives");
+        assert!(line1.chars().count() <= 110 && line2.chars().count() <= 112, "lines stay in the bar");
+        assert!(!line1.contains('…') && !line2.contains('…'), "a normal summary is not trimmed");
+    }
+
+    #[test]
+    fn short_copy_stays_on_one_line_but_is_sized_to_fill() {
+        let (line1, line2) = split_two_lines("Brief summary.");
+        assert_eq!(line2, "", "a short summary is a single line");
+        assert_eq!(line1, "Brief summary.");
+        // A short line is grown to the maximum so it still fills the bar.
+        assert!(story_font_size(line1.chars().count()) > story_font_size(100));
+    }
+
+    #[test]
+    fn longer_lines_are_drawn_smaller_to_fit_the_bar() {
+        assert!(story_font_size(40) >= story_font_size(80));
+        assert!(story_font_size(80) >= story_font_size(110));
+        // The size always fits inside the story bars (never below the floor).
+        for chars in [0, 10, 60, 100, 200] {
+            let size = story_font_size(chars);
+            assert!((30.0..=48.0).contains(&size), "font {size} stays in range");
+        }
+    }
+
+    #[test]
+    fn story_events_carry_their_fitted_font_size() {
+        let beats = vec![Beat {
+            start: 0.0,
+            end: 5.0,
+            title: "Headline One".into(),
+            body: "An ICE officer struck a man with an SUV in a Houston parking lot Saturday, leaving the man with a broken leg.".into(),
+        }];
+        let ass = build_ass(&beats);
+        assert!(ass.contains("{\\fs"), "the fitted size is applied to the story line");
+        assert!(ass.contains("Story1"), "the first line is in the green story bar");
     }
 
     #[test]

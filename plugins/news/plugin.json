@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.news",
   "name": "News",
-  "version": "2.0.31",
+  "version": "2.0.32",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
