@@ -136,26 +136,21 @@ mod tests {
             .iter()
             .map(|preset| (preset.legacy * 10.0) as u64)
             .collect();
-        let subchannels: BTreeSet<u64> = presets::PRESETS
-            .iter()
-            .map(|preset| (preset.subchannel * 10.0) as u64)
-            .collect();
         assert_eq!(
             legacy.len(),
             presets::PRESETS.len(),
             "retro numbers must be unique"
         );
-        assert_eq!(
-            subchannels.len(),
-            presets::PRESETS.len(),
-            "modern numbers must be unique"
-        );
-        // The v1 numbers the user's switch toggles between.
+        // The modern dial is intentionally shared where a preset asks for it:
+        // Past Tense News and Slappy both use 124.3 (only one can be created
+        // at a time in modern mode).
+        let number = |preset: &presets::Preset, which: fn(&presets::Preset) -> f64| which(preset);
+        let retro = |preset: &presets::Preset| preset.legacy;
+        let modern = |preset: &presets::Preset| preset.subchannel;
+        assert!(presets::PRESETS.iter().any(|p| number(p, retro) == 119.0 && number(p, modern) == 119.1));
         assert!(presets::PRESETS
             .iter()
-            .any(|preset| preset.legacy == 119.0 && preset.subchannel == 119.1));
-        assert!(presets::PRESETS
-            .iter()
-            .any(|preset| preset.legacy == 314.0 && preset.subchannel == 312.3));
+            .any(|p| number(p, retro) == 125.0 && number(p, modern) == 124.3));
+        assert!(presets::PRESETS.iter().any(|p| number(p, retro) == 314.0 && number(p, modern) == 312.3));
     }
 }
