@@ -24,8 +24,16 @@ pub fn router(state: Arc<AiState>) -> Router {
         .route("/providers/{id}/test", post(test_provider))
         .route("/test", post(test_draft))
         .route("/test-all", post(test_all))
+        .route("/models", post(fetch_models))
         .with_state(state)
 }
+
+/// Common TTS voice ids the page offers (voices are not discoverable through
+/// the models endpoint).
+const TTS_VOICES: [&str; 12] = [
+    "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+    "ash", "ballad", "coral", "sage", "verse", "gb male",
+];
 
 type StateRef = Arc<AiState>;
 
@@ -141,4 +149,82 @@ async fn test_all(
     let config = state.lock().await;
     let providers = config.ordered();
     Ok(Json(openai::failover(&state.http, &providers).await))
+}
+
+#[derive(serde::Deserialize)]
+struct ModelsBody {
+    #[serde(default)]
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+    #[serde(default)]
+    ollama: bool,
+}
+
+/// Fetch the models an OpenAI-compatible endpoint (or Ollama's /v1 gateway)
+/// advertises, so the form can offer them in the model dropdowns. Models are
+/// read from `{base}/models` — `{"data": [{"id": …}]}` or a plain array.
+async fn fetch_models(
+    State(state): State<StateRef>,
+    Json(body): Json<ModelsBody>,
+) -> Result<Json<serde_json::Value>, HttpError> {
+    let base_url = {
+        let value = body.base_url.trim().trim_end_matches('/').to_string();
+        if value.is_empty() {
+            if body.ollama {
+                crate::ai::default_ollama_base_url().to_string()
+            } else {
+                crate::ai::default_base_url().to_string()
+            }
+        } else {
+            value
+        }
+    };
+    let request = state.http.get(format!("{base_url}/models")).header("Accept", "application/json");
+    let request = if body.ollama || body.api_key.trim().is_empty() {
+        request
+    } else {
+        request.header("Authorization", format!("Bearer {}", body.api_key.trim()))
+    };
+    let response = request
+        .send()
+        .await
+        .map_err(|_| HttpError::bad("could not reach the provider"))?;
+    if !response.status().is_success() {
+        return Err(HttpError::bad(format!("the provider answered {}", response.status())));
+    }
+    let value = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| HttpError::bad("the provider reply was unreadable"))?;
+    let mut models: Vec<String> = Vec::new();
+    if let Some(ids) = value
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array())
+    {
+        for id in ids {
+            let name = id
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| id.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !name.is_empty() {
+                models.push(name);
+            }
+        }
+    }
+    models.sort();
+    models.dedup();
+    if models.is_empty() {
+        return Err(HttpError::bad("the provider returned no models"));
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "base_url": base_url,
+        "models": models,
+        "voices": TTS_VOICES,
+    })))
 }

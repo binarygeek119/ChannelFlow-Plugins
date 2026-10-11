@@ -111,6 +111,44 @@ function syncAiOllama() {
   renderAiKeyState();
 }
 
+function fillModelList(id, models) {
+  const datalist = $(id);
+  if (!datalist) return;
+  datalist.textContent = "";
+  (models || []).forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model;
+    datalist.appendChild(option);
+  });
+}
+
+// Grab the models the provider lists (Ollama's /v1/models included) and offer
+// them in the Chat/TTS dropdowns, plus the common voice ids.
+async function fetchProviderModels() {
+  const button = $("ai-fetch-models");
+  if (button) button.disabled = true;
+  setAiNote("Fetching models…");
+  try {
+    const data = await request(`${AI_API}/models`, {
+      method: "POST",
+      body: JSON.stringify({
+        base_url: els.aiBaseUrl.value,
+        api_key: els.aiApiKey.value.trim(),
+        ollama: !!(els.aiOllama && els.aiOllama.checked),
+      }),
+    });
+    if (!data.ok) throw new Error(data.error || "Could not fetch models.");
+    fillModelList("ai-chat-models", data.models);
+    fillModelList("ai-tts-models", data.models);
+    fillModelList("ai-voices", data.voices || []);
+    setAiNote(`${data.models.length} model(s) fetched from ${data.base_url}.`);
+  } catch (error) {
+    setAiNote(error.message, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function selectAiTab(id) {
   if (id !== null && !aiProviders.some((provider) => provider.id === id)) {
     id = null;
@@ -296,6 +334,7 @@ function formatBytes(bytes) {
 
 els.aiSave.addEventListener("click", saveAi);
 els.aiOllama.addEventListener("change", syncAiOllama);
+els.aiFetchModels.addEventListener("click", fetchProviderModels);
 els.aiTest.addEventListener("click", testAi);
 els.aiDelete.addEventListener("click", deleteAi);
 els.aiTestAll.addEventListener("click", testAiAll);

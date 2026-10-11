@@ -267,7 +267,7 @@ impl AiConfig {
     }
 }
 
-fn default_base_url() -> String {
+pub fn default_base_url() -> String {
     "https://api.openai.com/v1".to_string()
 }
 
@@ -285,6 +285,10 @@ fn default_voice() -> String {
 
 /// The local Ollama OpenAI-compatible gateway.
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434/v1";
+
+pub fn default_ollama_base_url() -> String {
+    DEFAULT_OLLAMA_BASE_URL.to_string()
+}
 
 fn provider_defaults() -> ProviderDefaults {
     ProviderDefaults {

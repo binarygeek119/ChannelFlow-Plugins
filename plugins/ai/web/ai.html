@@ -39,19 +39,23 @@
             </div>
             <div class="field">
               <label class="field-label" for="ai-chat-model">Chat model</label>
-              <input id="ai-chat-model" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
-              <small class="field-hint">The chat engine, for the lineup and guide text generation that arrives with playout.</small>
+              <input id="ai-chat-model" type="text" list="ai-chat-models" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
+              <datalist id="ai-chat-models"></datalist>
+              <small class="field-hint">The chat engine, for the lineup and guide text generation that arrives with playout. Type a model or pick from the fetched list.</small>
             </div>
             <div class="field">
               <label class="field-label" for="ai-tts-model">TTS model</label>
-              <input id="ai-tts-model" type="text" autocomplete="off" spellcheck="false" placeholder="tts-1">
+              <input id="ai-tts-model" type="text" list="ai-tts-models" autocomplete="off" spellcheck="false" placeholder="tts-1">
+              <datalist id="ai-tts-models"></datalist>
               <small class="field-hint">The speech engine to ask for.</small>
             </div>
             <div class="field">
               <label class="field-label" for="ai-voice">Voice</label>
-              <input id="ai-voice" type="text" autocomplete="off" spellcheck="false" placeholder="nova">
+              <input id="ai-voice" type="text" list="ai-voices" autocomplete="off" spellcheck="false" placeholder="nova">
+              <datalist id="ai-voices"></datalist>
               <small class="field-hint">The voice id to speak with.</small>
             </div>
+            <button type="button" class="ghost" id="ai-fetch-models">Fetch models from this provider</button>
             <div class="field field-check">
               <label class="field-label" for="ai-scheduling-only">
                 <input id="ai-scheduling-only" type="checkbox"> Scheduling only
