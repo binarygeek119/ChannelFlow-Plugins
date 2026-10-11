@@ -61,6 +61,10 @@ pub struct AiProvider {
     /// The voice id to speak with, e.g. `nova`.
     #[serde(default = "default_voice")]
     pub voice: String,
+    /// Scheduling-only: this provider may be used for lineup/guide scheduling
+    /// but is never asked for TTS.
+    #[serde(default)]
+    pub scheduling_only: bool,
 }
 
 /// The whole AI page: the saved providers plus the values a new one starts
@@ -104,6 +108,7 @@ pub struct ProviderView {
     pub chat_model: String,
     pub tts_model: String,
     pub voice: String,
+    pub scheduling_only: bool,
 }
 
 impl AiProvider {
@@ -117,6 +122,7 @@ impl AiProvider {
             chat_model: self.chat_model.clone(),
             tts_model: self.tts_model.clone(),
             voice: self.voice.clone(),
+            scheduling_only: self.scheduling_only,
         }
     }
 }
@@ -295,6 +301,9 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         tts_model: String,
         #[serde(default = "default_voice")]
         voice: String,
+        /// Scheduling-only: this provider may drive scheduling, never TTS.
+        #[serde(default)]
+        scheduling_only: bool,
     }
 
     let input: New = serde_json::from_value(body.clone())
@@ -308,6 +317,7 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         chat_model: input.chat_model,
         tts_model: input.tts_model,
         voice: input.voice,
+        scheduling_only: input.scheduling_only,
     })
 }
 
@@ -331,6 +341,8 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
         tts_model: Option<String>,
         #[serde(default)]
         voice: Option<String>,
+        #[serde(default)]
+        scheduling_only: Option<bool>,
     }
 
     let update: Update = serde_json::from_value(body.clone())
@@ -355,6 +367,9 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
     }
     if let Some(voice) = update.voice {
         provider.voice = voice;
+    }
+    if let Some(scheduling_only) = update.scheduling_only {
+        provider.scheduling_only = scheduling_only;
     }
     Ok(provider)
 }
@@ -422,6 +437,7 @@ fn migrate(value: &Value) -> Result<AiConfig, AiError> {
             chat_model: legacy.chat_model,
             tts_model: legacy.tts_model,
             voice: legacy.voice,
+            scheduling_only: false,
         }],
     })
 }
@@ -569,6 +585,27 @@ mod tests {
         assert!(config
             .resolve(&created.id, &json!({ "priority": created.priority }))
             .is_ok());
+    }
+
+    #[test]
+    fn scheduling_only_flag_is_stored_and_togglable() {
+        let mut config = AiConfig::default();
+        let created = config
+            .create(&json!({
+                "name": "Sched", "priority": 1, "base_url": "https://example.test/v1",
+                "chat_model": "gpt-4o-mini", "tts_model": "tts-1", "voice": "nova",
+                "scheduling_only": true
+            }))
+            .unwrap();
+        assert!(created.scheduling_only, "a create body may set it");
+        let updated = config
+            .update(&created.id, &json!({ "scheduling_only": false }))
+            .unwrap();
+        assert!(!updated.scheduling_only, "an update may clear it");
+        assert!(
+            config.view().providers[0].scheduling_only == false,
+            "the view carries it for the page"
+        );
     }
 
     #[test]

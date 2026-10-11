@@ -69,6 +69,7 @@ function fillAiForm(provider) {
     els.aiChatModel.value = provider.chat_model;
     els.aiTtsModel.value = provider.tts_model;
     els.aiVoice.value = provider.voice;
+    els.aiSchedulingOnly.checked = !!provider.scheduling_only;
     aiKeySet = provider.api_key_set;
     els.aiSave.textContent = "Save provider";
     els.aiDelete.hidden = false;
@@ -79,6 +80,7 @@ function fillAiForm(provider) {
     els.aiChatModel.value = aiDefaults.chat_model;
     els.aiTtsModel.value = aiDefaults.tts_model;
     els.aiVoice.value = aiDefaults.voice;
+    els.aiSchedulingOnly.checked = false;
     aiKeySet = false;
     els.aiSave.textContent = "Add provider";
     els.aiDelete.hidden = true;
@@ -127,6 +129,7 @@ function aiBody() {
     chat_model: els.aiChatModel.value,
     tts_model: els.aiTtsModel.value,
     voice: els.aiVoice.value,
+    scheduling_only: els.aiSchedulingOnly.checked,
   };
   const priority = els.aiPriority.value.trim();
   if (priority !== "") body.priority = Number.parseInt(priority, 10);
