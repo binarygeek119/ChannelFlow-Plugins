@@ -1,5 +1,9 @@
 const LIBRARY_ROUTES = {
-  jellyfin: { base: "/api/plugins/com.channelflow.jellyfin" },
+  // `base` sources expose a list of libraries; every source has a core task
+  // endpoint a per-connection Sync runs through.
+  jellyfin: { base: "/api/plugins/com.channelflow.jellyfin", run: "/api/tasks/jellyfin-sync/run" },
+  local: { run: "/api/tasks/local-scan/run" },
+  news: { run: "/api/tasks/news-scan/run" },
 };
 let librarySources = [];
 let libraryPage = "connections";
@@ -131,6 +135,14 @@ function connPageId(kind, id) {
   return `conn-${kind}-${id}`;
 }
 
+function libraryHint(kind) {
+  const route = LIBRARY_ROUTES[kind];
+  if (route && route.base) {
+    return "Sync the libraries each connection exposes. They are grouped by type; toggle a row to include or exclude that library from syncs.";
+  }
+  return "Scan each connection's media folders with Sync now — files and their .nfo metadata become one card per item on the Media page.";
+}
+
 function kindPage(kind, heading) {
   const id = `library-page-${kind}`;
   let page = $(id);
@@ -141,7 +153,7 @@ function kindPage(kind, heading) {
     page.hidden = true;
     page.innerHTML =
       `<div class="panel"><div class="panel-head"><h2></h2><span class="count"></span></div>` +
-      `<p class="hint">Sync the libraries each connection exposes. They are grouped by type; toggle a row to include or exclude that library from syncs.</p>` +
+      `<p class="hint">${libraryHint(kind)}</p>` +
       `<div class="library-lists"></div></div>`;
     $("tab-library").appendChild(page);
   }
@@ -183,7 +195,7 @@ function renderKindLibraryConnection(page) {
     pageEl.hidden = true;
     pageEl.innerHTML =
       `<div class="panel"><div class="panel-head"><h2></h2><span class="count"></span></div>` +
-      `<p class="hint">This connection's libraries. Toggle rows to include or exclude them from syncs.</p>` +
+      `<p class="hint">${libraryHint(kind)}</p>` +
       `<div class="library-lists"></div></div>`;
     $("tab-library").appendChild(pageEl);
   }
@@ -359,7 +371,7 @@ async function renderConnectionLibraries(list, connection) {
   const config = connection.config || {};
   const apiKey = config.api_key || "";
   let libraries = [];
-  if (route) {
+  if (route && route.base) {
     let data = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -410,8 +422,9 @@ async function renderConnectionLibraries(list, connection) {
   box.innerHTML =
     `<div class="library-box-head"><h3>${name}</h3><div class="libbox-actions">${browse}${sync}</div></div>`;
   if (!libraries.length) {
-    box.innerHTML +=
-      '<p class="hint">This server exposes no libraries (or the key cannot list them).</p>';
+    box.innerHTML += route && route.base
+      ? '<p class="hint">This server exposes no libraries (or the key cannot list them).</p>'
+      : '<p class="hint">File source — Sync now walks this connection\'s folders into the media database.</p>';
   } else {
     types.forEach((type) => {
       const label = libraryTypeLabel(type);
@@ -485,7 +498,7 @@ document.getElementById("tab-library").addEventListener("click", async (event) =
   const connection = libraryConnections.find((row) => row.id === Number(button.dataset.libSync));
   if (!connection) return;
   taskPopup.run(
-    `Jellyfin · ${escapeHtml(connection.config.name || "connection")} sync`,
+    `${sourceName(connection.kind) || "Library"} · ${escapeHtml(connection.config.name || "connection")} sync`,
     () => syncConnection(connection),
     (report) => `Synced: ${report.added} added · ${report.updated} updated · ${report.errors} errors`
   );
@@ -493,20 +506,22 @@ document.getElementById("tab-library").addEventListener("click", async (event) =
 
 async function syncConnection(connection) {
   const config = connection.config || {};
-  if (!LIBRARY_ROUTES[connection.kind]) throw new Error(`no sync built for ${connection.kind}`);
+  const route = LIBRARY_ROUTES[connection.kind];
+  if (!route) throw new Error(`no sync built for ${connection.kind}`);
 
-  // Sync through the core's driver: it filters to the toggled-on libraries the
-  // same way and reports into the base's media catalog, so a manual scan also
-  // feeds the Media page.
-  const done = request("/api/tasks/jellyfin-sync/run", {
+  // Sync through the core's task driver: for a media server it filters to the
+  // toggled-on libraries, for a file source to the connection's folders, and
+  // every run reports into the base's media catalog the same way the scheduled
+  // scans do — so a manual Sync also feeds the Media page.
+  const done = request(route.run || "/api/tasks/jellyfin-sync/run", {
     method: "POST",
     body: JSON.stringify({ connection_id: connection.id }),
   });
 
-  taskPopup.show(`Syncing ${config.name || "Jellyfin"}`);
-  // The plugin's progress slot is process-wide, so it reports a core-driven
-  // scan too; watch it until the request settles.
-  await pollSyncProgress(done);
+  taskPopup.show(`Syncing ${config.name || connection.kind}`);
+  // The Jellyfin source exposes a process-wide progress slot; file-source
+  // scans are fast enough to just wait on the request.
+  if (route.base) await pollSyncProgress(done);
 
   let report;
   try {
