@@ -10,6 +10,7 @@
 mod api;
 mod bulletin;
 mod settings;
+mod tts;
 
 use std::sync::Arc;
 use std::path::PathBuf;

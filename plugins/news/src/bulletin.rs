@@ -195,7 +195,7 @@ pub async fn run(
     let output = folder.join(format!("news-{stamp}.mp4"));
     let staging = output.with_extension("mp4.partial");
 
-    match render_bulletin(&settings, &encoded, &work_dir, &staging) {
+    match render_bulletin(&settings, &state.http, &encoded, &work_dir, &staging).await {
         Ok(()) => {}
         Err(error) => {
             state
@@ -323,8 +323,11 @@ pub async fn ledger_snapshot(state: &Arc<NewsState>) -> StoryLedger {
 }
 
 /// Compose the newscast mp4 with ffmpeg overlays, writing a staging file.
-fn render_bulletin(
+/// Reads Google TTS speech for the anchor open, each story, and the outro
+/// when TTS is enabled, and mixes it into the bed at each segment's window.
+async fn render_bulletin(
     settings: &NewsSettings,
+    http: &reqwest::Client,
     stories: &[Value],
     work_dir: &Path,
     staging: &Path,
@@ -346,66 +349,152 @@ fn render_bulletin(
     std::fs::write(&outro_mp3, OUTRO_MP3).map_err(|error| error.to_string())?;
 
     let show_name = api::resolve_show_name(&settings.header);
-    let intro = if settings.anchor_intro.trim().is_empty() {
+    let intro_line = if settings.anchor_intro.trim().is_empty() {
         format!("I'm Catherine Wolfe. You're watching {show_name}.")
     } else {
         settings.anchor_intro.trim().to_string()
     };
-    let outro = if settings.anchor_outro.trim().is_empty() {
+    let outro_line = if settings.anchor_outro.trim().is_empty() {
         format!("I'm Catherine Wolfe. Stay with {show_name}.")
     } else {
         settings.anchor_outro.trim().to_string()
     };
 
-    // The FlowWire intro music plays in full as the lead-in, then the anchor
-    // opens, then the stories, then the anchor outro and the outro music.
     let intro_music_len = probe_seconds(&intro_mp3)
         .filter(|len| *len > 0.5)
         .unwrap_or(INTRO_SECONDS);
-    let (ass, show_total) = build_ass(stories, &intro, &outro, &show_name, intro_music_len);
+    let lead = intro_music_len.max(0.5);
+
+    // Segment texts: the anchor open, each story's copy, the anchor outro.
+    let mut texts: Vec<String> = vec![intro_line.clone()];
+    for story in stories {
+        texts.push(
+            story
+                .get("summary")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+        );
+    }
+    texts.push(outro_line.clone());
+
+    // Google TTS reads each segment; its length stretches the window so the
+    // voice is never cut off.
+    let tts_on = settings.tts_enabled && matches!(settings.tts_engine, crate::settings::TtsEngine::Google);
+    let mut speech: Vec<Option<(PathBuf, f64)>> = vec![None; texts.len()];
+    if tts_on {
+        for (index, text) in texts.iter().enumerate() {
+            if text.trim().is_empty() {
+                continue;
+            }
+            let path = work_dir.join(format!("speech-{index}.mp3"));
+            if let Ok(count) = crate::tts::synthesize(http, text, &settings.tts_voice, &path).await {
+                if count > 0 {
+                    let duration = probe_seconds(&path).unwrap_or(0.0);
+                    speech[index] = Some((path, duration));
+                }
+            }
+        }
+    }
+
+    // The timeline; speech stretches each segment's window.
+    let mut beats: Vec<Beat> = Vec::new();
+    beats.push(Beat {
+        start: 0.0,
+        end: lead,
+        title: show_name.clone(),
+        body: String::new(),
+    });
+    let mut starts: Vec<f64> = vec![lead];
+    let mut t = lead;
+    let intro_dur = speech[0]
+        .as_ref()
+        .map(|(_, duration)| duration.max(ANCHOR_INTRO_SECONDS))
+        .unwrap_or(ANCHOR_INTRO_SECONDS);
+    beats.push(Beat {
+        start: t,
+        end: t + intro_dur,
+        title: show_name.clone(),
+        body: intro_line,
+    });
+    starts.push(t + intro_dur);
+    t += intro_dur;
+    for (index, story) in stories.iter().enumerate() {
+        let title = story.get("title").and_then(Value::as_str).unwrap_or("").to_string();
+        let body = story.get("summary").and_then(Value::as_str).unwrap_or("").to_string();
+        let speech_dur = speech.get(index + 1).and_then(|segment| segment.as_ref()).map(|(_, duration)| *duration).unwrap_or(0.0);
+        let duration = story_seconds(&body).max(speech_dur).max(2.0);
+        beats.push(Beat {
+            start: t,
+            end: t + duration,
+            title,
+            body,
+        });
+        starts.push(t + duration);
+        t += duration;
+    }
+    let outro_dur = speech[texts.len() - 1]
+        .as_ref()
+        .map(|(_, duration)| duration.max(OUTRO_SECONDS))
+        .unwrap_or(OUTRO_SECONDS);
+    beats.push(Beat {
+        start: t,
+        end: t + outro_dur,
+        title: show_name,
+        body: outro_line,
+    });
+    starts.push(t + outro_dur);
+    t += outro_dur;
+    let show_total = t;
+
+    let ass = build_ass(&beats);
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
-    // The outro music plays as a closing bumper *after* the anchor's outros:
-    // the show (intro, stories, anchor outro) runs for `show_total`, then the
-    // outro music extends the video to its very end.
+    // The outro music plays after the anchor outro; the video extends with it.
     let outro_len = probe_seconds(&outro_mp3)
         .filter(|len| *len > 0.5)
         .unwrap_or(OUTRO_SECONDS);
     let total = show_total + outro_len;
-    let outro_delay_ms = (show_total * 1000.0).round().max(0.0) as i64;
-    let audio = format!(
-        "[6:a]atrim=0:{intro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
-         [7:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
-         [a0][a1]amix=inputs=2:duration=longest:normalize=0[aout]",
-        intro_len = intro_music_len,
-        outro_len = outro_len,
-        delay = outro_delay_ms,
+    let outro_ms = (show_total * 1000.0).round().max(0.0) as i64;
+
+    // Audio: intro/outro music plus each speech segment at its window start.
+    let mut audio_parts: Vec<String> = vec![
+        format!("[6:a]atrim=0:{lead},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0]"),
+        format!("[7:a]atrim=0:{outro_len},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={outro_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1]"),
+    ];
+    let mut labels: Vec<String> = vec!["a0".to_string(), "a1".to_string()];
+    let mut audio_input = 8usize;
+    for (index, segment) in speech.iter().enumerate() {
+        let Some((_, duration)) = segment else {
+            continue;
+        };
+        let label = format!("a{}", labels.len());
+        let start_ms = (starts[index] * 1000.0).round().max(0.0) as i64;
+        audio_parts.push(format!(
+            "[{audio_input}:a]atrim=0:{duration},asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11,adelay={start_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[{label}]"
+        ));
+        labels.push(label);
+        audio_input += 1;
+    }
+    let mix = format!(
+        "[{}]amix=inputs={}:duration=longest:normalize=0[aout]",
+        labels.join("]["),
+        labels.len()
     );
+    let audio = format!("{};{mix}", audio_parts.join(";"));
+
     // Layers, bottom to top: the scrolling map behind everything, the anchor
     // centered, the headline bar over the top, the story bar over the bottom,
     // the captions, then the mute overlay across the whole screen.
     let filter = format!(
-        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
-         [1:v]scale=6480:1080[mp];\
-         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];\
-         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];\
-         [2:v]scale=760:760[p];\
-         [m2][p]overlay=(W-w)/2:(H-h)/2[l1];\
-         [3:v]scale=1920:1080[hb];\
-         [l1][hb]overlay=0:0[l2];\
-         [4:v]scale=1920:1080[sb];\
-         [l2][sb]overlay=0:0[l3];\
-         [l3]ass='{ass}'[l4];\
-         [5:v]scale=1920:1080[mm];\
-         [l4][mm]overlay=0:0[final];\
-         {audio}",
+        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];         [1:v]scale=6480:1080[mp];         [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];         [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];         [2:v]scale=760:760[p];         [m2][p]overlay=(W-w)/2:(H-h)/2[l1];         [3:v]scale=1920:1080[hb];         [l1][hb]overlay=0:0[l2];         [4:v]scale=1920:1080[sb];         [l2][sb]overlay=0:0[l3];         [l3]ass='{ass}'[l4];         [5:v]scale=1920:1080[mm];         [l4][mm]overlay=0:0[final];         {audio}",
         total = total,
         ass = escape_filter_path(&ass_path),
         audio = audio,
     );
 
-    let args: Vec<String> = vec![
+    let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
         "warning".into(),
@@ -458,6 +547,12 @@ fn render_bulletin(
         intro_mp3.to_string_lossy().to_string(),
         "-i".into(),
         outro_mp3.to_string_lossy().to_string(),
+    ];
+    for segment in speech.iter().flatten() {
+        args.push("-i".into());
+        args.push(segment.0.to_string_lossy().to_string());
+    }
+    args.extend([
         "-filter_complex".into(),
         filter,
         "-map".into(),
@@ -493,7 +588,7 @@ fn render_bulletin(
         "-f".into(),
         "mp4".into(),
         staging.to_string_lossy().to_string(),
-    ];
+    ]);
 
     let output = Command::new(encoder_path())
         .args(&args)
@@ -561,66 +656,11 @@ struct Beat {
     body: String,
 }
 
-/// Build the ASS caption file and return it with the total show length.
-/// Headlines render in the top bar; the story's copy renders as two lines in
-/// the bottom bar, held longer when the copy is longer.
-fn build_ass(
-    stories: &[Value],
-    intro: &str,
-    outro: &str,
-    show_name: &str,
-    intro_music_len: f64,
-) -> (String, f64) {
-    let mut beats: Vec<Beat> = Vec::new();
-    let lead = intro_music_len.max(0.5);
-
-    // During the song, show only the show name; the anchor's open follows.
-    beats.push(Beat {
-        start: 0.0,
-        end: lead,
-        title: show_name.to_string(),
-        body: String::new(),
-    });
-    beats.push(Beat {
-        start: lead,
-        end: lead + ANCHOR_INTRO_SECONDS,
-        title: show_name.to_string(),
-        body: intro.to_string(),
-    });
-    let mut t = lead + ANCHOR_INTRO_SECONDS;
-
-    for story in stories {
-        let title = story
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let body = story
-            .get("summary")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let duration = story_seconds(&body);
-        beats.push(Beat {
-            start: t,
-            end: t + duration,
-            title,
-            body,
-        });
-        t += duration;
-    }
-
-    beats.push(Beat {
-        start: t,
-        end: t + OUTRO_SECONDS,
-        title: show_name.to_string(),
-        body: outro.to_string(),
-    });
-    t += OUTRO_SECONDS;
-    let show_total = t;
-
+/// Render the captions for the given beats: a Headline for the title and a
+/// two-line Story event for the copy, in the top and bottom bars.
+fn build_ass(beats: &[Beat]) -> String {
     let mut events = String::new();
-    for beat in &beats {
+    for beat in beats {
         if !beat.title.trim().is_empty() {
             events.push_str(&format!(
                 "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\b1}}{}{{\\b0}}\n",
@@ -652,11 +692,11 @@ fn build_ass(
     // Headline sits at the top centre (inside the headline bar); Story is the
     // bottom-centre two-line copy (inside the story bar).
     ass.push_str("Style: Headline, Liberation Sans, 54, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 60, 60, 84, 1\n");
-    ass.push_str("Style: Story, Liberation Sans, 34, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 60, 120, 90, 1\n\n");
+    ass.push_str("Style: Story, Liberation Sans, 58, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 60, 120, 90, 1\n\n");
     ass.push_str("[Events]\n");
     ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     ass.push_str(&events);
-    (ass, show_total)
+    ass
 }
 
 /// A story's on-screen time grows with its copy, bounded so a long summary
@@ -667,9 +707,10 @@ fn story_seconds(body: &str) -> f64 {
 }
 
 /// Greedy wrap of the copy into at most two lines (bottom bar), with an
-/// ellipsis when a line overflows.
+/// ellipsis when a line overflows. Kept narrow because the story font is
+/// large.
 fn wrap_two(text: &str) -> String {
-    const MAX: usize = 62;
+    const MAX: usize = 40;
     let mut words = text.split_whitespace();
     let mut first = String::new();
     while let Some(word) = words.next() {
@@ -762,13 +803,17 @@ mod tests {
     #[test]
     fn ass_puts_the_headline_in_the_bar_and_the_copy_as_two_lines() {
         let stories = vec![json!({ "title": "Headline One", "summary": "Spoken copy here." })];
-        let (ass, total) = build_ass(&stories, "Intro.", "Outro.", "FlowWire News", 3.0);
+        let beats = vec![
+            Beat { start: 0.0, end: 3.0, title: "FlowWire News".into(), body: String::new() },
+            Beat { start: 3.0, end: 7.0, title: "Headline One".into(), body: "Spoken copy here.".into() },
+        ];
+        let ass = build_ass(&beats);
         assert!(ass.contains("Headline One"));
         assert!(ass.contains("Spoken copy here."));
         assert!(ass.contains("Style: Story"));
+        assert!(ass.contains("Headline One"));
+        assert!(ass.contains("Spoken copy here."));
         assert!(!ass.contains("Crawl"), "the crawl is gone, two-line copy replaces it");
-        // lead (3) + anchor intro (4) + story (length-based) + outro (3)
-        assert!((total - 3.0 - 4.0 - 3.0) >= 4.0, "the story gets its own length-based window");
     }
 
     #[test]
