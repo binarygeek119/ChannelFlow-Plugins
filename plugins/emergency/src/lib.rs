@@ -164,12 +164,6 @@ fn serve_media(api: &channelflow_plugin_api::plugin::PluginApi) {
     }
     media!("ebs_fullscreen.png", "image/png");
     media!("ebs_strip.png", "image/png");
-    media!("offline.jpg", "image/jpeg");
-    media!("offline_usa_16_9.jpg", "image/jpeg");
-    media!("offline_usa_4_3.jpg", "image/jpeg");
-    media!("offline_world_16_9.jpg", "image/jpeg");
-    media!("offline_world_4_3.jpg", "image/jpeg");
-    media!("offlineusa.jpg", "image/jpeg");
 }
 
 /// Publish the v1.0.0 EBS alert tones, under

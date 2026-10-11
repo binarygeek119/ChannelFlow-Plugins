@@ -87,6 +87,8 @@ impl Plugin for OffAirPlugin {
         api.web.serve_embedded("ebs.css", "text/css", include_bytes!("../web/ebs.css"));
         api.web.serve_embedded("ebs.html", "text/html", include_bytes!("../web/ebs.html"));
         api.web.serve_embedded("ebs.js", "text/javascript", include_bytes!("../web/ebs.js"));
+        // The offline slates (moved here from the EBS plugin's media).
+        serve_offline_media(&api);
 
         let settings = match api
             .storage
@@ -160,6 +162,26 @@ impl Default for OffAirPlugin {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Publish the offline slates, under
+/// `/plugin/com.channelflow.offair/web/media/<file>`.
+fn serve_offline_media(api: &channelflow_plugin_api::plugin::PluginApi) {
+    macro_rules! slate {
+        ($file:literal) => {
+            api.web.serve_embedded(
+                concat!("media/", $file),
+                "image/jpeg",
+                include_bytes!(concat!("../web/media/", $file)),
+            )
+        };
+    }
+    slate!("offline.jpg");
+    slate!("offline_usa_16_9.jpg");
+    slate!("offline_usa_4_3.jpg");
+    slate!("offline_world_16_9.jpg");
+    slate!("offline_world_4_3.jpg");
+    slate!("offlineusa.jpg");
 }
 
 #[cfg(test)]

@@ -1,1 +1,16 @@
 /* page styles live here */
+
+/* Offline slate previews. */
+.offair-screens {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.8rem;
+    margin-top: 0.4rem;
+}
+.offair-screens img {
+    width: 100%;
+    height: auto;
+    border-radius: 0.3rem;
+    border: 1px solid var(--border);
+    background: #101010;
+}
