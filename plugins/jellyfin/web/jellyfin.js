@@ -5,6 +5,7 @@ let librarySources = [];
 let libraryPage = "connections";
 let libraryConnections = [];
 let connectionEditingId = null;
+let savingConnection = false;
 
 async function loadLibrary() {
   try {
@@ -108,9 +109,17 @@ function renderLibraryTabs() {
     );
     if (!connections.length) return;
     add(source.type_id, source.display_name, `/webui/library/${source.type_id}`);
+    // One tab per connection (deduped by id, and unnamed connections labeled
+    // so they don't look like the source tab twice).
+    const seen = new Set();
     connections.forEach((connection) => {
+      if (!connection.id || seen.has(connection.id)) return;
+      seen.add(connection.id);
+      const label =
+        (connection.config && connection.config.name) ||
+        source.display_name + " — new";
       const page = connPageId(source.type_id, connection.id);
-      add(page, (connection.config && connection.config.name) || source.display_name, `/webui/library/${source.type_id}/${connection.id}`);
+      add(page, label, `/webui/library/${source.type_id}/${connection.id}`);
     });
   });
   tabs.querySelectorAll(".inner-tab").forEach((tab) => {
@@ -569,6 +578,7 @@ function renderSourceField(field, config) {
     input.type = "password";
     input.id = fieldElementId(field.key);
     input.value = value || "";
+    input.required = !!field.required;
     wrap.appendChild(input);
   } else if (field.kind === "remaps") {
     const textarea = document.createElement("textarea");
@@ -651,6 +661,7 @@ function renderSourceField(field, config) {
     input.type = "text";
     input.id = fieldElementId(field.key);
     input.value = value || "";
+    input.required = !!field.required;
     wrap.appendChild(input);
   }
   return wrap;
@@ -729,6 +740,8 @@ function openConnectionForm(connection) {
 
 async function saveConnection(event) {
   event.preventDefault();
+  if (savingConnection) return; // a disabled button still lets Enter resubmit
+  savingConnection = true;
   const kind = $("ms-kind").value;
   const config = currentFormConfig();
   const save = $("ms-save");
@@ -753,6 +766,7 @@ async function saveConnection(event) {
   } catch (error) {
     $("ms-result").textContent = error.message;
   } finally {
+    savingConnection = false;
     save.disabled = false;
   }
 }
