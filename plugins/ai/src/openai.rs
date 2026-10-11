@@ -33,11 +33,12 @@ pub struct Probe {
 
 #[derive(Debug, Serialize)]
 pub struct Report {
-    /// Decided by the chat and speech probes together: a provider configures
-    /// one chat model and one speech model, so "this provider works" means
-    /// both answered. Listing models stays informational — it proves the
-    /// address and the key, but a compatible server need not implement
-    /// `/models` at all.
+    /// Decided by the probes that fit the provider's role: a general provider
+    /// configures one chat model and one speech model, so "works" means both
+    /// answered; a TTS-only provider is judged by its speech alone; a
+    /// scheduling-only provider by its chat alone. Listing models stays
+    /// informational — it proves the address and the key, but a compatible
+    /// server need not implement `/models` at all.
     pub ok: bool,
     pub name: String,
     pub priority: u32,
@@ -72,11 +73,30 @@ pub struct FailoverReport {
 
 pub async fn run(http: &reqwest::Client, provider: &AiProvider) -> Report {
     let started = Instant::now();
+    // A provider is judged only by what its role uses: TTS-only providers have
+    // no chat model, and scheduling-only providers carry no TTS fields, so
+    // probing the other endpoint would report a meaningless failure.
+    let chat_required = !provider.tts_only;
+    let speech_required = !provider.scheduling_only;
+
     let models = list_models(http, provider).await;
-    let chat = chat(http, provider).await;
-    let (speech, bytes) = speak(http, provider).await;
+    let mut probes = vec![models];
+    let mut ok = true;
+    if chat_required {
+        let chat = chat(http, provider).await;
+        ok = ok && chat.ok;
+        probes.push(chat);
+    }
+    let bytes = if speech_required {
+        let (speech, spoken) = speak(http, provider).await;
+        ok = ok && speech.ok;
+        probes.push(speech);
+        spoken
+    } else {
+        0
+    };
     Report {
-        ok: chat.ok && speech.ok,
+        ok,
         name: provider.name.clone(),
         priority: provider.priority,
         base_url: provider.base_url.clone(),
@@ -85,19 +105,19 @@ pub async fn run(http: &reqwest::Client, provider: &AiProvider) -> Report {
         voice: provider.voice.clone(),
         bytes,
         elapsed_ms: started.elapsed().as_millis() as u64,
-        probes: vec![models, chat, speech],
+        probes,
     }
 }
 
-/// Walk the providers in priority order and stop at the first that answers.
-/// A provider that works costs nothing for the ones below it: they are never
-/// contacted, because the app already has an endpoint to use.
+/// Walk the providers in priority order and stop at the first that answers
+/// for its role. A provider that works costs nothing for the ones below it:
+/// they are never contacted, because the app already has an endpoint to use.
 pub async fn failover(http: &reqwest::Client, providers: &[&AiProvider]) -> FailoverReport {
     let mut attempts = Vec::new();
     for provider in providers {
         let report = run(http, provider).await;
         let detail = if report.ok {
-            "answered — chat and speech both worked".to_string()
+            answered_detail(&report)
         } else {
             first_failure(&report)
         };
@@ -120,6 +140,26 @@ pub async fn failover(http: &reqwest::Client, providers: &[&AiProvider]) -> Fail
         chosen: None,
         attempts,
     }
+}
+
+/// "answered — Chat worked" / "… Speech worked" / "… Chat and Speech worked",
+/// naming exactly the probes the run was judged on.
+fn answered_detail(report: &Report) -> String {
+    let roles = report
+        .probes
+        .iter()
+        .filter(|probe| probe.name != "Models")
+        .map(|probe| probe.name)
+        .collect::<Vec<_>>();
+    let joined = match roles.len() {
+        0 => return "answered".to_string(),
+        1 => roles[0].to_string(),
+        _ => {
+            let last = roles.last().copied().unwrap_or_default();
+            format!("{} and {}", roles[..roles.len() - 1].join(", "), last)
+        }
+    };
+    format!("answered — {joined} worked")
 }
 
 /// The first probe that did not pass, named, so the report says what broke
@@ -324,5 +364,44 @@ fn size(bytes: usize) -> String {
         format!("{:.1} KiB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_answered_detail_names_the_probes_the_role_was_judged_on() {
+        let mut report = Report {
+            ok: true,
+            name: "x".to_string(),
+            priority: 1,
+            base_url: "https://x.test".to_string(),
+            chat_model: String::new(),
+            tts_model: "tts-1".to_string(),
+            voice: "nova".to_string(),
+            bytes: 0,
+            elapsed_ms: 0,
+            probes: vec![],
+        };
+        report.probes = vec![
+            Probe { name: "Models", ok: true, detail: "listed 1".to_string() },
+            Probe { name: "Speech", ok: true, detail: "spoke 1 KiB".to_string() },
+        ];
+        assert_eq!(answered_detail(&report), "answered — Speech worked");
+
+        report.probes = vec![
+            Probe { name: "Models", ok: true, detail: "listed 1".to_string() },
+            Probe { name: "Chat", ok: true, detail: "replied ready".to_string() },
+        ];
+        assert_eq!(answered_detail(&report), "answered — Chat worked");
+
+        report.probes = vec![
+            Probe { name: "Models", ok: true, detail: "listed 1".to_string() },
+            Probe { name: "Chat", ok: true, detail: "replied ready".to_string() },
+            Probe { name: "Speech", ok: true, detail: "spoke 1 KiB".to_string() },
+        ];
+        assert_eq!(answered_detail(&report), "answered — Chat and Speech worked");
     }
 }
