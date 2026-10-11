@@ -22,6 +22,12 @@
               <input id="ai-base-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1">
               <small class="field-hint">The API root, ending in <code>/v1</code>. Point it at any OpenAI-compatible server.</small>
             </div>
+            <div class="field field-check">
+              <label class="field-label" for="ai-ollama">
+                <input id="ai-ollama" type="checkbox"> Ollama provider
+              </label>
+              <small class="field-hint">A local Ollama endpoint — it needs no API key, and the URL fills in as <code>http://localhost:11434/v1</code>.</small>
+            </div>
             <div class="field">
               <label class="field-label" for="ai-api-key">API key</label>
               <span class="key-row">

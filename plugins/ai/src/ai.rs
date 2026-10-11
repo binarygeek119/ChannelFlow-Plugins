@@ -65,6 +65,10 @@ pub struct AiProvider {
     /// but is never asked for TTS.
     #[serde(default)]
     pub scheduling_only: bool,
+    /// This is a local Ollama endpoint: no API key is sent, and the base URL
+    /// defaults to Ollama's OpenAI-compatible gateway.
+    #[serde(default)]
+    pub ollama: bool,
 }
 
 /// The whole AI page: the saved providers plus the values a new one starts
@@ -78,13 +82,15 @@ pub struct AiConfig {
 }
 
 /// The values the "New provider" form starts from. Served rather than baked
-/// into the browser so the OpenAI defaults live in one place.
+/// into the browser so the OpenAI and Ollama defaults live in one place.
 #[derive(Debug, Serialize)]
 pub struct ProviderDefaults {
     pub base_url: String,
     pub chat_model: String,
     pub tts_model: String,
     pub voice: String,
+    /// The local Ollama OpenAI-compatible gateway, for the Ollama checkbox.
+    pub ollama_base_url: String,
 }
 
 /// What `GET /api/ai` — and the result of a save — returns. A saved key is
@@ -109,6 +115,7 @@ pub struct ProviderView {
     pub tts_model: String,
     pub voice: String,
     pub scheduling_only: bool,
+    pub ollama: bool,
 }
 
 impl AiProvider {
@@ -123,6 +130,7 @@ impl AiProvider {
             tts_model: self.tts_model.clone(),
             voice: self.voice.clone(),
             scheduling_only: self.scheduling_only,
+            ollama: self.ollama,
         }
     }
 }
@@ -275,12 +283,16 @@ fn default_voice() -> String {
     "nova".to_string()
 }
 
+/// The local Ollama OpenAI-compatible gateway.
+const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434/v1";
+
 fn provider_defaults() -> ProviderDefaults {
     ProviderDefaults {
         base_url: default_base_url(),
         chat_model: default_chat_model(),
         tts_model: default_tts_model(),
         voice: default_voice(),
+        ollama_base_url: DEFAULT_OLLAMA_BASE_URL.to_string(),
     }
 }
 
@@ -304,6 +316,9 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         /// Scheduling-only: this provider may drive scheduling, never TTS.
         #[serde(default)]
         scheduling_only: bool,
+        /// This is a local Ollama endpoint.
+        #[serde(default)]
+        ollama: bool,
     }
 
     let input: New = serde_json::from_value(body.clone())
@@ -312,12 +327,17 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         id: Uuid::new_v4().to_string(),
         name: input.name,
         priority: input.priority,
-        base_url: input.base_url,
+        base_url: if input.ollama && input.base_url.trim().is_empty() {
+            DEFAULT_OLLAMA_BASE_URL.to_string()
+        } else {
+            input.base_url
+        },
         api_key: input.api_key,
         chat_model: input.chat_model,
         tts_model: input.tts_model,
         voice: input.voice,
         scheduling_only: input.scheduling_only,
+        ollama: input.ollama,
     })
 }
 
@@ -343,6 +363,8 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
         voice: Option<String>,
         #[serde(default)]
         scheduling_only: Option<bool>,
+        #[serde(default)]
+        ollama: Option<bool>,
     }
 
     let update: Update = serde_json::from_value(body.clone())
@@ -371,6 +393,9 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
     if let Some(scheduling_only) = update.scheduling_only {
         provider.scheduling_only = scheduling_only;
     }
+    if let Some(ollama) = update.ollama {
+        provider.ollama = ollama;
+    }
     Ok(provider)
 }
 
@@ -378,6 +403,13 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
 /// non-empty. The missing scheme is the mistake worth catching:
 /// `api.openai.com/v1` reads fine and cannot be requested.
 fn cleaned(mut provider: AiProvider) -> Result<AiProvider, AiError> {
+    // An Ollama endpoint needs no key and defaults to the local gateway.
+    if provider.ollama {
+        if provider.base_url.trim().is_empty() {
+            provider.base_url = DEFAULT_OLLAMA_BASE_URL.to_string();
+        }
+        provider.api_key.clear();
+    }
     provider.name = provider.name.trim().to_string();
     if provider.name.is_empty() {
         return Err(AiError("provider name cannot be empty".to_string()));
@@ -438,6 +470,7 @@ fn migrate(value: &Value) -> Result<AiConfig, AiError> {
             tts_model: legacy.tts_model,
             voice: legacy.voice,
             scheduling_only: false,
+            ollama: false,
         }],
     })
 }
@@ -606,6 +639,21 @@ mod tests {
             config.view().providers[0].scheduling_only == false,
             "the view carries it for the page"
         );
+    }
+
+    #[test]
+    fn an_ollama_provider_needs_no_key_and_defaults_to_localhost() {
+        let mut config = AiConfig::default();
+        let created = config
+            .create(&json!({
+                "name": "Local Ollama", "priority": 1, "ollama": true,
+                "chat_model": "llama3.2", "tts_model": "tts-1", "voice": "nova"
+            }))
+            .unwrap();
+        assert!(created.ollama);
+        assert_eq!(created.base_url, "http://localhost:11434/v1");
+        assert_eq!(created.api_key, "", "an Ollama endpoint sends no key");
+        assert!(config.view().providers[0].ollama);
     }
 
     #[test]

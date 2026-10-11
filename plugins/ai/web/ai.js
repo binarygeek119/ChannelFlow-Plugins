@@ -3,7 +3,7 @@ let aiProviders = [];
 // namespace instead of a core `/api/ai`.
 const AI_API = "/api/plugins/com.channelflow.ai";
 let aiNextPriority = 1;
-let aiDefaults = { base_url: "", chat_model: "", tts_model: "", voice: "" };
+let aiDefaults = { base_url: "", chat_model: "", tts_model: "", voice: "", ollama_base_url: "http://localhost:11434/v1" };
 let aiActiveId = null; // null is the "New provider" tab
 let aiKeySet = false;
 
@@ -70,6 +70,7 @@ function fillAiForm(provider) {
     els.aiTtsModel.value = provider.tts_model;
     els.aiVoice.value = provider.voice;
     els.aiSchedulingOnly.checked = !!provider.scheduling_only;
+    els.aiOllama.checked = !!provider.ollama;
     aiKeySet = provider.api_key_set;
     els.aiSave.textContent = "Save provider";
     els.aiDelete.hidden = false;
@@ -81,15 +82,33 @@ function fillAiForm(provider) {
     els.aiTtsModel.value = aiDefaults.tts_model;
     els.aiVoice.value = aiDefaults.voice;
     els.aiSchedulingOnly.checked = false;
+    els.aiOllama.checked = false;
     aiKeySet = false;
     els.aiSave.textContent = "Add provider";
     els.aiDelete.hidden = true;
   }
+  syncAiOllama();
   els.aiApiKey.value = "";
   els.aiApiKey.type = "password";
   els.aiKeyReveal.textContent = "Show";
   renderAiKeyState();
   els.aiTestResult.hidden = true;
+}
+
+// Ollama: no API key, URL defaults to the local gateway.
+function syncAiOllama() {
+  if (!els.aiOllama) return;
+  const isOllama = els.aiOllama.checked;
+  if (isOllama) {
+    if (!els.aiBaseUrl.value || els.aiBaseUrl.value === aiDefaults.base_url) {
+      els.aiBaseUrl.value = aiDefaults.ollama_base_url || "http://localhost:11434/v1";
+    }
+  }
+  if (els.aiApiKey) {
+    els.aiApiKey.disabled = isOllama;
+    if (isOllama) els.aiApiKey.value = "";
+  }
+  renderAiKeyState();
 }
 
 function selectAiTab(id) {
@@ -130,6 +149,7 @@ function aiBody() {
     tts_model: els.aiTtsModel.value,
     voice: els.aiVoice.value,
     scheduling_only: els.aiSchedulingOnly.checked,
+    ollama: !!(els.aiOllama && els.aiOllama.checked),
   };
   const priority = els.aiPriority.value.trim();
   if (priority !== "") body.priority = Number.parseInt(priority, 10);
@@ -275,6 +295,7 @@ function formatBytes(bytes) {
 }
 
 els.aiSave.addEventListener("click", saveAi);
+els.aiOllama.addEventListener("change", syncAiOllama);
 els.aiTest.addEventListener("click", testAi);
 els.aiDelete.addEventListener("click", deleteAi);
 els.aiTestAll.addEventListener("click", testAiAll);
