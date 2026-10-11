@@ -367,16 +367,55 @@ fn clean(value: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Decode HTML/XML entities — both the numeric forms (`&#039;`, `&#x27;`) and
+/// the common named ones — before any tag stripping, so encoded apostrophes
+/// and quotes cannot leak into the on-screen copy.
 fn unescape(text: &str) -> String {
-    text.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        .replace("&#x27;", "'")
-        .replace("&#13;", " ")
-        .replace('\u{00a0}', " ")
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = rest.find('&') {
+        out.push_str(&rest[..pos]);
+        let tail = &rest[pos..];
+        if let Some(end) = tail.find(';') {
+            let name = &tail[1..end];
+            let decoded = if let Some(number) = name.strip_prefix('#') {
+                let digits = if let Some(hex) = number
+                    .strip_prefix('x')
+                    .or_else(|| number.strip_prefix('X'))
+                {
+                    u32::from_str_radix(hex, 16).ok()
+                } else {
+                    number.parse::<u32>().ok()
+                };
+                digits.and_then(char::from_u32).map(|c| c.to_string())
+            } else {
+                match name {
+                    "amp" => Some("&".to_string()),
+                    "lt" => Some("<".to_string()),
+                    "gt" => Some(">".to_string()),
+                    "quot" => Some("\"".to_string()),
+                    "apos" | "rsquo" | "lsquo" => Some("'".to_string()),
+                    "nbsp" => Some(" ".to_string()),
+                    "rdquo" | "ldquo" => Some("\"".to_string()),
+                    "hellip" => Some("…".to_string()),
+                    "ndash" => Some("–".to_string()),
+                    "mdash" => Some("—".to_string()),
+                    "eacute" => Some("é".to_string()),
+                    "Eacute" => Some("É".to_string()),
+                    _ => None,
+                }
+            };
+            if let Some(decoded) = decoded {
+                out.push_str(&decoded);
+                rest = &tail[end + 1..];
+                continue;
+            }
+        }
+        out.push('&');
+        rest = &tail[1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The News page's bulletin status: the schedule settings and the ledger.
@@ -447,6 +486,23 @@ mod tests {
         let stories = extract_stories(body, "https://feed.example/news");
         assert_eq!(stories[0]["title"], "Big sale today", "no HTML left in the title");
         assert_eq!(stories[0]["summary"], "Now everyone saves & more.", "no HTML left in the summary");
+    }
+
+    #[test]
+    fn numeric_entities_like_the_apostrophe_are_decoded() {
+        let body = "<item><title><![CDATA[Tragic scene&#039;: 8 dead including children]]></title>\
+            <description><![CDATA[Officials said it&#x27;s the worst &#39;in years&#39;.]]></description></item>";
+        let stories = extract_stories(body, "https://feed.example/news");
+        assert_eq!(
+            stories[0]["title"],
+            "Tragic scene': 8 dead including children",
+            "&#039; becomes an apostrophe"
+        );
+        assert_eq!(
+            stories[0]["summary"],
+            "Officials said it's the worst 'in years'.",
+            "&#x27; and &#39; become apostrophes"
+        );
     }
 
     #[test]
