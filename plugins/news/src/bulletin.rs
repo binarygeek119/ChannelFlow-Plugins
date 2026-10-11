@@ -182,23 +182,25 @@ pub async fn run(
     let output = folder.join(format!("news-{stamp}.mp4"));
     let staging = output.with_extension("mp4.partial");
 
-    let rendered = render_bulletin(&settings, &encoded, &work_dir, &staging).is_ok();
-    if !rendered {
-        state
-            .logger
-            .warn("news bulletin render failed");
-        let _ = std::fs::remove_file(&staging);
-        let _ = std::fs::remove_dir_all(&work_dir);
-        return finish_skip(
-            state,
-            ledger,
-            ran_at,
-            "FFmpeg failed to create the news video.".to_string(),
-            new.len(),
-            false,
-        )
-        .await;
-    }
+    let rendered = match render_bulletin(&settings, &encoded, &work_dir, &staging) {
+        Ok(()) => true,
+        Err(error) => {
+            state
+                .logger
+                .warn(&format!("news bulletin render failed: {error}"));
+            let _ = std::fs::remove_file(&staging);
+            let _ = std::fs::remove_dir_all(&work_dir);
+            return finish_skip(
+                state,
+                ledger,
+                ran_at,
+                format!("FFmpeg failed to create the news video. {error}"),
+                new.len(),
+                false,
+            )
+            .await;
+        }
+    };
     let _ = std::fs::remove_dir_all(&work_dir);
 
     if let Err(error) = std::fs::rename(&staging, &output) {
