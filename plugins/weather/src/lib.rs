@@ -26,6 +26,7 @@ use crate::settings::{WeatherSettings, SETTINGS_KEY};
 /// page. They are registered on load, so they appear only while this plugin
 /// is installed.
 fn weather_presets() -> Vec<PresetContribution> {
+    let logo = "/plugin/com.channelflow.weather/web/logos/WeatherStar.png".to_string();
     vec![
         PresetContribution {
             id: "channelflow-weatherstar4000".to_string(),
@@ -35,7 +36,7 @@ fn weather_presets() -> Vec<PresetContribution> {
             name: "WeatherStar4000".to_string(),
             category: "Weather".to_string(),
             description: "Live WeatherStar 4000+ MPEG-TS weather channel".to_string(),
-            logo: String::new(),
+            logo: logo.clone(),
         },
         PresetContribution {
             id: "channelflow-weatherstar3000".to_string(),
@@ -45,7 +46,7 @@ fn weather_presets() -> Vec<PresetContribution> {
             name: "WeatherStar3000".to_string(),
             category: "Weather".to_string(),
             description: "Live WeatherStar 3000+ MPEG-TS weather channel".to_string(),
-            logo: String::new(),
+            logo,
         },
     ]
 }
@@ -98,12 +99,14 @@ impl Plugin for WeatherPlugin {
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
         // Offer itself to the Presets page: WeatherStar4000 and
-        // WeatherStar3000 become presets while this plugin is installed.
+        // WeatherStar3000 become presets while this plugin is installed, and
+        // the WeatherStar logo is their channel watermark.
         for preset in weather_presets() {
             register_preset(preset);
         }
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("logos/WeatherStar.png", "image/png", include_bytes!("../web/logos/WeatherStar.png"));
         api.web.serve_embedded("weather.css", "text/css", include_bytes!("../web/weather.css"));
         api.web.serve_embedded("weather.html", "text/html", include_bytes!("../web/weather.html"));
         api.web.serve_embedded("weather.js", "text/javascript", include_bytes!("../web/weather.js"));
