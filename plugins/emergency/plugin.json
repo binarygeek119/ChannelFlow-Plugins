@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.emergency",
   "name": "Emergency Broadcast System",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
@@ -18,6 +18,9 @@
     "storage:write",
     "api:routes",
     "ui:pages"
+  ],
+  "dependencies": [
+    "com.channelflow.weather"
   ],
   "entrypoint": {
     "linux-x86_64": "libchannelflow_plugin_emergency.so",
