@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-holidaychannel"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-news"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "async-trait",
  "axum",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-presets"
-version = "2.0.8"
+version = "2.0.9"
 dependencies = [
  "async-trait",
  "axum",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-weather"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "async-trait",
  "axum",

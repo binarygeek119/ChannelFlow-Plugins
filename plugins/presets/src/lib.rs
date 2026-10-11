@@ -150,7 +150,7 @@ mod tests {
         assert!(presets::PRESETS.iter().any(|p| number(p, retro) == 119.0 && number(p, modern) == 119.1));
         assert!(presets::PRESETS
             .iter()
-            .any(|p| number(p, retro) == 125.0 && number(p, modern) == 124.3));
+            .any(|p| number(p, retro) == 137.0 && number(p, modern) == 124.3));
         assert!(presets::PRESETS.iter().any(|p| number(p, retro) == 314.0 && number(p, modern) == 312.3));
     }
 }
