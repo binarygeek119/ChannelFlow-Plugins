@@ -12,13 +12,41 @@ mod settings;
 use std::sync::Arc;
 
 use axum::Router;
+use channelflow_plugin_api::contrib::PresetContribution;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;
 use channelflow_plugin_api::ui::UiContribution;
+use channelflow_plugin_api::{register_preset, unregister_preset};
 use tokio::sync::Mutex;
 
 use crate::settings::{WeatherSettings, SETTINGS_KEY};
+
+/// The ready-made WeatherStar channels this plugin contributes to the Presets
+/// page. They are registered on load, so they appear only while this plugin
+/// is installed.
+fn weather_presets() -> Vec<PresetContribution> {
+    vec![
+        PresetContribution {
+            id: "channelflow-weatherstar4000".to_string(),
+            plugin_id: "com.channelflow.weather".to_string(),
+            legacy: 124.0,
+            subchannel: 119.6,
+            name: "WeatherStar4000".to_string(),
+            category: "Weather".to_string(),
+            description: "Live WeatherStar 4000+ MPEG-TS weather channel".to_string(),
+        },
+        PresetContribution {
+            id: "channelflow-weatherstar3000".to_string(),
+            plugin_id: "com.channelflow.weather".to_string(),
+            legacy: 124.2,
+            subchannel: 119.7,
+            name: "WeatherStar3000".to_string(),
+            category: "Weather".to_string(),
+            description: "Live WeatherStar 3000+ MPEG-TS weather channel".to_string(),
+        },
+    ]
+}
 
 /// The shipped `plugin.json` is the single source of truth for the manifest.
 fn manifest() -> PluginManifest {
@@ -67,6 +95,11 @@ impl Plugin for WeatherPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // Offer itself to the Presets page: WeatherStar4000 and
+        // WeatherStar3000 become presets while this plugin is installed.
+        for preset in weather_presets() {
+            register_preset(preset);
+        }
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
         api.web.serve_embedded("weather.css", "text/css", include_bytes!("../web/weather.css"));
@@ -109,6 +142,11 @@ impl Plugin for WeatherPlugin {
     }
 
     fn on_unload(&mut self) {
+        // The WeatherStar presets disappear with it: they are in the preset
+        // list only while this plugin is installed.
+        for preset in weather_presets() {
+            unregister_preset(&preset.id);
+        }
         self.state = None;
     }
 
