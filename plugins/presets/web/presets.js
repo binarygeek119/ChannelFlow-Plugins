@@ -20,27 +20,47 @@ function renderWeatherStarSwitch() {
     row.replaceChildren();
     return;
   }
+  // Exactly one WeatherStar is a preset row; the switch picks which. Off =
+  // WeatherStar4000, on = WeatherStar3000.
+  const on = presetWeatherStar === "channelflow-weatherstar3000";
   row.hidden = false;
+  row.className = "presets-modes presets-dial-switch";
   row.replaceChildren();
   const label = document.createElement("span");
   label.className = "field-label";
   label.textContent = "WeatherStar";
   row.appendChild(label);
-  options.forEach((option) => {
-    const item = document.createElement("label");
-    item.className = "presets-mode-toggle";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "weatherstar";
-    input.value = option.id;
-    input.checked = option.id === presetWeatherStar;
-    input.addEventListener("change", () => {
-      if (input.checked) loadPresets(presetMode, option.id);
-    });
-    item.appendChild(input);
-    item.appendChild(document.createTextNode(` ${option.name} (${option.retro}/${option.modern})`));
-    row.appendChild(item);
+  const wrap = document.createElement("span");
+  wrap.className = "switch-with-labels";
+  const left = document.createElement("span");
+  left.className = "switch-label";
+  left.textContent = "4000";
+  const right = document.createElement("span");
+  right.className = "switch-label";
+  right.textContent = "3000";
+  const sw = document.createElement("label");
+  sw.className = "switch";
+  sw.title = "WeatherStar4000 ⇄ WeatherStar3000";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = on;
+  input.addEventListener("change", () => {
+    loadPresets(
+      presetMode,
+      input.checked ? "channelflow-weatherstar3000" : "channelflow-weatherstar4000"
+    );
   });
+  const track = document.createElement("span");
+  track.className = "track";
+  const thumb = document.createElement("span");
+  thumb.className = "thumb";
+  sw.appendChild(input);
+  sw.appendChild(track);
+  sw.appendChild(thumb);
+  wrap.appendChild(left);
+  wrap.appendChild(sw);
+  wrap.appendChild(right);
+  row.appendChild(wrap);
 }
 
 function renderPresets() {

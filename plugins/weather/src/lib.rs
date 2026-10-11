@@ -39,8 +39,8 @@ fn weather_presets() -> Vec<PresetContribution> {
         PresetContribution {
             id: "channelflow-weatherstar3000".to_string(),
             plugin_id: "com.channelflow.weather".to_string(),
-            legacy: 124.2,
-            subchannel: 119.7,
+            legacy: 124.0,
+            subchannel: 119.6,
             name: "WeatherStar3000".to_string(),
             category: "Weather".to_string(),
             description: "Live WeatherStar 3000+ MPEG-TS weather channel".to_string(),
