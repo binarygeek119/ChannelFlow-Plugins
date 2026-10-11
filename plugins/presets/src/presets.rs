@@ -24,7 +24,7 @@ pub const PRESETS: &[Preset] = &[
     Preset { id: "channelflow-retro", legacy: 120.0, subchannel: 119.2, name: "Retro TV", category: "TV Shows", description: "1910–1969 TV and movies (first-episode year for series)" },
     Preset { id: "channelflow-open-swim", legacy: 121.0, subchannel: 119.3, name: "[OpenSwim]", category: "TV Shows", description: "Nick, Disney, Fox Kids, and Cartoon Network style kids TV/movies; any year; TV-PG max" },
     Preset { id: "channelflow-reality", legacy: 122.0, subchannel: 119.4, name: "Flip Television", category: "TV Shows", description: "Reality TV themed shows and movies" },
-    Preset { id: "channelflow-past-tense-news", legacy: 125.0, subchannel: 124.1, name: "Past Tense News", category: "News", description: "Home movies treated as live breaking news" },
+    Preset { id: "channelflow-past-tense-news", legacy: 125.0, subchannel: 124.3, name: "Past Tense News", category: "News", description: "Home movies treated as live breaking news" },
     Preset { id: "channelflow-crime", legacy: 128.0, subchannel: 124.2, name: "Cops And Robbers", category: "TV Shows", description: "Crime and cop themed TV shows and movies (genre or plot)" },
     Preset { id: "channelflow-comedy", legacy: 129.0, subchannel: 124.3, name: "Slappy", category: "TV Shows", description: "Fox network clone: comedy TV and movies with Friday 5–8pm Slappy's Toon Takeover" },
     Preset { id: "channelflow-game-shows", legacy: 130.0, subchannel: 126.1, name: "Winning", category: "TV Shows", description: "Game shows channel" },
