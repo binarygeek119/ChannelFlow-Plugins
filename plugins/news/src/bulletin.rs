@@ -77,6 +77,9 @@ const SECONDS_PER_STORY: f64 = 6.0;
 const MAX_TRACKED_STORIES: usize = 2000;
 /// The anchor's spoken open, after the intro music finishes.
 const ANCHOR_INTRO_SECONDS: f64 = 4.0;
+/// The logo eases up from black at the very start, over the first stretch of the
+/// intro music.
+const INTRO_FADE_SECONDS: f64 = 1.2;
 /// After the anchor's close the desktop cuts to the logo on black while the
 /// outro music plays; once it finishes the picture fades to black over this
 /// many seconds (the video runs on past the music to allow it).
@@ -617,7 +620,8 @@ async fn render_bulletin(
     // the captions, then the mute overlay across the whole screen.
     // The desktop (map, anchor, bars, captions, mute) is only on screen between
     // the intro and the close: before the lead, and again after the close while
-    // the outro music plays, just the FlowWire logo shows over black. The last
+    // the outro music plays, just the FlowWire logo shows over black. The logo
+    // eases up from black as the intro music starts, and the last
     // OUTRO_FADE_SECONDS of the video fade the whole picture to black.
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
@@ -632,13 +636,14 @@ async fn render_bulletin(
          [5:v]scale=1920:1080[mm];\
          [l3][mm]overlay=0:0[desk];\
          [base][desk]overlay=0:0:enable='{desktop}'[v1];\
-         [6:v]scale=560:-1[lg];\
+         [6:v]scale=560:-1,{intro_fade}[lg];\
          [v1][lg]overlay=(W-w)/2:(H-h)/2:enable='{logo}'[v2];\
          [v2]ass='{ass}',fade=t=out:st={fade_start}:d={fade}[final];\
          {audio}",
         total = total,
         desktop = desktop_enable(lead, show_total),
         logo = logo_enable(lead, show_total),
+        intro_fade = logo_fade_in(),
         fade_start = fade_start,
         fade = OUTRO_FADE_SECONDS,
         ass = escape_filter_path(&ass_path),
@@ -820,6 +825,12 @@ fn desktop_enable(lead: f64, show_total: f64) -> String {
 /// plays.
 fn logo_enable(lead: f64, show_total: f64) -> String {
     format!("not(between(t\\,{lead}\\,{show_total}))")
+}
+
+/// The logo eases up from black at the very start of the video, over the opening
+/// of the intro music. The outro brings it back with a hard cut instead.
+fn logo_fade_in() -> String {
+    format!("fade=t=in:st=0:d={INTRO_FADE_SECONDS}")
 }
 
 /// The scrolling-map layer: crop the soft (transparent) right edge off, scale
@@ -1238,6 +1249,17 @@ mod tests {
         assert!(
             OUTRO_FADE_SECONDS > 0.0,
             "the outro needs room to fade to black"
+        );
+    }
+
+    #[test]
+    fn the_logo_eases_up_at_the_start() {
+        // The logo fades in from black over the opening of the intro music
+        // rather than popping straight on.
+        assert_eq!(logo_fade_in(), "fade=t=in:st=0:d=1.2");
+        assert!(
+            INTRO_FADE_SECONDS > 0.0,
+            "the intro logo should ease in, not pop in"
         );
     }
 }
