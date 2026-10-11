@@ -32,7 +32,7 @@ fn holiday_preset() -> PresetContribution {
         category: "Movies".to_string(),
         description: "Seasonal holiday TV and movies; off-season plays The Holiday Channel.mkv"
             .to_string(),
-        logo: String::new(),
+        logo: "/plugin/com.channelflow.holidaychannel/web/logos/HolidayChannel.png".to_string(),
     }
 }
 
@@ -74,6 +74,8 @@ impl Plugin for HolidayChannelPlugin {
         register_preset(holiday_preset());
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
+        api.web
+            .serve_embedded("logos/HolidayChannel.png", "image/png", include_bytes!("../web/logos/HolidayChannel.png"));
         api.web
             .serve_embedded("holiday.css", "text/css", include_bytes!("../web/holiday.css"));
         api.web
