@@ -86,6 +86,11 @@ impl Plugin for CommercialBrainzPlugin {
         };
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
+            // The CommercialBrainz server rejects clients that send no
+            // User-Agent (403 "User-Agent header required"). reqwest's
+            // default agent can go missing on this reduced feature build, so
+            // say who we are, in the format the server asks for.
+            .user_agent("ChannelFlow/2.0.0 (https://github.com/binarygeek119/ChannelFlow)")
             .build()
             .map_err(|error| PluginError::new(format!("building the HTTP client: {error}")))?;
         self.state = Some(Arc::new(CommercialBrainzState {

@@ -75,20 +75,26 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
         Err(_) => json!({ "ok": false, "code": "unreachable", "detail": "Could not reach the server" }),
         Ok(response) => {
             let status = response.status().as_u16();
-            if !(200..=299).contains(&status) {
-                if let Ok(text) = response.text().await {
-                    state.logger.warn(&format!(
-                        "commercialbrainz test saw HTTP {status}: {}",
-                        text.chars().take(200).collect::<String>()
-                    ));
-                } else {
-                    state.logger.warn(&format!("commercialbrainz test saw HTTP {status} (no body)"));
-                }
-            }
-            match status {
-                200..=299 => json!({ "ok": true, "code": "ok", "detail": "Reachable, token accepted" }),
-                401 | 403 => json!({ "ok": false, "code": "auth_failed", "detail": "Server reachable, API token rejected" }),
-                status => json!({ "ok": false, "code": "bad_url", "detail": format!("Unexpected response ({status})") }),
+            if (200..=299).contains(&status) {
+                json!({ "ok": true, "code": "ok", "detail": "Reachable, token accepted" })
+            } else if status == 401 || status == 403 {
+                // Read the server's own message — a rejection can be about the
+                // request itself (a 403 named the missing User-Agent before),
+                // which tells the user far more than "token rejected".
+                let server_detail = response
+                    .text()
+                    .await
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                    .and_then(|value| value.get("detail").and_then(|detail| detail.as_str()).map(str::to_string));
+                json!({
+                    "ok": false,
+                    "code": "auth_failed",
+                    "detail": server_detail
+                        .unwrap_or_else(|| "Server reachable, API token rejected".to_string()),
+                })
+            } else {
+                json!({ "ok": false, "code": "bad_url", "detail": format!("Unexpected response ({status})") })
             }
         }
     };
