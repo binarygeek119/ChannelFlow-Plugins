@@ -382,6 +382,10 @@ fn render_bulletin(
         "0".into(),
         "-movflags".into(),
         "+faststart".into(),
+        // The staging name ends in `.partial`, which ffmpeg cannot use to pick
+        // a container — state it.
+        "-f".into(),
+        "mp4".into(),
         staging.to_string_lossy().to_string(),
     ];
 
