@@ -71,6 +71,8 @@ impl Plugin for EmergencyPlugin {
         api.web.serve_embedded("emergency.css", "text/css", include_bytes!("../web/emergency.css"));
         api.web.serve_embedded("emergency.html", "text/html", include_bytes!("../web/emergency.html"));
         api.web.serve_embedded("emergency.js", "text/javascript", include_bytes!("../web/emergency.js"));
+        // v1.0.0's EBS alert + offline media, for the channel's graphics.
+        serve_media(&api);
 
         let settings = match api
             .storage
@@ -144,6 +146,28 @@ impl Default for EmergencyPlugin {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Publish the v1.0.0 EBS media, under
+/// `/plugin/com.channelflow.emergency/web/media/EBS/<file>`.
+fn serve_media(api: &channelflow_plugin_api::plugin::PluginApi) {
+    macro_rules! media {
+        ($file:literal, $mime:literal) => {
+            api.web.serve_embedded(
+                concat!("media/EBS/", $file),
+                $mime,
+                include_bytes!(concat!("../web/media/EBS/", $file)),
+            )
+        };
+    }
+    media!("ebs_fullscreen.png", "image/png");
+    media!("ebs_strip.png", "image/png");
+    media!("offline.jpg", "image/jpeg");
+    media!("offline_usa_16_9.jpg", "image/jpeg");
+    media!("offline_usa_4_3.jpg", "image/jpeg");
+    media!("offline_world_16_9.jpg", "image/jpeg");
+    media!("offline_world_4_3.jpg", "image/jpeg");
+    media!("offlineusa.jpg", "image/jpeg");
 }
 
 #[cfg(test)]

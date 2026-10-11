@@ -1,4 +1,29 @@
 const EMERGENCY_API = "/api/plugins/com.channelflow.emergency";
+const EMERGENCY_WEB = "/plugin/com.channelflow.emergency/web";
+
+// The EBS media the channel uses, carried over from v1.0.0.
+const EBS_MEDIA = [
+  { file: "media/EBS/ebs_fullscreen.png", label: "Fullscreen alert", wide: true },
+  { file: "media/EBS/ebs_strip.png", label: "Alert strip" },
+  { file: "media/EBS/offline_usa_16_9.jpg", label: "Offline screen — USA 16:9", wide: true },
+  { file: "media/EBS/offline_usa_4_3.jpg", label: "Offline screen — USA 4:3" },
+  { file: "media/EBS/offline_world_16_9.jpg", label: "Offline screen — World 16:9", wide: true },
+  { file: "media/EBS/offline_world_4_3.jpg", label: "Offline screen — World 4:3" },
+  { file: "media/EBS/offline.jpg", label: "Offline screen" },
+  { file: "media/EBS/offlineusa.jpg", label: "Offline screen — USA" },
+];
+
+function renderEbsMedia() {
+  const box = $("ebs-media");
+  if (!box) return;
+  box.innerHTML = EBS_MEDIA.map(
+    (item) =>
+      `<figure class="ebs-media-item${item.wide ? " wide" : ""}">` +
+      `<img src="${EMERGENCY_WEB}/${item.file.split("/").map(encodeURIComponent).join("/")}" alt="${escapeHtml(item.label)}" loading="lazy">` +
+      `<figcaption>${escapeHtml(item.label)}</figcaption>` +
+      `</figure>`
+  ).join("");
+}
 
 function emergencyDisplayLabel(value) {
   const labels = {
@@ -39,6 +64,7 @@ function collectEmergencySettings() {
 }
 
 async function loadEmergency() {
+  renderEbsMedia();
   try {
     const data = await request(EMERGENCY_API + "/");
     const settings = data.settings || {};

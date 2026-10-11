@@ -1,1 +1,31 @@
-/* page styles live here */
+/* Emergency Broadcast System page. */
+.ebs-media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 1rem;
+    margin-top: 0.4rem;
+}
+.ebs-media-item {
+    margin: 0;
+    padding: 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+}
+.ebs-media-item.wide {
+    grid-column: span 2;
+}
+.ebs-media-item img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 12rem;
+    object-fit: contain;
+    background: #101010;
+    border-radius: 0.25rem;
+}
+.ebs-media-item figcaption {
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: center;
+}
