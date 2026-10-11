@@ -120,9 +120,10 @@ impl MediaSource for LocalPlugin {
     fn connection_fields(&self) -> Vec<FieldSpec> {
         vec![
             FieldSpec::text("name", "Connection name").required(),
-            FieldSpec::repeated("folders", "Folder paths").required(),
-            FieldSpec::select(
-                "media_kind",
+            FieldSpec::pair_list(
+                "folders",
+                "Folder paths",
+                "folder_kinds",
                 "What kind of media",
                 vec![
                     ("movies".to_string(), "Movies".to_string()),
@@ -161,11 +162,10 @@ impl MediaSource for LocalPlugin {
         }
     }
 
-    async fn list_libraries(&self, connection: &Connection, _api_key: &str) -> Vec<Library> {
-        let kind = connection.media_kind.as_deref().unwrap_or("movies");
+    async fn list_libraries(&self, _connection: &Connection, _api_key: &str) -> Vec<Library> {
         vec![Library {
             remote_id: "local".to_string(),
-            name: kind.to_string(),
+            name: "local".to_string(),
             collection_type: None,
         }]
     }
@@ -189,17 +189,20 @@ impl MediaSource for LocalPlugin {
             report.errors += 1;
             return report;
         }
-        let library_name = ctx
-            .enabled_libraries
-            .first()
-            .map(|library| library.name.clone())
-            .unwrap_or_else(|| ctx.connection.media_kind.as_deref().unwrap_or("movies").to_string());
+        let kinds = ctx.connection.folder_kinds.clone();
         let mut items = Vec::new();
-        for folder in &mut folders {
+        for (index, folder) in folders.iter_mut().enumerate() {
             if folder.trim().is_empty() {
                 continue;
             }
-            let scanned = scanner::scan_folder(folder, &library_name);
+            // Each folder has its own "what kind of media"; fall back to the
+            // connection-wide media_kind (or movies) when unset.
+            let kind = kinds
+                .get(index)
+                .filter(|kind| !kind.trim().is_empty())
+                .cloned()
+                .unwrap_or_else(|| ctx.connection.media_kind.clone().unwrap_or_else(|| "movies".to_string()));
+            let scanned = scanner::scan_folder(folder, &kind);
             for scanned_item in scanned {
                 let mut item = scanned_item.catalog;
                 if let Some(poster) = scanned_item.poster {
@@ -211,7 +214,7 @@ impl MediaSource for LocalPlugin {
                 items.push(item);
             }
         }
-        match catalog.replace_library(ctx.connection_id, &library_name, items).await {
+        match catalog.replace_library(ctx.connection_id, "local", items).await {
             Ok(_) => {}
             Err(error) => {
                 tracing::warn!(error = %error, "local: could not report the scan");

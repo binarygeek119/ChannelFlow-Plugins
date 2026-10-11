@@ -185,7 +185,7 @@ dependencies = [
 [[package]]
 name = "channelflow-plugin-api"
 version = "2.0.0"
-source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#d79ba3091cd1d5f6cda4920a0233c001cf82aafb"
+source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#6c931ec104b71b720a625d630a38d829a7bd9440"
 dependencies = [
  "async-trait",
  "axum",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-jellyfin"
-version = "2.0.24"
+version = "2.0.25"
 dependencies = [
  "async-trait",
  "axum",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-local"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "axum",

@@ -112,7 +112,7 @@ async function createLocal(event) {
       method: "POST",
       body: JSON.stringify({
         kind: "local",
-        config: { name, folders: [path], media_kind: kind },
+        config: { name, folders: [path], folder_kinds: [kind] },
       }),
     });
     if (result) result.textContent = "Added. Run Sync to scan the folder into the Media catalog.";

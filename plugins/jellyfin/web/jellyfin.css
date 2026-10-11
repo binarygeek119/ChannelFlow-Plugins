@@ -60,3 +60,8 @@
 /* Repeatable path inputs (Local Files, Past Tense News). */
 .repeat-list { display: flex; flex-direction: column; gap: 0.35rem; }
 .repeat-row input { width: 100%; }
+
+/* Folder row: path + its kind dropdown. */
+.repeat-row-pair { display: flex; gap: 0.4rem; align-items: center; }
+.repeat-row-pair .pair-path { flex: 1; min-width: 0; }
+.repeat-row-pair .pair-kind { flex: 0 0 auto; }

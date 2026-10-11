@@ -577,6 +577,42 @@ function renderSourceField(field, config) {
     textarea.placeholder = "/media -> /mnt/library";
     textarea.value = remapsToLines(value);
     wrap.appendChild(textarea);
+  } else if (field.kind === "pair_list") {
+    // Rows of (path input, kind dropdown) so each folder has its own kind.
+    const container = document.createElement("div");
+    container.id = fieldElementId(field.key);
+    container.className = "repeat-list";
+    const paths = Array.isArray(value) ? value.slice() : value ? [String(value)] : [""];
+    const kinds = Array.isArray(config && config[field.second_key])
+      ? config[field.second_key]
+      : [];
+    const addRow = (path, kind) => {
+      const row = document.createElement("div");
+      row.className = "repeat-row-pair";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "pair-path";
+      input.value = path || "";
+      const select = document.createElement("select");
+      select.className = "pair-kind";
+      (field.options || []).forEach((pair) => {
+        const option = document.createElement("option");
+        option.value = Array.isArray(pair) ? pair[0] : pair.value;
+        option.textContent = Array.isArray(pair) ? pair[1] : pair.label;
+        select.appendChild(option);
+      });
+      select.value = kind || (field.options && field.options[0] && field.options[0][0]) || "";
+      row.append(input, select);
+      container.appendChild(row);
+    };
+    paths.forEach((path, index) => addRow(path, kinds[index]));
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "ghost";
+    add.textContent = "Add another folder";
+    add.addEventListener("click", () => addRow("", ""));
+    wrap.appendChild(container);
+    wrap.appendChild(add);
   } else if (field.kind === "repeated") {
     const container = document.createElement("div");
     container.id = fieldElementId(field.key);
@@ -638,6 +674,19 @@ function currentFormConfig() {
   const config = { enabled: $("ms-enabled").checked };
   (source.fields || []).forEach((field) => {
     if (field.kind === "action") return;
+    if (field.kind === "pair_list") {
+      const container = $(fieldElementId(field.key));
+      if (container) {
+        const inputs = Array.from(container.querySelectorAll(".pair-path"));
+        const selects = Array.from(container.querySelectorAll(".pair-kind"));
+        config[field.key] = inputs.map((input) => input.value.trim());
+        config[field.second_key] = selects.map((select) => select.value);
+      } else {
+        config[field.key] = [];
+        config[field.second_key] = [];
+      }
+      return;
+    }
     if (field.kind === "repeated") {
       const container = $(fieldElementId(field.key));
       config[field.key] = container
