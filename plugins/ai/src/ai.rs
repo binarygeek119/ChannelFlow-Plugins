@@ -327,11 +327,7 @@ fn new_provider(body: &Value) -> Result<AiProvider, AiError> {
         id: Uuid::new_v4().to_string(),
         name: input.name,
         priority: input.priority,
-        base_url: if input.ollama && input.base_url.trim().is_empty() {
-            DEFAULT_OLLAMA_BASE_URL.to_string()
-        } else {
-            input.base_url
-        },
+        base_url: input.base_url,
         api_key: input.api_key,
         chat_model: input.chat_model,
         tts_model: input.tts_model,
@@ -403,9 +399,10 @@ fn merge(mut provider: AiProvider, body: &Value) -> Result<AiProvider, AiError> 
 /// non-empty. The missing scheme is the mistake worth catching:
 /// `api.openai.com/v1` reads fine and cannot be requested.
 fn cleaned(mut provider: AiProvider) -> Result<AiProvider, AiError> {
-    // An Ollama endpoint needs no key and defaults to the local gateway.
+    // An Ollama endpoint needs no key and defaults to the local gateway when
+    // the URL was never chosen (still the OpenAI default or empty).
     if provider.ollama {
-        if provider.base_url.trim().is_empty() {
+        if provider.base_url.trim().is_empty() || provider.base_url == default_base_url() {
             provider.base_url = DEFAULT_OLLAMA_BASE_URL.to_string();
         }
         provider.api_key.clear();
