@@ -16,7 +16,7 @@ use axum::{
     extract::{Path as AxumPath, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -38,6 +38,9 @@ pub fn router(state: Arc<OffAirState>) -> Router {
         .route("/", get(get_settings).put(put_settings))
         .route("/slates/{variant}", post(upload_slate).delete(delete_slate))
         .route("/slates/{variant}/image", get(slate_image))
+        .route("/music-packs", get(music_packs_list))
+        .route("/music-packs/{id}/download", post(music_pack_download))
+        .route("/music-packs/{id}", delete(music_pack_delete))
         .with_state(state)
 }
 
@@ -240,4 +243,45 @@ async fn slate_image(
 
 fn fail(status: StatusCode, message: String) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
+}
+
+// ── Music packs ────────────────────────────────────────────────────────────
+
+/// The pack list the Off Air page shows, with the active pack and a sample
+/// track the off-air background music would use.
+async fn music_packs_list(State(state): State<Arc<OffAirState>>) -> Response {
+    let date = chrono::Local::now().date_naive();
+    Json(json!({
+        "packs": crate::music_pack::list_status(&state.config_root, date),
+        "active": crate::music_pack::active_pack_id(&state.config_root, date),
+        "active_track": crate::music_pack::pick_track(&state.config_root, date)
+            .map(|path| path.to_string_lossy().to_string()),
+    }))
+    .into_response()
+}
+
+/// Download a pack from Google Drive and install its audio.
+async fn music_pack_download(
+    State(state): State<Arc<OffAirState>>,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
+    let pack = crate::music_pack::catalog()
+        .into_iter()
+        .find(|pack| pack.id == id);
+    let Some(pack) = pack else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "unknown pack" }))).into_response();
+    };
+    match crate::music_pack::download(&state.config_root, &state.http, &pack).await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(error) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+/// Remove a pack's downloaded audio.
+async fn music_pack_delete(
+    State(state): State<Arc<OffAirState>>,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
+    crate::music_pack::delete(&state.config_root, &id);
+    Json(json!({ "ok": true })).into_response()
 }

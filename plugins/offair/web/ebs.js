@@ -157,6 +157,78 @@ async function saveOffAir(event) {
   }
 }
 
+// ── Music packs ────────────────────────────────────────────────────────────
+
+async function loadMusicPacks() {
+  const list = $("music-packs-list");
+  if (!list) return;
+  const note = $("music-packs-note");
+  try {
+    const data = await request(OFFAIR_API + "/music-packs");
+    const active = data.active || "";
+    list.replaceChildren();
+    (data.packs || []).forEach((pack) => {
+      const card = document.createElement("div");
+      card.className = "music-pack" + (pack.active ? " active" : "") +
+        (pack.installed ? "" : " idle");
+      const name = document.createElement("strong");
+      name.textContent = pack.name + (pack.active ? " · active" : "");
+      const meta = document.createElement("div");
+      meta.className = "music-pack-meta";
+      meta.textContent = `${pack.installed ? `${pack.track_count} track${pack.track_count === 1 ? "" : "s"}` : "not downloaded"} — ${pack.plays_when}`;
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      if (pack.installed) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "ghost danger";
+        del.textContent = "Delete";
+        del.addEventListener("click", () => deleteMusicPack(pack.id));
+        actions.appendChild(del);
+      } else {
+        const download = document.createElement("button");
+        download.type = "button";
+        download.className = "ghost";
+        download.textContent = "Download";
+        download.addEventListener("click", () => downloadMusicPack(pack.id));
+        actions.appendChild(download);
+      }
+      card.append(name, meta, actions);
+      list.appendChild(card);
+    });
+    if (data.active_track && note) {
+      note.textContent = `Off-air music would play: ${data.active_track}`;
+    } else if (note) {
+      note.textContent = "No pack downloaded yet — download one to give off-air music a source.";
+    }
+  } catch (error) {
+    if (note) note.textContent = error.message;
+  }
+}
+
+async function downloadMusicPack(id) {
+  const note = $("music-packs-note");
+  if (note) note.textContent = `Downloading ${id}…`;
+  try {
+    const data = await request(`${OFFAIR_API}/music-packs/${encodeURIComponent(id)}/download`, { method: "POST" });
+    if (note) note.textContent = data.error || `${id} ready.`;
+    await loadMusicPacks();
+  } catch (error) {
+    if (note) note.textContent = error.message;
+  }
+}
+
+async function deleteMusicPack(id) {
+  if (!confirm(`Delete the ${id} music pack and its audio?`)) return;
+  try {
+    await request(`${OFFAIR_API}/music-packs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadMusicPacks();
+  } catch (error) {
+    const note = $("music-packs-note");
+    if (note) note.textContent = error.message;
+  }
+}
+
 {
   const form = $("ebs-form");
   if (form) form.addEventListener("submit", saveOffAir);
@@ -174,4 +246,4 @@ async function saveOffAir(event) {
   });
 }
 
-CF.define("ebs", { onShow: loadOffAir });
+CF.define("ebs", { onShow: () => { loadOffAir(); loadMusicPacks(); } });

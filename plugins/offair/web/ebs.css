@@ -12,3 +12,20 @@
     margin: 0.4rem 0;
 }
 .field-note.bad { color: #ff8787; }
+
+/* Music packs */
+.music-packs { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.4rem 0; }
+.music-pack {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.45rem 0.6rem;
+    background: var(--page-bg);
+}
+.music-pack strong { flex: 0 0 9rem; }
+.music-pack.active { border-color: var(--accent); }
+.music-pack.active strong { color: var(--accent); }
+.music-pack .music-pack-meta { flex: 1 1 auto; font-size: 0.8rem; color: var(--muted); }
+.music-pack.idle .music-pack-meta { color: var(--muted); }

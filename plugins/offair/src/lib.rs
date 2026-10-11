@@ -9,8 +9,10 @@
 //! plugin and the tab appears.
 
 mod api;
+mod music_pack;
 mod settings;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Router;
@@ -60,6 +62,11 @@ pub struct OffAirState {
     /// The plugin's own config folder (`<config>/plugins/{id}`): custom
     /// off-air slate uploads live under `slates/<variant>.png`.
     pub dir: std::path::PathBuf,
+    /// The base config root (`<config>`), where music packs live under
+    /// `<config>/music/<id>`.
+    pub config_root: PathBuf,
+    /// Outbound HTTP, for downloading music packs from Google Drive.
+    pub http: reqwest::Client,
 }
 
 impl OffAirPlugin {
@@ -103,11 +110,24 @@ impl Plugin for OffAirPlugin {
                 .map_err(|error| PluginError::new(error.to_string()))?,
             None => OffAirSettings::default(),
         };
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .map_err(|error| PluginError::new(format!("building the HTTP client: {error}")))?;
+        // `api.dir` is `<config>/plugins/{id}`, so its grandparent is `<config>`.
+        let config_root = api
+            .dir
+            .parent()
+            .and_then(|plugins| plugins.parent())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| api.dir.clone());
         self.state = Some(Arc::new(OffAirState {
             settings: Mutex::new(settings),
             storage: api.storage.clone(),
             logger: api.logger.clone(),
             dir: api.dir.clone(),
+            config_root,
+            http,
         }));
         api.logger.info("loaded");
         Ok(())

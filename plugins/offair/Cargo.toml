@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-offair"
-version = "2.0.7"
+version = "2.0.8"
 edition = "2021"
 license = "MIT"
 description = "Off Air — what plays when a channel has no scheduled media"
@@ -14,13 +14,13 @@ crate-type = ["rlib", "cdylib"]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["json"] }
 channelflow-plugin-api = { git = "https://github.com/binarygeek119/ChannelFlow", branch = "2.0.0" }
+chrono = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing = "0.1"
-
-[dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "charset", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 [features]
 # Builds the exported ABI entrypoint into the cdylib; the compiled-in base
 # leaves it off so plugins sharing a symbol name do not collide.
