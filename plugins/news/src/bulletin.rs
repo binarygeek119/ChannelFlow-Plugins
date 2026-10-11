@@ -390,7 +390,7 @@ fn render_bulletin(
          [1:v]scale=6480:1080[mp];\
          [bg][mp]overlay=x='-mod(t*150,6480)':y=0[m1];\
          [m1][mp]overlay=x='-mod(t*150,6480)+6480':y=0[m2];\
-         [2:v]scale=520:-1[p];\
+         [2:v]scale=760:760[p];\
          [m2][p]overlay=(W-w)/2:(H-h)/2[l1];\
          [3:v]scale=1920:1080[hb];\
          [l1][hb]overlay=0:0[l2];\
