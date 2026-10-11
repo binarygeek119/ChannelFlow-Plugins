@@ -32,6 +32,7 @@ fn holiday_preset() -> PresetContribution {
         category: "Movies".to_string(),
         description: "Seasonal holiday TV and movies; off-season plays The Holiday Channel.mkv"
             .to_string(),
+        logo: String::new(),
     }
 }
 

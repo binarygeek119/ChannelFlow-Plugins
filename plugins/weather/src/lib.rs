@@ -35,6 +35,7 @@ fn weather_presets() -> Vec<PresetContribution> {
             name: "WeatherStar4000".to_string(),
             category: "Weather".to_string(),
             description: "Live WeatherStar 4000+ MPEG-TS weather channel".to_string(),
+            logo: String::new(),
         },
         PresetContribution {
             id: "channelflow-weatherstar3000".to_string(),
@@ -44,6 +45,7 @@ fn weather_presets() -> Vec<PresetContribution> {
             name: "WeatherStar3000".to_string(),
             category: "Weather".to_string(),
             description: "Live WeatherStar 3000+ MPEG-TS weather channel".to_string(),
+            logo: String::new(),
         },
     ]
 }

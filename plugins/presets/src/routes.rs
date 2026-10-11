@@ -150,7 +150,11 @@ async fn list_presets(
             name: &preset.name,
             category: &preset.category,
             description: &preset.description,
-            logo: contributed_logo(&preset.id),
+            logo: if preset.logo.is_empty() {
+                contributed_logo(&preset.id)
+            } else {
+                &preset.logo
+            },
         })
         .collect();
     // The two WeatherStars are one channel, not two: when both are contributed

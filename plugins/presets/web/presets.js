@@ -12,9 +12,11 @@ let presetMode = "retro";
 let presetWeatherStar = null;
 let presetWeatherStarOptions = null;
 
-// A preset's v1 logo URL, from its images-root-relative path.
+// A preset's logo URL: absolute when its owning plugin serves it, else
+// pieced onto this plugin's web root.
 function presetLogoUrl(logo) {
   if (!logo) return null;
+  if (logo.startsWith("/")) return logo;
   const encoded = logo.split("/").map((part) => encodeURIComponent(part)).join("/");
   return `${PRESETS_WEB}/${encoded}`;
 }

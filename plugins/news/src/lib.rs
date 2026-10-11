@@ -37,6 +37,7 @@ fn flowwire_preset() -> PresetContribution {
         name: "FlowWire News".to_string(),
         category: "News".to_string(),
         description: "Live RSS news channel with optional TTS".to_string(),
+        logo: "/plugin/com.channelflow.news/web/logos/FlowWire.png".to_string(),
     }
 }
 
@@ -92,6 +93,7 @@ impl Plugin for NewsPlugin {
         register_preset(flowwire_preset());
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("logos/FlowWire.png", "image/png", include_bytes!("../web/logos/FlowWire.png"));
         api.web.serve_embedded("news.css", "text/css", include_bytes!("../web/news.css"));
         api.web.serve_embedded("news.html", "text/html", include_bytes!("../web/news.html"));
         api.web.serve_embedded("news.js", "text/javascript", include_bytes!("../web/news.js"));
