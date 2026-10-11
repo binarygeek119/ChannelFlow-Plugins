@@ -25,6 +25,7 @@ const HOLIDAY_PRESET_ID: &str = "channelflow-holiday";
 fn holiday_preset() -> PresetContribution {
     PresetContribution {
         id: HOLIDAY_PRESET_ID.to_string(),
+        plugin_id: "com.channelflow.holidaychannel".to_string(),
         legacy: 207.0,
         subchannel: 203.4,
         name: "The Holiday Channel".to_string(),

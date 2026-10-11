@@ -108,17 +108,26 @@ async fn list_presets(
         })
         .collect();
     // The ready-made channels other plugins contribute (The Holiday Channel
-    // registers itself here on load) — they are only present while that plugin
-    // is installed.
+    // registers itself here on load). They are only listed while their owning
+    // plugin is actually installed.
+    let installed = match state.core.installed_plugins().await {
+        Ok(installed) => installed.into_iter().collect::<std::collections::HashSet<_>>(),
+        Err(_) => std::collections::HashSet::new(),
+    };
     let contributed = channelflow_plugin_api::contributed_presets();
-    rows.extend(contributed.iter().map(|preset| PresetRow {
-        id: &preset.id,
-        legacy: preset.legacy,
-        subchannel: preset.subchannel,
-        name: &preset.name,
-        category: &preset.category,
-        description: &preset.description,
-    }));
+    rows.extend(
+        contributed
+            .iter()
+            .filter(|preset| installed.contains(&preset.plugin_id))
+            .map(|preset| PresetRow {
+                id: &preset.id,
+                legacy: preset.legacy,
+                subchannel: preset.subchannel,
+                name: &preset.name,
+                category: &preset.category,
+                description: &preset.description,
+            }),
+    );
     let presets: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| preset_row_json(PresetRow {
