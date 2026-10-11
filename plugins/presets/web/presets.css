@@ -1,4 +1,13 @@
 /* Presets page: the ready-made channel list. */
+.preset-logo { width: 4.4rem; padding: 0.3rem 0.6rem 0.3rem 0; }
+.preset-logo img {
+    display: block;
+    max-width: 4.4rem;
+    height: 2.2rem;
+    object-fit: contain;
+    border-radius: 0.25em;
+    background: #141414;
+}
 .presets-modes {
     display: flex;
     align-items: center;

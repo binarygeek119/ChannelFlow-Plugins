@@ -66,6 +66,8 @@ impl Plugin for PresetsPlugin {
         api.web.serve_embedded("presets.css", "text/css", include_bytes!("../web/presets.css"));
         api.web.serve_embedded("presets.html", "text/html", include_bytes!("../web/presets.html"));
         api.web.serve_embedded("presets.js", "text/javascript", include_bytes!("../web/presets.js"));
+        // v1.0.0's channel artwork, used as each preset's logo/watermark.
+        serve_logos(&api);
         self.state = Some(Arc::new(PresetsState {
             core: api.core.clone(),
         }));
@@ -111,6 +113,40 @@ impl Default for PresetsPlugin {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Publish the v1.0.0 channel artwork the presets reference, under
+/// `/plugin/com.channelflow.presets/web/logos/<path>`.
+fn serve_logos(api: &channelflow_plugin_api::plugin::PluginApi) {
+    macro_rules! logo {
+        ($file:literal) => {
+            api.web.serve_embedded(
+                concat!("logos/", $file),
+                "image/png",
+                include_bytes!(concat!("../web/logos/", $file)),
+            )
+        };
+    }
+    logo!("Shows/FlashBack_TV.png");
+    logo!("Shows/Retro_TV.png");
+    logo!("Shows/[open_swim].png");
+    logo!("Shows/Flip_Television.png");
+    logo!("Shows/cops_and_robbers.png");
+    logo!("Shows/Slappy.png");
+    logo!("Shows/winning.png");
+    logo!("Shows/GET_LEARNEDED.png");
+    logo!("Shows/YouTube_TV.png");
+    logo!("News/Past_Tense_News.png");
+    logo!("News/FlowWire.png");
+    logo!("Movies/Creature_Double_Feature.png");
+    logo!("Movies/Hero_TV.png");
+    logo!("Movies/That's_Funny.png");
+    logo!("Music Videos Channels/The-Parody-Channel.png");
+    logo!("Music Videos Channels/Rap-On-Tap.png");
+    logo!("Music Videos Channels/HeadPhone_Jack.png");
+    logo!("Weather/WeatherStar4000.png");
+    logo!("Weather/WeatherStar3000.png");
+    logo!("The_Holiday_Channel/The Holiday Channel-plane.png");
 }
 
 #[cfg(test)]

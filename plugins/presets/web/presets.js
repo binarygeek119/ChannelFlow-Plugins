@@ -4,12 +4,45 @@
 // shortcut — never the only way to add channels.
 
 const PRESETS_ROUTE = "/api/plugins/com.channelflow.presets/presets";
+const PRESETS_WEB = "/plugin/com.channelflow.presets/web";
 let presetRows = [];
 let presetMode = "retro";
 // The selected WeatherStar (channelflow-weatherstar4000/3000) and the switch
 // options, provided only while both are contributed (Weather plugin installed).
 let presetWeatherStar = null;
 let presetWeatherStarOptions = null;
+
+// A preset's v1 logo URL, from its images-root-relative path.
+function presetLogoUrl(logo) {
+  if (!logo) return null;
+  const encoded = logo.split("/").map((part) => encodeURIComponent(part)).join("/");
+  return `${PRESETS_WEB}/${encoded}`;
+}
+
+function logoCell(logo) {
+  const url = presetLogoUrl(logo);
+  return url
+    ? `<td class="preset-logo"><img src="${escapeHtml(url)}" alt="" loading="lazy" title="Watermark logo"></td>`
+    : "<td class=\"preset-logo\"></td>";
+}
+
+// A preset's logo as a data URL, to upload as the created channel's watermark.
+async function logoDataUrl(logo) {
+  const url = presetLogoUrl(logo);
+  if (!url) return null;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    return null;
+  }
+}
 
 function renderWeatherStarSwitch() {
   const row = $("weatherstar-modes");
@@ -71,13 +104,14 @@ function renderPresets() {
   if (count) count.textContent = `${presetRows.length} channel preset(s)`;
   list.innerHTML =
     `<table class="data-table">` +
-    `<thead><tr><th>Ch</th><th>Name</th><th>Type</th><th>Description</th><th></th></tr></thead>` +
+    `<thead><tr><th>Ch</th><th>Logo</th><th>Name</th><th>Type</th><th>Description</th><th></th></tr></thead>` +
     `<tbody>` +
     presetRows
       .map(
         (preset) =>
           `<tr>` +
           `<td>${escapeHtml(String(preset.number))}</td>` +
+          logoCell(preset.logo) +
           `<td><strong>${escapeHtml(preset.name)}</strong></td>` +
           `<td>${escapeHtml(preset.category || "")}</td>` +
           `<td>${escapeHtml(preset.description || "")}</td>` +
@@ -140,14 +174,31 @@ async function applyPresets() {
   let skipped = 0;
   for (const preset of missing) {
     try {
+      const payload = {
+        number: preset.number,
+        name: preset.name,
+        description: preset.description,
+        enabled: true,
+      };
+      // The v1 logo becomes the created channel's watermark.
+      const dataUrl = await logoDataUrl(preset.logo);
+      if (dataUrl) {
+        payload.watermark = {
+          image_data: dataUrl,
+          position: "bottom-right",
+          offset_x: 12,
+          offset_y: 12,
+          scale: 100,
+          opacity: 100,
+          fade_before_break: false,
+          fade_back_after_break: false,
+          fade_back_delay_seconds: 5,
+          fade_duration_seconds: 1.5,
+        };
+      }
       await request("/api/channels", {
         method: "POST",
-        body: JSON.stringify({
-          number: preset.number,
-          name: preset.name,
-          description: preset.description,
-          enabled: true,
-        }),
+        body: JSON.stringify(payload),
       });
       created += 1;
     } catch (error) {

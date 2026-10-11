@@ -70,6 +70,19 @@ struct PresetRow<'a> {
     name: &'a str,
     category: &'a str,
     description: &'a str,
+    /// The v1.0.0 artwork, relative to this plugin's web root, or "".
+    logo: &'a str,
+}
+
+/// The logo a contributed preset uses (the presets plugin hosts the v1 set).
+fn contributed_logo(id: &str) -> &'static str {
+    match id {
+        "channelflow-live-news" => "logos/News/FlowWire.png",
+        "channelflow-weatherstar4000" => "logos/Weather/WeatherStar4000.png",
+        "channelflow-weatherstar3000" => "logos/Weather/WeatherStar3000.png",
+        "channelflow-holiday" => "logos/The_Holiday_Channel/The Holiday Channel-plane.png",
+        _ => "",
+    }
 }
 
 fn preset_row_json(
@@ -89,6 +102,7 @@ fn preset_row_json(
         "name": row.name,
         "category": row.category,
         "description": row.description,
+        "logo": row.logo,
         "exists": exists,
     })
 }
@@ -115,6 +129,7 @@ async fn list_presets(
             name: preset.name,
             category: preset.category,
             description: preset.description,
+            logo: preset.logo,
         })
         .collect();
     // The ready-made channels other plugins contribute (The Holiday Channel
@@ -135,6 +150,7 @@ async fn list_presets(
             name: &preset.name,
             category: &preset.category,
             description: &preset.description,
+            logo: contributed_logo(&preset.id),
         })
         .collect();
     // The two WeatherStars are one channel, not two: when both are contributed
@@ -188,6 +204,7 @@ async fn list_presets(
             name: row.name,
             category: row.category,
             description: row.description,
+            logo: row.logo,
         }, &channels, mode))
         .collect();
     Json(json!({
