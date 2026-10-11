@@ -1,9 +1,11 @@
 /* page styles live here */
 
 /* On/off rows: the label sits on the left, the switch on the right, both
-   centered on one line. Mirrors the switch rows the other plugins use. */
-.news-toggle {
+   centered on one line. The base lays every <label> out as a column, so the
+   row direction and the label text are set explicitly here. */
+label.news-toggle {
     display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
@@ -11,9 +13,16 @@
     border-top: 1px solid var(--border);
     cursor: pointer;
 }
-.field-label + .news-toggle { border-top: none; padding-top: 0.15rem; }
-.news-toggle-text { font-size: 0.9rem; line-height: 1.35; }
-.news-toggle-text code { font-size: 0.82rem; }
+.field-label + label.news-toggle { border-top: none; padding-top: 0.15rem; }
+label.news-toggle > .news-toggle-text {
+    font-size: 0.9rem;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.35;
+    color: var(--text);
+}
+label.news-toggle > .news-toggle-text code { font-size: 0.82rem; }
 
 .switch { position: relative; width: 2.5rem; height: 1.4rem; flex: 0 0 auto; cursor: pointer; }
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
