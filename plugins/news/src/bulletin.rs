@@ -32,6 +32,10 @@ const PRESENTER_JPEG: &[u8] = include_bytes!("../web/media/Catherine_Wolfe.jpg")
 /// The FlowWire logo, shown as a centered bumper for the intro.
 const LOGO_PNG: &[u8] = include_bytes!("../web/logos/FlowWire.png");
 
+/// The FlowWire intro/outro music, from v1.0.0's FlowWire_News audio.
+const INTRO_MP3: &[u8] = include_bytes!("../web/audio/FlowWire_News/FlowWire-intro.mp3");
+const OUTRO_MP3: &[u8] = include_bytes!("../web/audio/FlowWire_News/FlowWire-outro.mp3");
+
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const FPS: u32 = 30;
@@ -324,6 +328,10 @@ fn render_bulletin(
     std::fs::write(&presenter, PRESENTER_JPEG).map_err(|error| error.to_string())?;
     let logo = work_dir.join("logo.png");
     std::fs::write(&logo, LOGO_PNG).map_err(|error| error.to_string())?;
+    let intro_mp3 = work_dir.join("intro.mp3");
+    std::fs::write(&intro_mp3, INTRO_MP3).map_err(|error| error.to_string())?;
+    let outro_mp3 = work_dir.join("outro.mp3");
+    std::fs::write(&outro_mp3, OUTRO_MP3).map_err(|error| error.to_string())?;
 
     let show_name = api::resolve_show_name(&settings.header);
     let intro = if settings.anchor_intro.trim().is_empty() {
@@ -341,19 +349,29 @@ fn render_bulletin(
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
-    // The FlowWire logo is the intro bumper (centered), then the anchor's
-    // portrait centers for the rest of the show; the logo overlay runs after
-    // the portrait's, so it sits on top during the intro window.
+    // Logo bumper first, then the anchor; the FlowWire intro/outro mp3s play
+    // over the start and end (silence between them — speech lands later).
+    let outro_delay_ms = ((total - OUTRO_SECONDS) * 1000.0).round() as i64;
+    let audio = format!(
+        "[3:a]atrim=0:{intro},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0];\
+         [4:a]atrim=0:{outro},asetpts=PTS-STARTPTS,adelay={delay}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a1];\
+         [a0][a1]amix=inputs=2:duration=longest:normalize=0[aout]",
+        intro = INTRO_SECONDS,
+        outro = OUTRO_SECONDS,
+        delay = outro_delay_ms,
+    );
     let filter = format!(
         "[0:v]trim=duration={total},setpts=PTS-STARTPTS[bg];\
          [1:v]scale=520:-1[p];\
          [2:v]scale=460:-1[lg];\
          [bg][p]overlay=(W-w)/2:(H-h)/2:enable='gte(t\\,{intro})'[vp];\
          [vp][lg]overlay=(W-w)/2:(H-h)/2:enable='lt(t\\,{intro})'[vout];\
-         [vout]ass='{ass}'[final]",
+         [vout]ass='{ass}'[final];\
+         {audio}",
         total = total,
         intro = INTRO_SECONDS,
-        ass = escape_filter_path(&ass_path)
+        ass = escape_filter_path(&ass_path),
+        audio = audio,
     );
 
     let args: Vec<String> = vec![
@@ -381,10 +399,16 @@ fn render_bulletin(
         format!("{total}"),
         "-i".into(),
         logo.to_string_lossy().to_string(),
+        "-i".into(),
+        intro_mp3.to_string_lossy().to_string(),
+        "-i".into(),
+        outro_mp3.to_string_lossy().to_string(),
         "-filter_complex".into(),
         filter,
         "-map".into(),
         "[final]".into(),
+        "-map".into(),
+        "[aout]".into(),
         "-t".into(),
         format!("{total}"),
         "-c:v".into(),
@@ -399,6 +423,14 @@ fn render_bulletin(
         "30".into(),
         "-bf".into(),
         "0".into(),
+        "-c:a".into(),
+        "aac".into(),
+        "-b:a".into(),
+        "128k".into(),
+        "-ac".into(),
+        "2".into(),
+        "-ar".into(),
+        "48000".into(),
         "-movflags".into(),
         "+faststart".into(),
         // The staging name ends in `.partial`, which ffmpeg cannot use to pick
