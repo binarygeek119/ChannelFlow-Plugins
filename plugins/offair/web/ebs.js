@@ -117,7 +117,7 @@ function syncOffAirFields() {
 
 async function loadOffAir() {
   try {
-    const data = await request(OFFAIR_API + "/");
+    const data = await request(OFFAIR_API);
     const options = data.options || {};
     const settings = data.settings || {};
     fillSelect("ebs-display-mode", options.display_modes, settings.display_mode);
@@ -147,7 +147,7 @@ async function saveOffAir(event) {
   const save = $("ebs-save");
   save.disabled = true;
   try {
-    await request(OFFAIR_API + "/", { method: "PUT", body: JSON.stringify(body) });
+    await request(OFFAIR_API, { method: "PUT", body: JSON.stringify(body) });
     $("ebs-result").textContent = "Saved.";
     syncOffAirFields();
   } catch (error) {
