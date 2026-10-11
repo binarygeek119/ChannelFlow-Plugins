@@ -40,6 +40,10 @@ function collectNewsSettings() {
     anchor_outro: $("news-outro").value.trim(),
     tts_enabled: $("news-tts").checked,
     tts_engine: $("news-tts-engine").value,
+    ai_tts_base_url: $("news-ai-tts-url").value.trim(),
+    ai_tts_api_key: $("news-ai-tts-key").value.trim(),
+    ai_tts_model: $("news-ai-tts-model").value.trim(),
+    ai_tts_voice: $("news-ai-tts-voice").value.trim(),
     ai_rewrite: $("news-ai-rewrite").checked,
     show_header: $("news-show-header").checked,
     headlines_only: $("news-headlines-only").checked,
@@ -63,6 +67,11 @@ async function loadNews() {
     $("news-intro").value = settings.anchor_intro || "";
     $("news-outro").value = settings.anchor_outro || "";
     setNewsCheck("news-tts", settings.tts_enabled);
+    $("news-ai-tts-url").value = settings.ai_tts_base_url || "";
+    $("news-ai-tts-key").value = "";
+    $("news-ai-tts-model").value = settings.ai_tts_model || "kokoro";
+    $("news-ai-tts-voice").value = settings.ai_tts_voice || "";
+    syncNewsTtsEngine();
     setNewsCheck("news-ai-rewrite", settings.ai_rewrite);
     setNewsCheck("news-show-header", settings.show_header);
     setNewsCheck("news-headlines-only", settings.headlines_only);
@@ -249,6 +258,13 @@ async function buildBulletinNow() {
   }
 }
 
+// Show the AI TTS connection fields only when the AI engine is chosen.
+function syncNewsTtsEngine() {
+  const engine = $("news-tts-engine");
+  const fields = $("news-ai-tts-fields");
+  if (engine && fields) fields.hidden = engine.value !== "ai";
+}
+
 {
   const form = $("news-form");
   if (form) form.addEventListener("submit", saveNews);
@@ -256,6 +272,8 @@ async function buildBulletinNow() {
   if (preview) preview.addEventListener("click", previewNews);
   const build = $("news-bulletin-build");
   if (build) build.addEventListener("click", buildBulletinNow);
+  const engine = $("news-tts-engine");
+  if (engine) engine.addEventListener("change", syncNewsTtsEngine);
 }
 
 CF.define("news", { onShow: loadNews });

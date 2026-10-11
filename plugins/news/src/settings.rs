@@ -42,6 +42,14 @@ pub struct NewsSettings {
     pub anchor_outro: String,
     pub tts_enabled: bool,
     pub tts_engine: TtsEngine,
+    /// The OpenAI-compatible endpoint when `tts_engine` is the AI engine.
+    pub ai_tts_base_url: String,
+    #[serde(default, skip_serializing)]
+    pub ai_tts_api_key: String,
+    /// The model to read with (e.g. `kokoro`), when the AI engine is chosen.
+    pub ai_tts_model: String,
+    /// The AI voice; falls back to `tts_voice`.
+    pub ai_tts_voice: String,
     pub ai_rewrite: bool,
     pub show_header: bool,
     pub headlines_only: bool,
@@ -65,6 +73,10 @@ impl Default for NewsSettings {
             anchor_outro: String::new(),
             tts_enabled: true,
             tts_engine: TtsEngine::default(),
+            ai_tts_base_url: String::new(),
+            ai_tts_api_key: String::new(),
+            ai_tts_model: "kokoro".to_string(),
+            ai_tts_voice: String::new(),
             ai_rewrite: false,
             show_header: true,
             headlines_only: false,
@@ -103,6 +115,10 @@ impl NewsSettings {
     pub fn normalize(&mut self) {        self.header = self.header.trim().to_string();
         self.anchor_intro = self.anchor_intro.trim().to_string();
         self.anchor_outro = self.anchor_outro.trim().to_string();
+        self.ai_tts_base_url = self.ai_tts_base_url.trim().trim_end_matches('/').to_string();
+        self.ai_tts_api_key = self.ai_tts_api_key.trim().to_string();
+        self.ai_tts_model = self.ai_tts_model.trim().to_string();
+        self.ai_tts_voice = self.ai_tts_voice.trim().to_string();
         self.article_count = self.article_count.clamp(1, 30);
         self.refresh_minutes = self.refresh_minutes.clamp(2, 120);
         self.minimum_new_stories = self.minimum_new_stories.clamp(1, 30);

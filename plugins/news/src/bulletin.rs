@@ -383,17 +383,37 @@ async fn render_bulletin(
     }
     texts.push(outro_line.clone());
 
-    // Google TTS reads each segment; its length stretches the window so the
-    // voice is never cut off.
-    let tts_on = settings.tts_enabled && matches!(settings.tts_engine, crate::settings::TtsEngine::Google);
+    // The anchor's copy is read aloud: Google TTS by default, or the AI engine
+    // when it is chosen and an endpoint is set (AI falls back to Google if it
+    // is not configured or fails).
+    let ai_engine = matches!(settings.tts_engine, crate::settings::TtsEngine::Ai);
     let mut speech: Vec<Option<(PathBuf, f64)>> = vec![None; texts.len()];
-    if tts_on {
+    if settings.tts_enabled {
         for (index, text) in texts.iter().enumerate() {
             if text.trim().is_empty() {
                 continue;
             }
             let path = work_dir.join(format!("speech-{index}.mp3"));
-            if let Ok(count) = crate::tts::synthesize(http, text, &settings.tts_voice, &path).await {
+            let audio_voice = if settings.ai_tts_voice.trim().is_empty() {
+                &settings.tts_voice
+            } else {
+                &settings.ai_tts_voice
+            };
+            let result = if ai_engine && !settings.ai_tts_base_url.trim().is_empty() {
+                crate::tts::synthesize_ai(
+                    http,
+                    text,
+                    &settings.ai_tts_base_url,
+                    &settings.ai_tts_api_key,
+                    &settings.ai_tts_model,
+                    audio_voice,
+                    &path,
+                )
+                .await
+            } else {
+                crate::tts::synthesize(http, text, &settings.tts_voice, &path).await
+            };
+            if let Ok(count) = result {
                 if count > 0 {
                     let duration = probe_seconds(&path).unwrap_or(0.0);
                     speech[index] = Some((path, duration));

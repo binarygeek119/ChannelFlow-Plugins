@@ -44,6 +44,17 @@
               <label class="field-label" for="news-tts-engine">TTS engine</label>
               <select id="news-tts-engine"></select>
             </div>
+            <div class="field" id="news-ai-tts-fields" hidden>
+              <span class="field-label">AI TTS</span>
+              <label class="field-label" for="news-ai-tts-url">Endpoint (OpenAI-compatible)</label>
+              <input id="news-ai-tts-url" type="url" placeholder="https://example.com/v1">
+              <label class="field-label" for="news-ai-tts-key">API key</label>
+              <input id="news-ai-tts-key" type="password" autocomplete="off" placeholder="(none)">
+              <label class="field-label" for="news-ai-tts-model">Model</label>
+              <input id="news-ai-tts-model" type="text" placeholder="kokoro">
+              <label class="field-label" for="news-ai-tts-voice">Voice (optional, falls back to TTS voice)</label>
+              <input id="news-ai-tts-voice" type="text" placeholder="(TTS voice)">
+            </div>
             <div class="field">
               <span class="field-label">News video</span>
               <label class="field-note" for="news-bulletin-enabled"><input id="news-bulletin-enabled" type="checkbox" checked> Create and keep a news video on a schedule</label>

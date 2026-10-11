@@ -132,6 +132,102 @@ pub async fn synthesize(
     }
 }
 
+/// OpenAI-compatible TTS caps at much longer chunks than Google's endpoint.
+pub const AI_MAX_CHUNK: usize = 4000;
+
+/// Synthesize `text` through an OpenAI-compatible `/audio/speech` endpoint
+/// (the AI engine), returning the number of chunks read.
+pub async fn synthesize_ai(
+    http: &reqwest::Client,
+    text: &str,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    voice: &str,
+    out: &Path,
+) -> Result<usize, String> {
+    if base_url.trim().is_empty() {
+        return Err("no AI TTS endpoint is set".to_string());
+    }
+    let chunks = chunk(text, AI_MAX_CHUNK);
+    if chunks.is_empty() {
+        return Err("nothing to read".to_string());
+    }
+    let work = out.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let mut parts = Vec::new();
+    for (index, part) in chunks.iter().enumerate() {
+        if index > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        let mut request = http.post(format!("{}/audio/speech", base_url.trim_end_matches('/')));
+        if !api_key.trim().is_empty() {
+            request = request.bearer_auth(api_key.trim());
+        }
+        let body = serde_json::json!({
+            "model": model.trim(),
+            "input": part.trim(),
+            "voice": voice.trim(),
+            "response_format": "mp3",
+        });
+        let response = request
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| format!("could not reach the AI TTS endpoint: {error}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let detail = response.text().await.unwrap_or_default();
+            return Err(format!("AI TTS answered {status}: {}", truncate(&detail)));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| "could not read the speech clip".to_string())?;
+        if bytes.len() < 64 {
+            return Err("AI TTS returned an empty clip.".to_string());
+        }
+        let path = work.join(format!("ai-part-{index:02}.mp3"));
+        std::fs::write(&path, &bytes).map_err(|error| error.to_string())?;
+        parts.push(path);
+    }
+
+    if parts.len() == 1 {
+        std::fs::copy(&parts[0], out).map_err(|error| error.to_string())?;
+        return Ok(parts.len());
+    }
+
+    let list_path = work.join("concat.txt");
+    let mut list = String::new();
+    for part in &parts {
+        let name = part.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default();
+        list.push_str(&format!("file '{name}'\n"));
+    }
+    std::fs::write(&list_path, list).map_err(|error| error.to_string())?;
+    let output = Command::new(encoder_path())
+        .current_dir(&work)
+        .args(["-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-c:a", "libmp3lame", "-b:a", "64k", "-y"])
+        .arg(out)
+        .output()
+        .map_err(|error| format!("could not run ffmpeg: {error}"))?;
+    if !output.status.success() {
+        return Err("ffmpeg could not stitch the speech clips".to_string());
+    }
+    if out.exists() && out.metadata().map(|meta| meta.len()).unwrap_or(0) > 0 {
+        Ok(parts.len())
+    } else {
+        Err("no speech clip was written".to_string())
+    }
+}
+
+fn truncate(text: &str) -> String {
+    let head: String = text.chars().take(140).collect();
+    if text.chars().count() > 140 {
+        format!("{head}…")
+    } else {
+        head
+    }
+}
+
 fn encoder_path() -> PathBuf {
     let bundled = PathBuf::from("/usr/local/bin/ffmpeg");
     if bundled.exists() {
