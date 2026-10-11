@@ -796,10 +796,12 @@ fn build_ass(beats: &[Beat]) -> String {
     ass.push_str("[V4+ Styles]\n");
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
     // Headline: top-centre, smaller font to fit more, positioned in the bar.
-    // Story1/Story2: bottom-centre, tighter spacing for the two lines.
+    // Story1/Story2: bottom-centre, one line in each marked story area — the
+    // first line sits in the green box (MarginV 144), the second in the red box
+    // at the very bottom (MarginV 35).
     ass.push_str("Style: Headline, Liberation Sans, 44, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 100, 100, 110, 1\n");
-    ass.push_str("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 80, 1\n");
-    ass.push_str("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 115, 1\n\n");
+    ass.push_str("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 144, 1\n");
+    ass.push_str("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, 35, 1\n\n");
     ass.push_str("[Events]\n");
     ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     ass.push_str(&events);
