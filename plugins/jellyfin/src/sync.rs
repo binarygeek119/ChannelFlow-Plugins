@@ -118,6 +118,65 @@ fn provider_match_id(raw: &Value) -> Option<String> {
     None
 }
 
+/// The strings of a JSON array field, e.g. `Genres` or `Tags`.
+fn strings(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Build a base-catalog entry from one Jellyfin item, carrying the metadata
+/// the Media page shows — runtime, genres, official rating, premiere date,
+/// first-episode year (series), studios and tags — beside title/year/overview.
+fn build_catalog_item(kind: &str, remote: &str, raw: &Value, library: &str) -> CatalogItem {
+    let title = raw.get("Name").and_then(Value::as_str).unwrap_or("");
+    let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
+    let overview = raw.get("Overview").and_then(Value::as_str).map(str::to_string);
+    // Jellyfin reports runtime in ticks; one second is ten million of them.
+    let runtime_seconds = raw.get("RunTimeTicks").and_then(Value::as_i64).map(|ticks| ticks / 10_000_000);
+    let genres = strings(raw.get("Genres"));
+    let official_rating = raw.get("OfficialRating").and_then(Value::as_str).map(str::to_string);
+    // Jellyfin's PremiereDate is an ISO timestamp; keep the date part.
+    let premiere_date = raw
+        .get("PremiereDate")
+        .and_then(Value::as_str)
+        .map(|date| date.chars().take(10).collect::<String>());
+    // For a series, ProductionYear is the year its first episode aired;
+    // otherwise it carries the item's own year already.
+    let first_episode_year = if kind == "series" { year } else { None };
+    let studios = raw
+        .get("Studios")
+        .and_then(Value::as_array)
+        .map(|studios| {
+            studios
+                .iter()
+                .filter_map(|studio| studio.get("Name").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let tags = strings(raw.get("Tags"));
+    CatalogItem::new(kind, remote, title)
+        .year(year)
+        .overview(overview)
+        .library(library)
+        .match_id(provider_match_id(raw))
+        .runtime_seconds(runtime_seconds)
+        .genres(genres)
+        .official_rating(official_rating)
+        .premiere_date(premiere_date)
+        .first_episode_year(first_episode_year)
+        .studios(studios)
+        .tags(tags)
+}
+
 /// Which pass a `walk` is doing: either metadata (phase 1) or images (phase 2).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -143,16 +202,7 @@ async fn sync_catalog(
         let Some(remote) = raw.get("Id").and_then(Value::as_str) else {
             continue;
         };
-        let title = raw.get("Name").and_then(Value::as_str).unwrap_or("");
-        let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
-        let overview = raw.get("Overview").and_then(Value::as_str).map(str::to_string);
-        items.push(
-            CatalogItem::new(kind, remote, title)
-                .year(year)
-                .overview(overview)
-                .library(&library.name)
-                .match_id(provider_match_id(&raw)),
-        );
+        items.push(build_catalog_item(kind, remote, &raw, &library.name));
     }
 
     if !with_images {
@@ -803,5 +853,36 @@ mod tests {
             Some("tmdb:456")
         );
         assert_eq!(provider_match_id(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn catalog_items_carry_runtime_genres_rating_premiere_studios_tags() {
+        let raw = serde_json::json!({
+            "Name": "Groundhog Day",
+            "ProductionYear": 1993,
+            "Overview": "A weatherman relives the same day.",
+            "RunTimeTicks": 608_400_000_000i64,
+            "Genres": ["Comedy", "Fantasy"],
+            "OfficialRating": "PG",
+            "PremiereDate": "1993-02-12T00:00:00.0000000Z",
+            "Studios": [{ "Name": "Columbia Pictures" }, { "Name": "No Name" }],
+            "Tags": ["time loop", "classic"]
+        });
+        let item = build_catalog_item("movie", "abc", &raw, "Movies");
+        assert_eq!(item.year, Some(1993));
+        assert_eq!(item.runtime_seconds, Some(60_840), "ticks become seconds");
+        assert_eq!(item.genres, ["Comedy", "Fantasy"]);
+        assert_eq!(item.official_rating.as_deref(), Some("PG"));
+        assert_eq!(item.premiere_date.as_deref(), Some("1993-02-12"));
+        assert_eq!(item.studios, ["Columbia Pictures", "No Name"]);
+        assert_eq!(item.tags, ["time loop", "classic"]);
+        assert_eq!(item.first_episode_year, None, "a movie has no first-episode year");
+    }
+
+    #[test]
+    fn a_series_first_episode_year_is_its_production_year() {
+        let raw = serde_json::json!({ "Name": "Frasier", "ProductionYear": 1993 });
+        let item = build_catalog_item("series", "s1", &raw, "TV");
+        assert_eq!(item.first_episode_year, Some(1993));
     }
 }
