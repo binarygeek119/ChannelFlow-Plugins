@@ -16,7 +16,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -28,6 +28,8 @@ pub fn router(state: Arc<NewsState>) -> Router {
     Router::new()
         .route("/", get(get_settings).put(put_settings))
         .route("/preview", get(preview_newscast))
+        .route("/bulletin", get(bulletin_status))
+        .route("/bulletin/run", post(bulletin_run))
         .with_state(state)
 }
 
@@ -137,6 +139,20 @@ async fn cached_stories(state: &Arc<NewsState>, settings: &NewsSettings) -> Vec<
             }
         }
     }
+    let stories = fetch_enabled_stories(state, settings).await;
+    {
+        let mut cache = state.headline_cache.lock().await;
+        *cache = Some((key, Instant::now(), stories.clone()));
+    }
+    stories
+}
+
+/// Fetch every enabled feed's stories, uncached — the bulletin task uses this
+/// so a run always sees the latest headlines, not the page's 2-minute cache.
+pub(crate) async fn fetch_enabled_stories(
+    state: &Arc<NewsState>,
+    settings: &NewsSettings,
+) -> Vec<Value> {
     let limit = if settings.ai_rewrite {
         (settings.article_count * 3).clamp(8, 40) as usize
     } else {
@@ -148,12 +164,7 @@ async fn cached_stories(state: &Arc<NewsState>, settings: &NewsSettings) -> Vec<
         .filter(|feed| feed.enabled)
         .map(|feed| feed.url.clone())
         .collect();
-    let stories = fetch_stories(&state.http, &enabled, limit).await;
-    {
-        let mut cache = state.headline_cache.lock().await;
-        *cache = Some((key, Instant::now(), stories.clone()));
-    }
-    stories
+    fetch_stories(&state.http, &enabled, limit).await
 }
 
 fn feeds_key(settings: &NewsSettings) -> String {
@@ -362,6 +373,21 @@ fn unescape(text: &str) -> String {
         .replace("&#x27;", "'")
         .replace("&#13;", " ")
         .replace('\u{00a0}', " ")
+}
+
+/// The News page's bulletin status: the schedule settings and the ledger.
+async fn bulletin_status(State(state): State<Arc<NewsState>>) -> Response {
+    let settings = state.settings.lock().await.clone();
+    let ledger = crate::bulletin::ledger_snapshot(&state).await;
+    Json(json!({ "bulletin": crate::bulletin::describe_ledger(&ledger, &settings) })).into_response()
+}
+
+/// The News page's "Build now": force a bulletin build regardless of the
+/// schedule and the new-story minimum.
+async fn bulletin_run(State(state): State<Arc<NewsState>>) -> Response {
+    let root = state.config_root.clone();
+    let outcome = crate::bulletin::run(&state, &root, true).await;
+    Json(json!({ "outcome": outcome })).into_response()
 }
 
 fn fail(status: StatusCode, message: String) -> Response {

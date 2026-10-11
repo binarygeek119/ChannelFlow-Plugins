@@ -8,9 +8,11 @@
 //! appears.
 
 mod api;
+mod bulletin;
 mod settings;
 
 use std::sync::Arc;
+use std::path::PathBuf;
 
 use axum::Router;
 use channelflow_plugin_api::contrib::PresetContribution;
@@ -66,6 +68,9 @@ pub struct NewsState {
     /// The last fetched newscast stories, keyed by the enabled feeds, with the
     /// instant they were fetched — v1.0.0 cached headlines for ~2 minutes.
     pub headline_cache: Mutex<Option<(String, std::time::Instant, Vec<serde_json::Value>)>>,
+    /// The base config root (`<config>`), so the bulletin task can write its
+    /// mp4s to `<config>/news` as 1.0.0 did.
+    pub config_root: PathBuf,
 }
 
 impl NewsPlugin {
@@ -119,13 +124,48 @@ impl Plugin for NewsPlugin {
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|error| PluginError::new(format!("building the HTTP client: {error}")))?;
+        // `api.dir` is `<config>/plugins/{id}`; its grandparent is `<config>`,
+        // where the bulletin videos belong (v1.0.0 wrote `<config>/news`).
+        let config_root = api
+            .dir
+            .parent()
+            .and_then(|plugins| plugins.parent())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| api.dir.clone());
         self.state = Some(Arc::new(NewsState {
             settings: Mutex::new(settings),
             storage: api.storage.clone(),
             http,
             logger: api.logger.clone(),
             headline_cache: Mutex::new(None),
+            config_root,
         }));
+        // The bulletin scheduler: every 30 seconds, fire at each configured
+        // mark (once per mark), so the day's first build always runs and the
+        // rest run only when enough stories are new.
+        if let Some(state) = self.state.clone() {
+            tokio::spawn(async move {
+                let mut last_mark = String::new();
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
+                loop {
+                    ticker.tick().await;
+                    let settings = state.settings.lock().await.clone();
+                    if !settings.bulletin_enabled {
+                        continue;
+                    }
+                    let now = chrono::Local::now();
+                    if !bulletin::at_a_mark(&settings, now) {
+                        continue;
+                    }
+                    let mark = now.format("%Y-%m-%d %H").to_string();
+                    if mark == last_mark {
+                        continue;
+                    }
+                    last_mark = mark;
+                    let _ = bulletin::run(&state, &state.config_root.clone(), false).await;
+                }
+            });
+        }
         api.logger.info("loaded");
         Ok(())
     }

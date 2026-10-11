@@ -46,9 +46,15 @@
             </div>
             <div class="field">
               <span class="field-label">News video</span>
-              <label class="field-note" for="news-bulletin-enabled"><input id="news-bulletin-enabled" type="checkbox" checked> Create a news video every 6 hours</label>
+              <label class="field-note" for="news-bulletin-enabled"><input id="news-bulletin-enabled" type="checkbox" checked> Create and keep a news video on a schedule</label>
+              <label class="field-label" for="news-bulletin-times">Build times (hours, 24h clock)</label>
+              <input id="news-bulletin-times" type="text" placeholder="6,10,14,18,20,22">
               <label class="field-label" for="news-min-new">Minimum new stories</label>
               <input id="news-min-new" type="number" min="1" max="30" step="1" value="1">
+              <div class="actions">
+                <button type="button" class="ghost" id="news-bulletin-build">Build now</button>
+              </div>
+              <span class="field-note" id="news-bulletin-status"></span>
             </div>
             <div class="field" style="grid-column: 1 / -1;">
               <span class="field-label">RSS feeds</span>

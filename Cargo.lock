@@ -301,11 +301,12 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-news"
-version = "2.0.9"
+version = "2.0.10"
 dependencies = [
  "async-trait",
  "axum",
  "channelflow-plugin-api",
+ "chrono",
  "reqwest",
  "serde",
  "serde_json",

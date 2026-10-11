@@ -46,6 +46,7 @@ function collectNewsSettings() {
     no_music: $("news-no-music").checked,
     bulletin_enabled: $("news-bulletin-enabled").checked,
     minimum_new_stories: Number($("news-min-new").value) || 1,
+    bulletin_times: $("news-bulletin-times").value.trim() || "6,10,14,18,20,22",
     feeds: $("news-feeds").value.split("\n").map((url) => url.trim()).filter(Boolean).map((url) => ({ url, enabled: true })),
   };
 }
@@ -68,6 +69,8 @@ async function loadNews() {
     setNewsCheck("news-no-music", settings.no_music);
     setNewsCheck("news-bulletin-enabled", settings.bulletin_enabled);
     $("news-min-new").value = settings.minimum_new_stories;
+    $("news-bulletin-times").value = settings.bulletin_times || "6,10,14,18,20,22";
+    loadBulletinStatus();
     $("news-feeds").value = (settings.feeds || []).filter((feed) => feed.enabled).map((feed) => feed.url).join("\n");
     const list = $("news-preview-list");
     if (list) list.hidden = true;
@@ -206,11 +209,53 @@ async function previewNews() {
   }
 }
 
+async function loadBulletinStatus() {
+  const note = $("news-bulletin-status");
+  if (!note) return;
+  try {
+    const data = await request(NEWS_API + "/bulletin");
+    const b = data.bulletin || {};
+    if (b.last_created) {
+      note.textContent = `Last video built ${b.last_run || ""} — ${b.last_encoded_count} stories.`;
+    } else if (b.last_skip_reason) {
+      note.textContent = `Last run skipped: ${b.last_skip_reason}`;
+    } else {
+      note.textContent = `Builds at hours ${b.times || "6,10,14,18,20,22"} (once a day for sure).`;
+    }
+  } catch (error) {
+    note.textContent = "";
+  }
+}
+
+async function buildBulletinNow() {
+  const button = $("news-bulletin-build");
+  if (button) button.disabled = true;
+  const note = $("news-bulletin-status");
+  if (note) note.textContent = "Building the news video…";
+  try {
+    // Save first so the build uses the feeds and times the form holds.
+    await request(NEWS_API, { method: "PUT", body: JSON.stringify(collectNewsSettings()) });
+    const data = await request(NEWS_API + "/bulletin/run", { method: "POST" });
+    const outcome = data.outcome || {};
+    if (outcome.created) {
+      note.textContent = `Built ${outcome.path || "the video"} with ${outcome.encoded_count} stories.`;
+    } else {
+      note.textContent = outcome.reason || "The build did not create a video.";
+    }
+  } catch (error) {
+    if (note) note.textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 {
   const form = $("news-form");
   if (form) form.addEventListener("submit", saveNews);
   const preview = $("news-preview");
   if (preview) preview.addEventListener("click", previewNews);
+  const build = $("news-bulletin-build");
+  if (build) build.addEventListener("click", buildBulletinNow);
 }
 
 CF.define("news", { onShow: loadNews });

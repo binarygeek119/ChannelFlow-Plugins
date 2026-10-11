@@ -48,6 +48,9 @@ pub struct NewsSettings {
     pub no_music: bool,
     pub bulletin_enabled: bool,
     pub minimum_new_stories: u32,
+    /// The local-clock hours a bulletin may build, comma-separated. 1.0.0
+    /// rebuilt every six hours; ChannelFlow 2.0.0 runs at these six marks.
+    pub bulletin_times: String,
     pub feeds: Vec<NewsFeed>,
 }
 
@@ -68,6 +71,7 @@ impl Default for NewsSettings {
             no_music: false,
             bulletin_enabled: true,
             minimum_new_stories: 1,
+            bulletin_times: "6,10,14,18,20,22".to_string(),
             feeds: Vec::new(),
         }
     }
@@ -96,18 +100,46 @@ impl NewsSettings {
 
     /// Clamp the numeric bounds, trim the free-text fields, and drop empty
     /// or URL-less feeds.
-    pub fn normalize(&mut self) {
-        self.header = self.header.trim().to_string();
+    pub fn normalize(&mut self) {        self.header = self.header.trim().to_string();
         self.anchor_intro = self.anchor_intro.trim().to_string();
         self.anchor_outro = self.anchor_outro.trim().to_string();
         self.article_count = self.article_count.clamp(1, 30);
         self.refresh_minutes = self.refresh_minutes.clamp(2, 120);
         self.minimum_new_stories = self.minimum_new_stories.clamp(1, 30);
+        self.bulletin_times = normalized_times(&self.bulletin_times);
         self.feeds.retain(|feed| !feed.url.trim().is_empty());
         for feed in self.feeds.iter_mut() {
             feed.url = feed.url.trim().to_string();
         }
     }
+
+    /// The local-clock hours a bulletin may build.
+    pub fn bulletin_hours(&self) -> Vec<u32> {
+        self.bulletin_times
+            .split(',')
+            .filter_map(|part| part.trim().parse::<u32>().ok())
+            .collect()
+    }
+}
+
+/// A comma-separated hour list, sorted, de-duplicated, and kept to 0..=23.
+/// An empty result falls back to the six default marks.
+fn normalized_times(value: &str) -> String {
+    let mut hours: Vec<u32> = value
+        .split(',')
+        .filter_map(|part| part.trim().parse::<u32>().ok())
+        .filter(|hour| *hour <= 23)
+        .collect();
+    hours.sort_unstable();
+    hours.dedup();
+    if hours.is_empty() {
+        return "6,10,14,18,20,22".to_string();
+    }
+    hours
+        .iter()
+        .map(|hour| hour.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 #[cfg(test)]
