@@ -185,7 +185,7 @@ dependencies = [
 [[package]]
 name = "channelflow-plugin-api"
 version = "2.0.0"
-source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#4999f0c61ce5afa977ea5d42880253a0af129fe4"
+source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#ad2a2314c7520d38e515fb4c020281def07a46fa"
 dependencies = [
  "async-trait",
  "axum",
@@ -356,11 +356,12 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-weather"
-version = "2.0.9"
+version = "2.0.11"
 dependencies = [
  "async-trait",
  "axum",
  "channelflow-plugin-api",
+ "chrono",
  "reqwest",
  "serde",
  "serde_json",

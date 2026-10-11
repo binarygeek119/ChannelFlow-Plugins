@@ -8,12 +8,14 @@
 
 mod api;
 mod forecast;
+mod guide;
 mod settings;
 
 use std::sync::Arc;
 
 use axum::Router;
 use channelflow_plugin_api::contrib::PresetContribution;
+use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;
@@ -77,6 +79,8 @@ pub struct WeatherState {
     /// The last fetched snapshot, keyed by its (query, source, units), with
     /// the instant it was taken — v1.0.0 cached weather for ~8 minutes.
     pub weather_cache: Mutex<Option<(String, std::time::Instant, serde_json::Value)>>,
+    /// Read channels (to find the WeatherStar ones) and write their guide.
+    pub core: Arc<dyn CoreData>,
 }
 
 impl WeatherPlugin {
@@ -136,7 +140,37 @@ impl Plugin for WeatherPlugin {
             http,
             logger: api.logger.clone(),
             weather_cache: Mutex::new(None),
+            core: api.core.clone(),
         }));
+        // The daily guide task: once a day at the configured time, write the
+        // day's forecast into the WeatherStar channel's guide.
+        if let Some(state) = self.state.clone() {
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    ticker.tick().await;
+                    let settings = state.settings.lock().await.clone();
+                    if !settings.guide_enabled {
+                        continue;
+                    }
+                    let last = guide::last_build_date(&state).await;
+                    if !guide::due(&settings, chrono::Local::now(), last.as_deref()) {
+                        continue;
+                    }
+                    match guide::build(&state, false).await {
+                        Ok(count) => {
+                            guide::record_build(&state).await;
+                            state
+                                .logger
+                                .info(&format!("weather guide built {count} blocks"));
+                        }
+                        Err(error) => state
+                            .logger
+                            .warn(&format!("weather guide build failed: {error}")),
+                    }
+                }
+            });
+        }
         api.logger.info("loaded");
         Ok(())
     }

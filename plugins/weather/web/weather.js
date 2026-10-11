@@ -52,6 +52,8 @@ function collectWeatherSettings() {
     units: $("wx-units-switch").checked ? "si" : "us",
     auto_wide_169: $("wx-wide169").checked,
     screens: Array.from(document.querySelectorAll("#wx-screens input[data-wx-screen]:checked")).map((el) => el.dataset.wxScreen),
+    guide_enabled: $("wx-guide-enabled").checked,
+    guide_build_time: $("wx-guide-time").value || "00:05",
   };
 }
 
@@ -66,6 +68,9 @@ async function loadWeather() {
     if (unitsSwitch) unitsSwitch.checked = settings.units === "si";
     $("wx-location").value = settings.default_location || "";
     $("wx-wide169").checked = settings.auto_wide_169 !== false;
+    $("wx-guide-enabled").checked = settings.guide_enabled !== false;
+    $("wx-guide-time").value = settings.guide_build_time || "00:05";
+    loadGuideStatus();
     renderWxScreens(settings.screens);
     $("wx-result").textContent = "";
   } catch (error) {
@@ -152,11 +157,44 @@ async function testWeather() {
   }
 }
 
+async function loadGuideStatus() {
+  const note = $("wx-guide-status");
+  if (!note) return;
+  try {
+    const data = await request(WEATHER_API + "/guide");
+    const g = data.guide || {};
+    note.textContent = g.last_build_date
+      ? `Last built ${g.last_build_date}. Builds daily at ${g.build_time}.`
+      : `Builds daily at ${g.build_time || "00:05"}.`;
+  } catch (error) {
+    note.textContent = "";
+  }
+}
+
+async function buildGuideNow() {
+  const button = $("wx-guide-build");
+  if (button) button.disabled = true;
+  const note = $("wx-guide-status");
+  if (note) note.textContent = "Building the guide…";
+  try {
+    // Save first so the build uses the form's location and settings.
+    await request(WEATHER_API, { method: "PUT", body: JSON.stringify(collectWeatherSettings()) });
+    const data = await request(WEATHER_API + "/guide/build", { method: "POST" });
+    if (note) note.textContent = `Wrote ${data.blocks || 0} forecast blocks to the guide.`;
+  } catch (error) {
+    if (note) note.textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 {
   const form = $("weather-form");
   if (form) form.addEventListener("submit", saveWeather);
   const test = $("wx-test");
   if (test) test.addEventListener("click", testWeather);
+  const build = $("wx-guide-build");
+  if (build) build.addEventListener("click", buildGuideNow);
 }
 
 CF.define("weather", { onShow: loadWeather });

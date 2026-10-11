@@ -40,6 +40,16 @@
             <div class="field">
               <label class="field-label" for="wx-wide169"><input id="wx-wide169" type="checkbox" checked> Use the wide layout for 16:9 weather channels</label>
             </div>
+            <div class="field">
+              <span class="field-label">Daily guide</span>
+              <label class="field-note" for="wx-guide-enabled"><input id="wx-guide-enabled" type="checkbox" checked> Write the day's forecast into the WeatherStar channel's guide</label>
+              <label class="field-label" for="wx-guide-time">Build time (daily)</label>
+              <input id="wx-guide-time" type="time" value="00:05">
+              <div class="actions">
+                <button type="button" class="ghost" id="wx-guide-build">Build guide now</button>
+              </div>
+              <span class="field-note" id="wx-guide-status"></span>
+            </div>
             <div class="ms-form-actions">
               <button type="button" class="ghost" id="wx-test">Test weather source</button>
               <button type="submit" class="primary" id="wx-save">Save</button>

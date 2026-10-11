@@ -82,6 +82,10 @@ pub struct WeatherSettings {
     pub auto_wide_169: bool,
     /// The screens enabled in the loop, by id.
     pub screens: Vec<String>,
+    /// Write the day's forecast into the guide for the WeatherStar channel(s).
+    pub guide_enabled: bool,
+    /// The local time (`HH:MM`) the guide task builds each day.
+    pub guide_build_time: String,
 }
 
 impl Default for WeatherSettings {
@@ -93,6 +97,8 @@ impl Default for WeatherSettings {
             units: Units::default(),
             auto_wide_169: true,
             screens: ALL_SCREENS.iter().map(|s| s.to_string()).collect(),
+            guide_enabled: true,
+            guide_build_time: "00:05".to_string(),
         }
     }
 }
@@ -116,8 +122,23 @@ impl WeatherSettings {
         )?;
         settings.screens.retain(|screen| ALL_SCREENS.contains(&screen.as_str()));
         settings.default_location = settings.default_location.trim().to_string();
+        settings.guide_build_time = normalized_time(&settings.guide_build_time);
         Ok(settings)
     }
+}
+
+/// A `HH:MM` time, defaulting to `00:05` when it cannot be read.
+fn normalized_time(value: &str) -> String {
+    let Some((hour, minute)) = value.trim().split_once(':') else {
+        return "00:05".to_string();
+    };
+    let (Ok(hour), Ok(minute)) = (hour.trim().parse::<u32>(), minute.trim().parse::<u32>()) else {
+        return "00:05".to_string();
+    };
+    if hour > 23 || minute > 59 {
+        return "00:05".to_string();
+    }
+    format!("{hour:02}:{minute:02}")
 }
 
 #[cfg(test)]

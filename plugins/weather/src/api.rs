@@ -8,7 +8,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -21,7 +21,34 @@ pub fn router(state: Arc<WeatherState>) -> Router {
         .route("/", get(get_settings).put(put_settings))
         .route("/test", get(test_forecast))
         .route("/weather", get(weather_snapshot))
+        .route("/guide", get(guide_status))
+        .route("/guide/build", post(guide_build))
         .with_state(state)
+}
+
+/// The Weather page's guide status: the schedule and the last build.
+async fn guide_status(State(state): State<Arc<WeatherState>>) -> Response {
+    let settings = state.settings.lock().await.clone();
+    let last = crate::guide::last_build_date(&state).await;
+    Json(json!({
+        "guide": {
+            "enabled": settings.guide_enabled,
+            "build_time": settings.guide_build_time,
+            "last_build_date": last,
+        }
+    }))
+    .into_response()
+}
+
+/// The Weather page's "Build guide now": force a build regardless of schedule.
+async fn guide_build(State(state): State<Arc<WeatherState>>) -> Response {
+    match crate::guide::build(&state, true).await {
+        Ok(count) => {
+            crate::guide::record_build(&state).await;
+            Json(json!({ "ok": true, "blocks": count })).into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
 }
 
 fn view(settings: &WeatherSettings) -> serde_json::Value {
