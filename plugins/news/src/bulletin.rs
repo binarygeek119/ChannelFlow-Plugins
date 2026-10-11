@@ -50,9 +50,17 @@ const MAP_SRC_H: u32 = 648;
 /// so the end of one copy butts cleanly against the start of the next and no
 /// translucent seam is left behind.
 const MAP_OPAQUE_W: u32 = 3880;
-/// The width every copy is scaled to (also the tile pitch, so the copies meet
-/// exactly) and how fast the map slides left, in pixels per second.
-const MAP_TILE_W: u32 = 6480;
+/// The map lives only in the band between the headline bar and the story bar
+/// (`MAP_TOP`..`MAP_TOP + MAP_BAND_H`): each copy is scaled to that band's
+/// height rather than being stretched over the whole screen. It stays the
+/// backmost layer, so the bars, the anchor and the captions sit over it.
+const MAP_TOP: u32 = 221;
+const MAP_BAND_H: u32 = 639;
+/// The width every copy is scaled to. It is derived from the band height so the
+/// panorama keeps its aspect ratio, and it doubles as the tile pitch so the
+/// copies meet exactly. `MAP_SCROLL_SPEED` is how fast the map slides left, in
+/// pixels per second.
+const MAP_TILE_W: u32 = MAP_OPAQUE_W * MAP_BAND_H / MAP_SRC_H;
 const MAP_SCROLL_SPEED: u32 = 150;
 const _: () = assert!(MAP_OPAQUE_W <= MAP_SRC_W);
 
@@ -789,18 +797,21 @@ fn escape_filter_path(path: &Path) -> String {
 }
 
 /// The scrolling-map layer: crop the soft (transparent) right edge off, scale
-/// every copy to one tile width, split the stream in two, then lay the copies
-/// end to end and slide them left. The scroll position wraps at exactly one tile
-/// width, so as the first copy leaves the frame the second is already in place
-/// and a fresh copy takes over on the right — the map never runs out.
+/// every copy to fill the band between the headline bar and the story bar, split
+/// the stream in two, then lay the copies end to end and slide them left. The
+/// scroll position wraps at exactly one tile width, so as the first copy leaves
+/// the frame the second is already in place and a fresh copy takes over on the
+/// right — the map never runs out.
 fn map_layer() -> String {
     format!(
-        "[1:v]crop={opaque}:{height},scale={tile}:1080,split[ma][mb];\
-         [bg][ma]overlay=x='-mod(t*{speed},{tile})':y=0[m1];\
-         [m1][mb]overlay=x='-mod(t*{speed},{tile})+{tile}':y=0[m2];",
+        "[1:v]crop={opaque}:{height},scale={tile}:{band},split[ma][mb];\
+         [bg][ma]overlay=x='-mod(t*{speed},{tile})':y={top}[m1];\
+         [m1][mb]overlay=x='-mod(t*{speed},{tile})+{tile}':y={top}[m2];",
         opaque = MAP_OPAQUE_W,
         height = MAP_SRC_H,
+        band = MAP_BAND_H,
         tile = MAP_TILE_W,
+        top = MAP_TOP,
         speed = MAP_SCROLL_SPEED,
     )
 }
@@ -1173,6 +1184,21 @@ mod tests {
         assert!(
             layer.contains(&format!("crop={MAP_OPAQUE_W}:{MAP_SRC_H}")),
             "the transparent edge is cropped: {layer}"
+        );
+        // Each copy is scaled to the band between the bars, not the whole
+        // screen, and dropped in at the band's top edge.
+        assert!(
+            layer.contains(&format!("scale={MAP_TILE_W}:{MAP_BAND_H}")),
+            "the map is scaled to the band, not the whole screen: {layer}"
+        );
+        assert!(
+            layer.contains(&format!("y={MAP_TOP}")),
+            "the map sits at the top of the band: {layer}"
+        );
+        assert_eq!(
+            MAP_TILE_W,
+            MAP_OPAQUE_W * MAP_BAND_H / MAP_SRC_H,
+            "the tile keeps the map's aspect ratio for the band"
         );
     }
 }
