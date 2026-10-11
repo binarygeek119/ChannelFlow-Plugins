@@ -163,7 +163,17 @@ async fn preview_newscast(State(state): State<Arc<NewsState>>) -> Response {
         settings.use_24_hour,
     );
 
-    let stories = cached_stories(&state, &settings).await;
+    // The cache holds the fetched pool (extra stories when the rewrite is on,
+    // so the writer has material); the show itself is the article count, then
+    // woven into one broadcast when the option is set.
+    let mut stories: Vec<Value> = cached_stories(&state, &settings)
+        .await
+        .into_iter()
+        .take(settings.article_count.max(1) as usize)
+        .collect();
+    if settings.ai_rewrite {
+        stories = crate::rewrite::rewrite_show(&state, &settings, &stories).await;
+    }
     Json(json!({
         "header": show_name,
         "show_header": settings.show_header,

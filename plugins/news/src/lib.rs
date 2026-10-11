@@ -9,6 +9,7 @@
 
 mod api;
 mod bulletin;
+mod rewrite;
 mod settings;
 mod tts;
 

@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api;
+use crate::rewrite;
 use crate::settings::NewsSettings;
 use crate::NewsState;
 use channelflow_plugin_api::core::TtsProvider;
@@ -219,13 +220,23 @@ pub async fn run(
 
     // Encode the newest stories, capped at the article count. The day's first
     // build re-encodes even with no new stories (so a video exists).
-    let encoded: Vec<Value> = if new.is_empty() {
+    let mut encoded: Vec<Value> = if new.is_empty() {
         stories.iter().take(settings.article_count.max(1) as usize).cloned().collect()
     } else {
         new.iter().take(settings.article_count.max(1) as usize).cloned().collect()
     };
     if encoded.is_empty() {
         return finish_skip(state, ledger, ran_at, "No stories to encode.".to_string(), 0, false).await;
+    }
+
+    // The ledger tracks a story by its original headline, so remember the keys
+    // before the AI rewrite changes the copy.
+    let ledger_keys: Vec<String> = encoded.iter().map(story_key).collect();
+
+    // With the option on, hand the copy to the AI writer so the bulletin reads
+    // as one broadcast rather than a stack of articles.
+    if settings.ai_rewrite {
+        encoded = rewrite::rewrite_show(state, &settings, &encoded).await;
     }
 
     let stamp = now.format("%Y%m%d-%H%M%S").to_string();
@@ -286,10 +297,9 @@ pub async fn run(
     // drop it now and leave `<config>/news` holding only the latest newscast.
     remove_old_videos(&folder, &output, &state.logger);
 
-    for story in &encoded {
-        let key = story_key(story);
-        if !key.is_empty() && !ledger.used.contains(&key) {
-            ledger.used.push(key);
+    for key in &ledger_keys {
+        if !key.is_empty() && !ledger.used.contains(key) {
+            ledger.used.push(key.clone());
         }
     }
     if ledger.used.len() > MAX_TRACKED_STORIES {
