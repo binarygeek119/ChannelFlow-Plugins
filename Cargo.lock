@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-jellyfin"
-version = "2.0.28"
+version = "2.0.29"
 dependencies = [
  "async-trait",
  "axum",

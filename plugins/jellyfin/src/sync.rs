@@ -92,6 +92,7 @@ fn catalog_kind(type_name: &str) -> Option<&'static str> {
         "MusicAlbum" => Some("album"),
         "MusicArtist" => Some("artist"),
         "MusicVideo" => Some("musicvideo"),
+        "Audio" => Some("track"),
         _ => None,
     }
 }
@@ -205,6 +206,10 @@ fn item_detail(raw: &Value) -> Option<Value> {
     put("album_artist", text("AlbumArtist").map(Value::String).unwrap_or(Value::Null));
     put("artist_id", text("ArtistId").map(Value::String).unwrap_or(Value::Null));
     put("series_id", text("SeriesId").map(Value::String).unwrap_or(Value::Null));
+    // A music track's place, so the base can order an album's tracks.
+    put("index_number", raw.get("IndexNumber").cloned().unwrap_or(Value::Null));
+    put("parent_index_number", raw.get("ParentIndexNumber").cloned().unwrap_or(Value::Null));
+    put("artists", raw.get("Artists").cloned().unwrap_or(Value::Null));
 
     // Files with their streams and chapters (the item's playable sources).
     let files: Vec<Value> = raw
