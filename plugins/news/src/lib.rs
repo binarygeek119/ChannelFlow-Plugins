@@ -13,13 +13,32 @@ mod settings;
 use std::sync::Arc;
 
 use axum::Router;
+use channelflow_plugin_api::contrib::PresetContribution;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;
 use channelflow_plugin_api::ui::UiContribution;
+use channelflow_plugin_api::{register_preset, unregister_preset};
 use tokio::sync::Mutex;
 
 use crate::settings::{NewsSettings, SETTINGS_KEY};
+
+/// The id of the preset this plugin contributes to the Presets page. It is
+/// registered on load, so FlowWire News is only in the preset list while this
+/// plugin is installed.
+const FLOWWIRE_PRESET_ID: &str = "channelflow-live-news";
+
+fn flowwire_preset() -> PresetContribution {
+    PresetContribution {
+        id: FLOWWIRE_PRESET_ID.to_string(),
+        plugin_id: "com.channelflow.news".to_string(),
+        legacy: 123.1,
+        subchannel: 119.8,
+        name: "FlowWire News".to_string(),
+        category: "News".to_string(),
+        description: "Live RSS news channel with optional TTS".to_string(),
+    }
+}
 
 /// The shipped `plugin.json` is the single source of truth for the manifest.
 fn manifest() -> PluginManifest {
@@ -68,6 +87,9 @@ impl Plugin for NewsPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // Offer itself to the Presets page: FlowWire News becomes a preset
+        // (123.1 retro / 119.8 modern) while this plugin is installed.
+        register_preset(flowwire_preset());
         // The web UI this plugin ships is hosted from its own folder:
         // the core serves it at /plugin/{id}/web/...
         api.web.serve_embedded("news.css", "text/css", include_bytes!("../web/news.css"));
@@ -110,6 +132,9 @@ impl Plugin for NewsPlugin {
     }
 
     fn on_unload(&mut self) {
+        // Its preset disappears with it: FlowWire News is in the preset list
+        // only while this plugin is installed.
+        unregister_preset(FLOWWIRE_PRESET_ID);
         self.state = None;
     }
 

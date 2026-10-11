@@ -24,7 +24,6 @@ pub const PRESETS: &[Preset] = &[
     Preset { id: "channelflow-retro", legacy: 120.0, subchannel: 119.2, name: "Retro TV", category: "TV Shows", description: "1910–1969 TV and movies (first-episode year for series)" },
     Preset { id: "channelflow-open-swim", legacy: 121.0, subchannel: 119.3, name: "[OpenSwim]", category: "TV Shows", description: "Nick, Disney, Fox Kids, and Cartoon Network style kids TV/movies; any year; TV-PG max" },
     Preset { id: "channelflow-reality", legacy: 122.0, subchannel: 119.4, name: "Flip Television", category: "TV Shows", description: "Reality TV themed shows and movies" },
-    Preset { id: "channelflow-live-news", legacy: 123.1, subchannel: 119.8, name: "FlowWire News", category: "News", description: "Live RSS news channel with optional TTS" },
     Preset { id: "channelflow-weatherstar4000", legacy: 124.0, subchannel: 119.6, name: "WeatherStar4000", category: "Weather", description: "Live WeatherStar 4000+ MPEG-TS weather channel" },
     Preset { id: "channelflow-weatherstar3000", legacy: 124.2, subchannel: 119.7, name: "WeatherStar3000", category: "Weather", description: "Live WeatherStar 3000+ MPEG-TS weather channel" },
     Preset { id: "channelflow-past-tense-news", legacy: 125.0, subchannel: 124.1, name: "Past Tense News", category: "News", description: "Home movies treated as live breaking news" },
