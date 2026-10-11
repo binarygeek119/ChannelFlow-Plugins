@@ -912,7 +912,7 @@ fn trim_at_word(text: &str, max: usize) -> String {
 fn story_font_size(chars: usize) -> f64 {
     const TARGET_PX: f64 = 1700.0;
     const MIN_PX: f64 = 30.0;
-    const MAX_PX: f64 = 48.0;
+    const MAX_PX: f64 = 52.0;
     if chars == 0 {
         return MAX_PX;
     }
@@ -1066,7 +1066,7 @@ mod tests {
         // The size always fits inside the story bars (never below the floor).
         for chars in [0, 10, 60, 100, 200] {
             let size = story_font_size(chars);
-            assert!((30.0..=48.0).contains(&size), "font {size} stays in range");
+            assert!((30.0..=52.0).contains(&size), "font {size} stays in range");
         }
     }
 
