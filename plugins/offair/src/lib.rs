@@ -57,6 +57,9 @@ pub struct OffAirState {
     pub settings: Mutex<OffAirSettings>,
     pub storage: Arc<dyn PluginStorage>,
     pub logger: PluginLogger,
+    /// The plugin's own config folder (`<config>/plugins/{id}`): custom
+    /// off-air slate uploads live under `slates/<variant>.png`.
+    pub dir: std::path::PathBuf,
 }
 
 impl OffAirPlugin {
@@ -104,6 +107,7 @@ impl Plugin for OffAirPlugin {
             settings: Mutex::new(settings),
             storage: api.storage.clone(),
             logger: api.logger.clone(),
+            dir: api.dir.clone(),
         }));
         api.logger.info("loaded");
         Ok(())

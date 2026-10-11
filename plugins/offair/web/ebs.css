@@ -14,3 +14,16 @@
     border: 1px solid var(--border);
     background: #101010;
 }
+
+/* Custom slate upload + preview. */
+.offair-slate-preview {
+    display: block;
+    width: 100%;
+    max-width: 26rem;
+    height: auto;
+    border-radius: 0.35rem;
+    border: 1px solid var(--border);
+    background: #101010;
+    margin: 0.4rem 0;
+}
+.field-note.bad { color: #ff8787; }

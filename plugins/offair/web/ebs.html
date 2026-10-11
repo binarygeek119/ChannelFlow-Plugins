@@ -39,6 +39,39 @@
 
         <div class="panel">
           <div class="panel-head">
+            <h3>Custom slates</h3>
+          </div>
+          <p class="hint">
+            Upload your own off-air slate per region, exactly as v1.0.0's EBS slates worked — a
+            custom upload is what plays, and the bundled stock slate fills in when a region has
+            none. The preview shows the effective slate for the region and aspect.
+          </p>
+          <div class="field">
+            <label class="field-label" for="ebs-slate-variant2">Slate region</label>
+            <select id="ebs-slate-variant2">
+              <option value="usa">USA</option>
+              <option value="international">World</option>
+            </select>
+            <label class="field-label" for="ebs-slate-aspect">Preview aspect</label>
+            <select id="ebs-slate-aspect">
+              <option value="0">16:9</option>
+              <option value="1">4:3</option>
+            </select>
+          </div>
+          <img id="ebs-slate-preview" class="offair-slate-preview" alt="Offline slate preview">
+          <div class="field">
+            <label class="field-label" for="ebs-slate-file">Custom image (PNG or JPG)</label>
+            <input type="file" id="ebs-slate-file" accept="image/png,image/jpeg">
+            <div class="actions">
+              <button type="button" class="ghost" id="ebs-slate-upload">Upload custom slate</button>
+              <button type="button" class="ghost danger" id="ebs-slate-remove" hidden>Remove custom slate</button>
+            </div>
+            <span class="field-note" id="ebs-slate-note"></span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
             <h3>Offline screens</h3>
           </div>
           <p class="hint">
