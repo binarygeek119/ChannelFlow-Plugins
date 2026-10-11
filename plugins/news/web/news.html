@@ -4,7 +4,7 @@
           </div>
           <p class="hint">
             The FlowWire newscast: ChannelFlow fetches the RSS feeds below, scrolls headlines, and can read them
-            with TTS. Pick the header, how many articles and how often to refresh, the TTS voice and engine, the
+            with TTS. Pick the header, how many articles and how often to refresh, the TTS voice, the
             anchor intro/outro, and which feeds to pull. Refresh the headlines to preview.
           </p>
           <form id="news-form" class="ms-form" autocomplete="off">
@@ -23,6 +23,10 @@
             <div class="field">
               <label class="field-label" for="news-voice">TTS voice / language</label>
               <select id="news-voice"></select>
+              <p class="field-note">
+                The AI page's voice reads the show when a TTS provider is set there; this voice is the
+                Google TTS fallback.
+              </p>
             </div>
             <div class="field">
               <label class="field-label" for="news-intro">Anchor intro</label>
@@ -53,21 +57,6 @@
               <label class="field-note" for="news-headlines-only"><input id="news-headlines-only" type="checkbox"> Read headlines only</label>
               <label class="field-note" for="news-no-music"><input id="news-no-music" type="checkbox"> Play no music at all</label>
               <label class="field-note" for="news-show-header"><input id="news-show-header" type="checkbox" checked> Show header on screen</label>
-            </div>
-            <div class="field">
-              <label class="field-label" for="news-tts-engine">TTS engine</label>
-              <select id="news-tts-engine"></select>
-            </div>
-            <div class="field" id="news-ai-tts-fields" hidden>
-              <span class="field-label">AI TTS</span>
-              <label class="field-label" for="news-ai-tts-url">Endpoint (OpenAI-compatible)</label>
-              <input id="news-ai-tts-url" type="url" placeholder="https://example.com/v1">
-              <label class="field-label" for="news-ai-tts-key">API key</label>
-              <input id="news-ai-tts-key" type="password" autocomplete="off" placeholder="(none)">
-              <label class="field-label" for="news-ai-tts-model">Model</label>
-              <input id="news-ai-tts-model" type="text" placeholder="kokoro">
-              <label class="field-label" for="news-ai-tts-voice">Voice (optional, falls back to TTS voice)</label>
-              <input id="news-ai-tts-voice" type="text" placeholder="(TTS voice)">
             </div>
             <div class="field">
               <span class="field-label">News video</span>

@@ -1,18 +1,15 @@
-//! Google TTS for the newscast, ported from 1.0.0's NewsTtsService.
+//! Speech for the newscast.
 //!
-//! The free `translate.google.com/translate_tts` endpoint reads a short line
-//! of text aloud; long scripts are chunked at sentence boundaries (≤180
-//! letters) and the clips are stitched with ffmpeg into one mp3. A
-//! rate-limited reply stops the run rather than retrying in a loop — the
-//! bulletin falls back to a silent show.
+//! The show is read with the AI page's TTS provider (an OpenAI-compatible
+//! `/audio/speech` endpoint) when one is configured; Google's free
+//! `translate.google.com/translate_tts` endpoint reads it otherwise, and again
+//! if the AI provider fails. Long scripts are chunked at sentence boundaries
+//! and the clips stitched with ffmpeg into one mp3. A rate-limited Google
+//! reply stops the run rather than retrying in a loop — the bulletin falls back
+//! to a silent show.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-/// The Settings' TTS engine value for Google.
-pub fn is_engine(engine: &str) -> bool {
-    engine.trim().eq_ignore_ascii_case("google")
-}
 
 /// The longest line Google's endpoint comfortably reads at once.
 pub const MAX_CHUNK: usize = 180;

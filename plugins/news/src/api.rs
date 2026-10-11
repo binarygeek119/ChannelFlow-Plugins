@@ -44,7 +44,6 @@ fn view(settings: &NewsSettings) -> serde_json::Value {
     json!({
         "settings": settings,
         "options": {
-            "tts_engines": ["google", "ai"],
             "tts_voices": TTS_VOICES,
         }
     })

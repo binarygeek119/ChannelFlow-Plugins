@@ -422,8 +422,9 @@ pub async fn ledger_snapshot(state: &Arc<NewsState>) -> StoryLedger {
 }
 
 /// Compose the newscast mp4 with ffmpeg overlays, writing a staging file.
-/// Reads Google TTS speech for the anchor open, each story, and the outro
-/// when TTS is enabled, and mixes it into the bed at each segment's window.
+/// Reads the anchor open, each story, and the outro aloud when TTS is enabled
+/// (the AI page's provider, or Google TTS), and mixes the speech into the bed
+/// at each segment's window.
 async fn render_bulletin(
     settings: &NewsSettings,
     http: &reqwest::Client,
@@ -486,10 +487,9 @@ async fn render_bulletin(
     }
     texts.push(outro_line.clone());
 
-    // The anchor's copy is read aloud: Google TTS by default, or the AI engine
-    // when it is chosen. AI TTS uses the provider from the AI tab (via core)
-    // if available, otherwise falls back to Google.
-    let ai_engine = matches!(settings.tts_engine, crate::settings::TtsEngine::Ai);
+    // The anchor's copy is read aloud with the TTS provider from the AI page.
+    // Without one — or when it fails — Google TTS reads it, so the show still
+    // has narration.
     let mut speech: Vec<Option<(PathBuf, f64)>> = vec![None; texts.len()];
     if settings.tts_enabled {
         for (index, text) in texts.iter().enumerate() {
@@ -497,46 +497,24 @@ async fn render_bulletin(
                 continue;
             }
             let path = work_dir.join(format!("speech-{index}.mp3"));
-            let audio_voice = if settings.ai_tts_voice.trim().is_empty() {
-                &settings.tts_voice
-            } else {
-                &settings.ai_tts_voice
+            let spoken = match ai_provider.as_ref() {
+                Some(provider) => match crate::tts::synthesize_ai(
+                    http,
+                    text,
+                    &provider.base_url,
+                    &provider.api_key,
+                    &provider.tts_model,
+                    &provider.voice,
+                    &path,
+                )
+                .await
+                {
+                    Ok(count) if count > 0 => Ok(count),
+                    _ => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
+                },
+                None => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
             };
-            let result = if ai_engine {
-                // Use AI provider from core if available, otherwise fallback settings
-                let (base_url, api_key, model, voice) = if let Some(ref provider) = ai_provider {
-                    (
-                        provider.base_url.clone(),
-                        provider.api_key.clone(),
-                        provider.tts_model.clone(),
-                        if provider.voice.is_empty() { audio_voice.clone() } else { provider.voice.clone() }
-                    )
-                } else if !settings.ai_tts_base_url.trim().is_empty() {
-                    // Fallback to manually configured settings
-                    (
-                        settings.ai_tts_base_url.clone(),
-                        settings.ai_tts_api_key.clone(),
-                        settings.ai_tts_model.clone(),
-                        audio_voice.clone(),
-                    )
-                } else {
-                    // No AI provider available, fallback to Google
-                    match crate::tts::synthesize(http, text, &settings.tts_voice, &path).await {
-                        Ok(count) => {
-                            if count > 0 {
-                                let duration = probe_seconds(&path).unwrap_or(0.0);
-                                speech[index] = Some((path, duration));
-                            }
-                        }
-                        _ => {}
-                    }
-                    continue;
-                };
-                crate::tts::synthesize_ai(http, text, &base_url, &api_key, &model, &voice, &path).await
-            } else {
-                crate::tts::synthesize(http, text, &settings.tts_voice, &path).await
-            };
-            if let Ok(count) = result {
+            if let Ok(count) = spoken {
                 if count > 0 {
                     let duration = probe_seconds(&path).unwrap_or(0.0);
                     speech[index] = Some((path, duration));

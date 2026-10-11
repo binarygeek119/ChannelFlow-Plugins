@@ -1,12 +1,26 @@
 //! The News plugin settings — the FlowWire newscast: the header, how many
-//! articles and how often to refresh, the TTS voice and engine, the anchor
-//! intro/outro, the bulletin schedule, and the RSS feeds. Mirrors 1.0.0's
-//! News tab.
+//! articles and how often to refresh, the TTS voice, the anchor intro/outro,
+//! the bulletin schedule, and the RSS feeds. Mirrors 1.0.0's News tab.
+//!
+//! The voice that reads the show comes from the AI page (the core hands the
+//! plugin a TTS provider); the only voice kept here is the language Google
+//! TTS falls back to when no AI provider is set.
 
 use serde::{Deserialize, Serialize};
 
 /// The key the settings are stored under in the plugin's namespaced storage.
 pub const SETTINGS_KEY: &str = "settings";
+
+/// The old AI-TTS fields, dropped before parsing so a document saved by an
+/// earlier version still loads (`deny_unknown_fields` would otherwise reject
+/// it). The AI page owns the endpoint, key, model, and voice now.
+const LEGACY_TTS_FIELDS: [&str; 5] = [
+    "tts_engine",
+    "ai_tts_base_url",
+    "ai_tts_api_key",
+    "ai_tts_model",
+    "ai_tts_voice",
+];
 
 /// One RSS feed, saved even when disabled.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,20 +30,6 @@ pub struct NewsFeed {
     pub enabled: bool,
 }
 
-/// The TTS engine used to read the stories.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TtsEngine {
-    Google,
-    Ai,
-}
-
-impl Default for TtsEngine {
-    fn default() -> Self {
-        TtsEngine::Google
-    }
-}
-
 /// The whole News settings document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -37,21 +37,14 @@ pub struct NewsSettings {
     pub header: String,
     pub article_count: u32,
     pub refresh_minutes: u32,
+    /// The Google TTS language (e.g. `en-US`), used only when no AI provider is
+    /// configured on the AI page.
     pub tts_voice: String,
     pub anchor_intro: String,
     pub anchor_outro: String,
     /// Speak the build time as 24-hour (`15:00`) instead of 12-hour (`3 P M`).
     pub use_24_hour: bool,
     pub tts_enabled: bool,
-    pub tts_engine: TtsEngine,
-    /// The OpenAI-compatible endpoint when `tts_engine` is the AI engine.
-    pub ai_tts_base_url: String,
-    #[serde(default, skip_serializing)]
-    pub ai_tts_api_key: String,
-    /// The model to read with (e.g. `kokoro`), when the AI engine is chosen.
-    pub ai_tts_model: String,
-    /// The AI voice; falls back to `tts_voice`.
-    pub ai_tts_voice: String,
     pub ai_rewrite: bool,
     pub show_header: bool,
     pub headlines_only: bool,
@@ -75,11 +68,6 @@ impl Default for NewsSettings {
             anchor_outro: String::new(),
             use_24_hour: false,
             tts_enabled: true,
-            tts_engine: TtsEngine::default(),
-            ai_tts_base_url: String::new(),
-            ai_tts_api_key: String::new(),
-            ai_tts_model: "kokoro".to_string(),
-            ai_tts_voice: String::new(),
             ai_rewrite: false,
             show_header: true,
             headlines_only: false,
@@ -105,8 +93,16 @@ impl std::error::Error for NewsError {}
 
 impl NewsSettings {
     /// Parse a stored or posted document, normalising the bounds and feeds.
+    /// The retired AI-TTS fields are discarded first, so a document saved by
+    /// an earlier version still loads.
     pub fn parse(value: &serde_json::Value) -> Result<Self, NewsError> {
-        let mut settings: NewsSettings = serde_json::from_value(value.clone()).map_err(|error| {
+        let mut value = value.clone();
+        if let Some(object) = value.as_object_mut() {
+            for field in LEGACY_TTS_FIELDS {
+                object.remove(field);
+            }
+        }
+        let mut settings: NewsSettings = serde_json::from_value(value).map_err(|error| {
             NewsError(format!("news settings are not valid: {error}"))
         })?;
         settings.normalize();
@@ -115,13 +111,11 @@ impl NewsSettings {
 
     /// Clamp the numeric bounds, trim the free-text fields, and drop empty
     /// or URL-less feeds.
-    pub fn normalize(&mut self) {        self.header = self.header.trim().to_string();
+    pub fn normalize(&mut self) {
+        self.header = self.header.trim().to_string();
         self.anchor_intro = self.anchor_intro.trim().to_string();
         self.anchor_outro = self.anchor_outro.trim().to_string();
-        self.ai_tts_base_url = self.ai_tts_base_url.trim().trim_end_matches('/').to_string();
-        self.ai_tts_api_key = self.ai_tts_api_key.trim().to_string();
-        self.ai_tts_model = self.ai_tts_model.trim().to_string();
-        self.ai_tts_voice = self.ai_tts_voice.trim().to_string();
+        self.tts_voice = self.tts_voice.trim().to_string();
         self.article_count = self.article_count.clamp(1, 30);
         self.refresh_minutes = self.refresh_minutes.clamp(2, 120);
         self.minimum_new_stories = self.minimum_new_stories.clamp(1, 30);
@@ -193,5 +187,26 @@ mod tests {
     fn rejects_unknown_fields() {
         let bad = serde_json::json!({ "articleCount": 8 });
         assert!(NewsSettings::parse(&bad).is_err());
+    }
+
+    /// A document saved before the AI-TTS fields were retired still loads, and
+    /// the retired fields are gone afterwards.
+    #[test]
+    fn drops_the_retired_ai_tts_fields() {
+        let old = serde_json::json!({
+            "header": "FlowWire News",
+            "tts_engine": "ai",
+            "ai_tts_base_url": "https://example.com/v1",
+            "ai_tts_api_key": "secret",
+            "ai_tts_model": "kokoro",
+            "ai_tts_voice": "af_sarah",
+            "feeds": [{ "url": "https://example.com/rss", "enabled": true }]
+        });
+        let settings = NewsSettings::parse(&old).expect("the old document still loads");
+        assert_eq!(settings.header, "FlowWire News");
+        assert_eq!(settings.feeds.len(), 1);
+        let round_trip = serde_json::to_value(&settings).expect("serializes");
+        assert!(round_trip.get("ai_tts_base_url").is_none());
+        assert!(round_trip.get("tts_engine").is_none());
     }
 }
