@@ -29,3 +29,21 @@
     color: var(--muted);
     text-align: center;
 }
+
+.ebs-audio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.4rem;
+}
+.ebs-audio figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.ebs-audio figcaption {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+.ebs-audio audio { width: 18rem; max-width: 100%; }

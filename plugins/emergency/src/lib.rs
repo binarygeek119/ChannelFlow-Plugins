@@ -71,8 +71,10 @@ impl Plugin for EmergencyPlugin {
         api.web.serve_embedded("emergency.css", "text/css", include_bytes!("../web/emergency.css"));
         api.web.serve_embedded("emergency.html", "text/html", include_bytes!("../web/emergency.html"));
         api.web.serve_embedded("emergency.js", "text/javascript", include_bytes!("../web/emergency.js"));
-        // v1.0.0's EBS alert + offline media, for the channel's graphics.
+        // v1.0.0's EBS alert + offline media and alert tones, for the
+        // channel's graphics and audio.
         serve_media(&api);
+        serve_audio(&api);
 
         let settings = match api
             .storage
@@ -168,6 +170,22 @@ fn serve_media(api: &channelflow_plugin_api::plugin::PluginApi) {
     media!("offline_world_16_9.jpg", "image/jpeg");
     media!("offline_world_4_3.jpg", "image/jpeg");
     media!("offlineusa.jpg", "image/jpeg");
+}
+
+/// Publish the v1.0.0 EBS alert tones, under
+/// `/plugin/com.channelflow.emergency/web/audio/EBS/<file>`.
+fn serve_audio(api: &channelflow_plugin_api::plugin::PluginApi) {
+    macro_rules! audio {
+        ($file:literal, $mime:literal) => {
+            api.web.serve_embedded(
+                concat!("audio/EBS/", $file),
+                $mime,
+                include_bytes!(concat!("../web/audio/EBS/", $file)),
+            )
+        };
+    }
+    audio!("weather_alert.ogg", "audio/ogg");
+    audio!("weather_alert_single.mp3", "audio/mpeg");
 }
 
 #[cfg(test)]
