@@ -109,6 +109,24 @@
             "size": 0
           }
         }
+      },
+      {
+        "version": "2.0.12",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-12T22:31:17Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.12/com.channelflow.presets-v2.0.12-linux-x86_64.zip",
+            "checksum": "sha256:50eefaf8697c300ee310ce0b6adb7fac7769e2acc40bfc9d97694c799a394de1",
+            "size": 259891
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.12/com.channelflow.presets-v2.0.12-windows-x86_64.zip",
+            "checksum": "sha256:4268eb1617c7e98804baac2b0463a87a454354fe6d512e0c243d77eddf312af8",
+            "size": 221473
+          }
+        }
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.presets.png"
