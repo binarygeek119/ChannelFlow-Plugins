@@ -104,6 +104,9 @@ fn preset_row_json(
         "description": row.description,
         "logo": row.logo,
         "exists": exists,
+        // The Scheduler layers this preset applies once its channel exists;
+        // null for plugin-contributed presets, which bring their own behaviour.
+        "layers": crate::layers::layers_for(row.id),
     })
 }
 

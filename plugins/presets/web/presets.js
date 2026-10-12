@@ -198,11 +198,24 @@ async function applyPresets() {
           fade_duration_seconds: 1.5,
         };
       }
-      await request("/api/channels", {
+      const createdChannel = await request("/api/channels", {
         method: "POST",
         body: JSON.stringify(payload),
       });
       created += 1;
+      // Give the Scheduler something to build from. The Scheduler may not be
+      // installed, so a missing route is not an error — the channel still
+      // exists, just with empty layers.
+      if (preset.layers && createdChannel && createdChannel.id) {
+        try {
+          await request(
+            `/api/plugins/com.channelflow.scheduler/channels/${createdChannel.id}/layers`,
+            { method: "POST", body: JSON.stringify(preset.layers) }
+          );
+        } catch (error) {
+          /* no Scheduler, or it refused the bundle */
+        }
+      }
     } catch (error) {
       skipped += 1;
     }

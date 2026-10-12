@@ -6,6 +6,7 @@
 //! through the base's own channel API, so presets are a shortcut — never the
 //! only way to add channels.
 
+mod layers;
 mod presets;
 mod routes;
 

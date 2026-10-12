@@ -79,7 +79,7 @@ pub fn catalog_filter(items: &ItemsLayer) -> CatalogFilter {
         }
     }
     CatalogFilter {
-        kind: items.filter.kind.clone(),
+        kinds: items.filter.kinds.clone(),
         genres: items.filter.genres.clone(),
         tags: items.filter.tags.clone(),
         year_min: items.filter.year_min,

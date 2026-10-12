@@ -41,6 +41,7 @@ pub fn router(state: Arc<RoutesState>) -> Router {
         .route("/channels/{id}/rules", get(get_rules).put(put_rules))
         .route("/channels/{id}/items", get(get_items).put(put_items))
         .route("/channels/{id}/prompt", get(get_prompt).put(put_prompt))
+        .route("/channels/{id}/layers", post(put_layers))
         .route("/channels/{id}/compile", post(compile))
         .route("/channels/{id}/build", post(build_one))
         .route("/channels/{id}/days", get(list_days))
@@ -139,6 +140,43 @@ async fn put_items(
         Ok(()) => Json(value).into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error),
     }
+}
+
+/// The four layer documents in one call — what a preset applies after it
+/// creates a channel.
+#[derive(Debug, Deserialize)]
+struct LayersBundle {
+    #[serde(default)]
+    hours: layers::HoursLayer,
+    #[serde(default)]
+    rules: Vec<Rule>,
+    #[serde(default)]
+    items: ItemsLayer,
+    #[serde(default)]
+    prompt: String,
+}
+
+async fn put_layers(
+    State(state): State<Arc<RoutesState>>,
+    Path(id): Path<String>,
+    Json(bundle): Json<LayersBundle>,
+) -> Response {
+    let hours = serde_json::to_value(&bundle.hours).unwrap_or(Value::Null);
+    let rules = serde_json::to_value(&bundle.rules).unwrap_or(Value::Null);
+    let items = serde_json::to_value(&bundle.items).unwrap_or(Value::Null);
+    let prompt = Value::String(bundle.prompt);
+    let pairs: [(&str, &Value); 4] = [
+        ("hours", &hours),
+        ("rules", &rules),
+        ("items", &items),
+        ("prompt", &prompt),
+    ];
+    for (layer, value) in pairs {
+        if let Err(error) = state::write_layer(state.storage.as_ref(), &id, layer, value).await {
+            return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+        }
+    }
+    Json(json!({ "hours": hours, "rules": rules, "items": items, "prompt": prompt })).into_response()
 }
 
 async fn get_prompt(State(state): State<Arc<RoutesState>>, Path(id): Path<String>) -> Response {

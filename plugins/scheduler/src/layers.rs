@@ -146,7 +146,9 @@ impl Rule {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ItemFilter {
-    pub kind: Option<String>,
+    /// Coarse kinds to include: `movie`, `series`, `musicvideo`, … Empty means
+    /// every kind, so a "TV and movies" preset can name both.
+    pub kinds: Vec<String>,
     pub genres: Vec<String>,
     pub tags: Vec<String>,
     pub year_min: Option<i32>,
