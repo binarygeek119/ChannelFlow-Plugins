@@ -900,13 +900,15 @@ fn logo_fade_in() -> String {
     format!("fade=t=in:st=0:d={INTRO_FADE_SECONDS}")
 }
 
-/// The closing chain of the render: the FlowWire logo over black before the show,
-/// the desktop while it runs, then the logo again over black for the outro music,
-/// eased in at the close and faded out into the final fade to black. `cur` is the
-/// label of the last desktop layer, `ass` the caption file path, `fade` how long
-/// the final fade to black takes. The logo stream is split before being handed to
-/// the intro and outro overlays: ffmpeg starves a second overlay that reads the
-/// same label directly, so without the split the outro logo is never drawn.
+/// The opening and closing chains of the render: the FlowWire logo eases up over
+/// black as the intro music starts, holds for the music, then fades back out as
+/// the music ends before the desktop (and the anchor) comes up; the desktop runs
+/// through the show; then the logo returns over black for the outro music and is
+/// faded into the final fade to black. `cur` is the label of the last desktop
+/// layer, `ass` the caption file path, `fade` how long the final fade to black
+/// takes. The logo stream is split before being handed to the intro and outro
+/// overlays: ffmpeg starves a second overlay that reads the same label directly,
+/// so without the split the outro logo is never drawn.
 fn logo_and_outro_filter(
     cur: &str,
     ass: &str,
@@ -915,9 +917,14 @@ fn logo_and_outro_filter(
     show_total: f64,
     fade_start: f64,
 ) -> String {
+    // The intro logo fades back out across the last stretch of the intro music,
+    // so the picture is black (not a popped logo) when the anchor comes up.
+    let intro_out_dur = INTRO_FADE_SECONDS.min(lead);
+    let intro_out_start = (lead - intro_out_dur).max(0.0);
     format!(
         "[6:v]scale=560:-1,{intro_fade},split[lg1][lg2];\
-         [base][lg1]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];\
+         [lg1]fade=t=out:st={intro_out_start}:d={intro_out_dur}[lg_in];\
+         [base][lg_in]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];\
          [v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',\
          fade=t=in:st={lead}:d=0.8:alpha=1[v2];\
          [v2]ass='{ass}'[v3];\
@@ -931,6 +938,8 @@ fn logo_and_outro_filter(
         lead = lead,
         show_total = show_total,
         fade_start = fade_start,
+        intro_out_start = intro_out_start,
+        intro_out_dur = intro_out_dur,
     )
 }
 
@@ -1497,6 +1506,27 @@ mod tests {
     }
 
     #[test]
+    fn the_intro_logo_fades_back_out_as_the_music_ends() {
+        let chain = logo_and_outro_filter("desk", "news.ass", 1.2, 4.0, 120.0, 129.0);
+        // The logo eases up from black over the opening of the intro music.
+        assert!(
+            chain.contains("fade=t=in:st=0:d=1.2"),
+            "the intro logo eases in: {chain}"
+        );
+        // And it fades back out across the last stretch of the music, before
+        // the desktop (and the anchor) comes up — no popped logo under the
+        // presenter screen.
+        assert!(
+            chain.contains("fade=t=out:st=2.8:d=1.2"),
+            "the intro logo fades out as the music ends: {chain}"
+        );
+        assert!(
+            chain.contains("enable='between(t,4,120)'"),
+            "the presenter screen comes up at the music's end: {chain}"
+        );
+    }
+
+    #[test]
     fn the_logo_eases_up_at_the_start() {
         // The logo fades in from black over the opening of the intro music
         // rather than popping straight on.
@@ -1518,7 +1548,7 @@ mod tests {
             "the logo is split before its two uses: {chain}"
         );
         assert!(
-            chain.contains("[base][lg1]overlay"),
+            chain.contains("[base][lg_in]overlay"),
             "the intro overlay reads the first fork: {chain}"
         );
         assert!(
