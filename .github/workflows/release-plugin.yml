@@ -209,6 +209,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Every run rewrites manifest.json from the full release list, so two at
+    # once would race on main (and a late partial write would drop entries).
+    # Queue them: the last to run sees every release and lands the whole file.
+    concurrency:
+      group: release-manifest
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
