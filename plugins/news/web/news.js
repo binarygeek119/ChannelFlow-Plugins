@@ -12,6 +12,17 @@ const NEWS_VOICE_LABELS = {
   "zh-CN": "Chinese",
 };
 
+// The default script the server sends, shown in the intro/outro boxes so they
+// can be edited directly.
+const NEWS_DEFAULTS = { intro: "", outro: "" };
+
+// The value to save for an anchor box. The pre-filled default is sent as empty
+// so the anchor keeps following the show name; anything else is a custom line.
+function anchorValue(id, fallback) {
+  const text = $(id).value.trim();
+  return text === fallback.trim() ? "" : text;
+}
+
 function fillNewsSelect(id, values, labels, selected) {
   const select = $(id);
   if (!select || !values) return;
@@ -36,8 +47,8 @@ function collectNewsSettings() {
     article_count: Number($("news-count").value) || 8,
     refresh_minutes: Number($("news-refresh").value) || 10,
     tts_voice: $("news-voice").value,
-    anchor_intro: $("news-intro").value.trim(),
-    anchor_outro: $("news-outro").value.trim(),
+    anchor_intro: anchorValue("news-intro", NEWS_DEFAULTS.intro),
+    anchor_outro: anchorValue("news-outro", NEWS_DEFAULTS.outro),
     use_24_hour: $("news-24h").checked,
     tts_enabled: $("news-tts").checked,
     ai_rewrite: $("news-ai-rewrite").checked,
@@ -59,8 +70,12 @@ async function loadNews() {
     $("news-header").value = settings.header || "";
     $("news-count").value = settings.article_count;
     $("news-refresh").value = settings.refresh_minutes;
-    $("news-intro").value = settings.anchor_intro || "";
-    $("news-outro").value = settings.anchor_outro || "";
+    // Pre-fill the anchor boxes with the default script when none is saved, so
+    // the FlowWire lines are visible and editable rather than blank.
+    NEWS_DEFAULTS.intro = (data.options && data.options.default_intro) || "";
+    NEWS_DEFAULTS.outro = (data.options && data.options.default_outro) || "";
+    $("news-intro").value = settings.anchor_intro || NEWS_DEFAULTS.intro;
+    $("news-outro").value = settings.anchor_outro || NEWS_DEFAULTS.outro;
     setNewsCheck("news-24h", settings.use_24_hour);
     setNewsCheck("news-tts", settings.tts_enabled);
     setNewsCheck("news-ai-rewrite", settings.ai_rewrite);

@@ -41,10 +41,15 @@ const TTS_VOICES: [&str; 10] = [
 ];
 
 fn view(settings: &NewsSettings) -> serde_json::Value {
+    let show_name = resolve_show_name(&settings.header);
     json!({
         "settings": settings,
         "options": {
             "tts_voices": TTS_VOICES,
+            // The default script, so the form can pre-fill the intro/outro
+            // boxes with the FlowWire lines instead of leaving them blank.
+            "default_intro": default_intro(&show_name),
+            "default_outro": default_outro(&show_name),
         }
     })
 }
@@ -596,6 +601,21 @@ mod tests {
             anchor_line("The time is @@@@, the hour is @@.", String::new(), 15, 14, false),
             "The time is 3 14 P M, the hour is 3 P M."
         );
+    }
+
+    #[test]
+    fn the_form_receives_the_default_anchor_script() {
+        // The form pre-fills the intro/outro boxes with these, so they must
+        // carry the full-time token and the show name.
+        let settings = NewsSettings::default();
+        let view = view(&settings);
+        let options = view.get("options").expect("options");
+        let intro = options["default_intro"].as_str().unwrap_or("");
+        let outro = options["default_outro"].as_str().unwrap_or("");
+        assert!(intro.contains("FlowWire News"), "intro names the show: {intro}");
+        assert!(intro.contains(FULL_TIME_TOKEN), "intro keeps the time token: {intro}");
+        assert!(outro.contains("FlowWire News"), "outro names the show: {outro}");
+        assert!(outro.contains(FULL_TIME_TOKEN), "outro keeps the time token: {outro}");
     }
 
     #[test]
