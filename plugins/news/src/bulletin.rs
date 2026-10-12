@@ -81,10 +81,17 @@ const ANCHOR_INTRO_SECONDS: f64 = 4.0;
 /// The logo eases up from black at the very start, over the first stretch of the
 /// intro music.
 const INTRO_FADE_SECONDS: f64 = 1.2;
-/// After the anchor's close the desktop cuts to the logo on black while the
-/// outro music plays; once it finishes the picture fades to black over this
-/// many seconds (the video runs on past the music to allow it).
+/// After the anchor's close the desktop fades to black, the FlowWire logo fades
+/// up over black while the outro music plays, and as the music ends the logo
+/// fades back out to black over `OUTRO_FADE_SECONDS`; the video ends as that
+/// fade completes.
 const OUTRO_FADE_SECONDS: f64 = 1.2;
+/// How long the anchor's close takes to fade the desktop (the presenter on the
+/// map) to black before the outro logo fades up.
+const OUTRO_DESKTOP_FADE_SECONDS: f64 = 1.0;
+/// How long the FlowWire logo takes to fade up over black at the start of the
+/// outro music.
+const OUTRO_LOGO_IN_SECONDS: f64 = 0.8;
 /// How far the two story lines are raised off the bottom of the frame (the ASS
 /// `MarginV`): line 1, then line 2 nearest the bottom. Both sit down in the
 /// marked story areas.
@@ -626,14 +633,14 @@ async fn render_bulletin(
     let ass_path = work_dir.join("news.ass");
     std::fs::write(&ass_path, ass).map_err(|error| error.to_string())?;
 
-    // After the anchor's close the desktop cuts to the logo on black and the
-    // outro music plays; once it finishes the picture fades to black, so the
-    // video runs on a little past the music to make room for the fade.
+    // After the anchor's close the desktop fades to black, the FlowWire logo
+    // fades up over black while the outro music plays, and as the music ends
+    // the logo fades back out to black — the video ends as that fade completes.
     let outro_len = probe_seconds(&outro_mp3)
         .filter(|len| *len > 0.5)
         .unwrap_or(OUTRO_SECONDS);
-    let total = show_total + outro_len + OUTRO_FADE_SECONDS;
-    let fade_start = total - OUTRO_FADE_SECONDS;
+    let total = show_total + outro_len;
+    let fade_start = (total - OUTRO_FADE_SECONDS).max(show_total);
     let outro_ms = (show_total * 1000.0).round().max(0.0) as i64;
 
     // Audio: intro/outro music plus each speech segment at its window start.
@@ -903,8 +910,9 @@ fn logo_fade_in() -> String {
 /// The opening and closing chains of the render: the FlowWire logo eases up over
 /// black as the intro music starts, holds for the music, then fades back out as
 /// the music ends before the desktop (and the anchor) comes up; the desktop runs
-/// through the show; then the logo returns over black for the outro music and is
-/// faded into the final fade to black. `cur` is the label of the last desktop
+/// through the show; then, after the anchor's close, the desktop fades to black,
+/// the FlowWire logo fades up over black for the outro music, and the logo fades
+/// back out to black as the music ends. `cur` is the label of the last desktop
 /// layer, `ass` the caption file path, `fade` how long the final fade to black
 /// takes. The logo stream is split before being handed to the intro and outro
 /// overlays: ffmpeg starves a second overlay that reads the same label directly,
@@ -918,18 +926,25 @@ fn logo_and_outro_filter(
     fade_start: f64,
 ) -> String {
     // The intro logo fades back out across the last stretch of the intro music,
-    // so the picture is black (not a popped logo) when the anchor comes up.
+    // so the picture is black when the anchor comes up.
     let intro_out_dur = INTRO_FADE_SECONDS.min(lead);
     let intro_out_start = (lead - intro_out_dur).max(0.0);
+    // The anchor's screen fades to black just before the close, so the outro
+    // logo eases up over black instead of a hard cut. The logo's own fade-up is
+    // applied to its fork (not the composite, which would black out the show).
+    let desk_out_dur = OUTRO_DESKTOP_FADE_SECONDS.min(show_total - lead);
+    let desk_out_start = show_total - desk_out_dur;
+    let logo_in = OUTRO_LOGO_IN_SECONDS;
     format!(
         "[6:v]scale=560:-1,{intro_fade},split[lg1][lg2];\
          [lg1]fade=t=out:st={intro_out_start}:d={intro_out_dur}[lg_in];\
+         [lg2]fade=t=in:st={show_total}:d={logo_in}[lg_out];\
          [base][lg_in]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];\
          [v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',\
          fade=t=in:st={lead}:d=0.8:alpha=1[v2];\
          [v2]ass='{ass}'[v3];\
-         [v3][lg2]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',\
-         fade=t=in:st={show_total}:d=0.8:alpha=1,\
+         [v3]fade=t=out:st={desk_out_start}:d={desk_out_dur}[v4];\
+         [v4][lg_out]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',\
          fade=t=out:st={fade_start}:d={fade}[final]",
         intro_fade = logo_fade_in(),
         cur = cur,
@@ -940,6 +955,9 @@ fn logo_and_outro_filter(
         fade_start = fade_start,
         intro_out_start = intro_out_start,
         intro_out_dur = intro_out_dur,
+        desk_out_start = desk_out_start,
+        desk_out_dur = desk_out_dur,
+        logo_in = logo_in,
     )
 }
 
@@ -1552,22 +1570,28 @@ mod tests {
             "the intro overlay reads the first fork: {chain}"
         );
         assert!(
-            chain.contains("[v3][lg2]overlay"),
+            chain.contains("[v4][lg_out]overlay"),
             "the outro overlay reads the second fork: {chain}"
         );
-        // The outro overlay brings the logo back for the music and fades it out
-        // into the final fade to black.
+        // After the anchor's close, the desktop (the presenter on the map)
+        // fades to black before the logo comes up — no hard cut.
+        assert!(
+            chain.contains("fade=t=out:st=119:d=1"),
+            "the anchor's screen fades to black first: {chain}"
+        );
+        // The outro overlay brings the logo back for the music — eased up over
+        // black, not popped — and fades it out into black as the music ends.
         assert!(
             chain.contains("enable='gte(t,120)'"),
             "the logo returns for the outro music: {chain}"
         );
         assert!(
-            chain.contains("fade=t=out:st=123.5:d=1.2"),
-            "the outro fades the logo out as the end approaches: {chain}"
+            chain.contains("[lg2]fade=t=in:st=120:d=0.8[lg_out]"),
+            "the outro logo fades up over black on its own fork: {chain}"
         );
         assert!(
-            chain.contains("fade=t=in:st=120:d=0.8:alpha=1"),
-            "the outro logo eases back in: {chain}"
+            chain.contains("fade=t=out:st=123.5:d=1.2"),
+            "the outro fades the logo out as the music ends: {chain}"
         );
     }
 
