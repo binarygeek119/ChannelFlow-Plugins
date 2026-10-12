@@ -350,6 +350,11 @@ pub async fn build_day(
                         );
                         return Ok(BuildOutcome { day, skipped: false, attempts });
                     }
+                    tracing::warn!(
+                        reply = %response.content.chars().take(600).collect::<String>(),
+                        errors = %errors.join("; "),
+                        "scheduler: the model's day failed validation"
+                    );
                     validation = errors.clone();
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
@@ -364,6 +369,11 @@ pub async fn build_day(
                     });
                 }
                 Err(error) => {
+                    tracing::warn!(
+                        reply = %response.content.chars().take(600).collect::<String>(),
+                        error = %error,
+                        "scheduler: the reply did not match the model shape"
+                    );
                     validation = vec![error.to_string()];
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
@@ -378,6 +388,10 @@ pub async fn build_day(
                 }
             },
             None => {
+                tracing::warn!(
+                    reply = %response.content.chars().take(600).collect::<String>(),
+                    "scheduler: the reply held no JSON object"
+                );
                 validation = vec!["the reply held no JSON object".to_string()];
                 messages.push(ChatMessage {
                     role: "assistant".to_string(),

@@ -21,6 +21,7 @@ Rules that never change:
 - A block occupies slot_index..slot_index+span_slots-1 and must not overlap another block.
 - Use ONLY ids from the candidate list. Never invent an id.
 - The scheduler computes each block's start and finish from runtimes; you choose what plays and in what order.
+- Group items into as FEW blocks as possible: most days are 8 to 16 blocks, each spanning several hours. Do not emit one block per half-hour unless the content really changes every half-hour.
 - Respect the channel's rules and dayparts below.
 - Output nothing but the JSON object.";
 

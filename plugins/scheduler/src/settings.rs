@@ -32,7 +32,7 @@ impl Default for SchedulerSettings {
             days_to_build: 3,
             build_time: "02:00".to_string(),
             max_retries: 2,
-            pool_cap: 300,
+            pool_cap: 120,
             enabled: false,
         }
     }
