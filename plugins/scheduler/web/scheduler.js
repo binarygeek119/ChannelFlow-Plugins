@@ -173,7 +173,9 @@ async function buildDay() {
     const outcome = data.outcome || {};
     const day = outcome.day || {};
     result.textContent = outcome.skipped
-      ? "Unchanged — the stored day was kept."
+      ? schedSettings.write_playout
+        ? "Unchanged — kept the stored day and rewrote its playout and guide."
+        : "Unchanged — the stored day was kept."
       : `${day.degraded ? "Degraded" : "Built"} day with ${(day.blocks || []).length} block(s)${day.provider ? ` via ${day.provider}` : ""}.`;
     await loadDays();
   } catch (error) {

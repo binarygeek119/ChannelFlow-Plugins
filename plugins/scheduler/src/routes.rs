@@ -317,6 +317,7 @@ async fn build_one(
     let scopes = read_scopes(state.storage.as_ref()).await;
     let resolved = layers::resolve(layers, &scopes, &id, &date, weekday, &[]);
     let settings = state.settings.lock().await.clone();
+    let settings_for_write = settings.clone();
     let previous = state::read_day(state.storage.as_ref(), &id, &date).await;
 
     let horizon = state.horizon.clone();
@@ -341,6 +342,19 @@ async fn build_one(
     };
     if !outcome.skipped {
         if let Err(error) = state::store_day(storage.as_ref(), &id, &outcome.day).await {
+            return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+        }
+    }
+    // Write the playout (and the guide) even when the day was unchanged: an
+    // operator who cleared the guide and rebuilds the same day expects it back,
+    // and this costs no model call.
+    if settings_for_write.write_playout {
+        let dir = crate::playout::channel_dir(
+            &state.config_root,
+            &settings_for_write.playout_dir,
+            &id,
+        );
+        if let Err(error) = crate::playout::write(&state.core, &outcome.day, &dir).await {
             return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
         }
     }
