@@ -372,6 +372,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "channelflow-plugin-scheduler"
+version = "2.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "channelflow-plugin-api",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "channelflow-plugin-weather"
 version = "2.0.11"
 dependencies = [

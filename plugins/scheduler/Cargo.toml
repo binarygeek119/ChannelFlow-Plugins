@@ -1,0 +1,28 @@
+[package]
+name = "channelflow-plugin-scheduler"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "Scheduler — turns each channel's layers into a generated broadcast day"
+
+# `rlib` keeps the crate usable as a git dependency of the base (compiled in);
+# `cdylib` produces the per-platform shared library the install flow ships.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+channelflow-plugin-api = { git = "https://github.com/binarygeek119/ChannelFlow", branch = "2.0.0" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[features]
+# Present so the release build can pass --features abi uniformly; this plugin
+# declares no exported ABI symbols yet.
+abi = []
