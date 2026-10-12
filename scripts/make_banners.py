@@ -10,6 +10,7 @@ produces byte-identical files.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -17,7 +18,11 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "banners"
 
+# The design is 1200x400; the shipped files are that design centred on a
+# 1262x480 canvas (31px side and 40px top/bottom transparent margins), so every
+# catalog banner has the same shape whatever plugin it belongs to.
 WIDTH, HEIGHT = 1200, 400
+CANVAS = (1262, 480)
 CORNER = 28
 MARK_SIZE = 100
 MARGIN = 64
@@ -146,7 +151,11 @@ def render(plugin: dict) -> Image.Image:
         width=2,
     )
     image.alpha_composite(rim)
-    return image
+
+    # Centre the design on the shipped canvas so the file matches the others.
+    canvas = Image.new("RGBA", CANVAS, (0, 0, 0, 0))
+    canvas.alpha_composite(image, ((CANVAS[0] - WIDTH) // 2, (CANVAS[1] - HEIGHT) // 2))
+    return canvas
 
 
 PLUGINS = [
@@ -214,12 +223,66 @@ PLUGINS = [
         "bottom": (37, 99, 235), # blue-600
         "mark": (255, 255, 255), # white play mark
     },
+    {
+        "id": "com.channelflow.pasttense",
+        "title": "Past Tense News",
+        "subtitle": "Old news played as if it's breaking now",
+        "top": (120, 53, 15),    # amber-900, newsreel sepia
+        "bottom": (180, 83, 9),  # amber-700
+        "mark": (69, 26, 3),     # amber-950
+    },
+    {
+        "id": "com.channelflow.local",
+        "title": "Local Files",
+        "subtitle": "A media source for files on this machine — no media server",
+        "top": (6, 95, 70),      # emerald-800
+        "bottom": (16, 185, 129),# emerald-500
+        "mark": (2, 44, 34),     # emerald-950
+    },
+    {
+        "id": "com.channelflow.lists",
+        "title": "Lists",
+        "subtitle": "Named lists of catalog items, reused across channels and presets",
+        "top": (76, 29, 149),    # violet-900
+        "bottom": (139, 92, 246),# violet-500
+        "mark": (46, 16, 101),   # violet-950
+    },
+    {
+        "id": "com.channelflow.presets",
+        "title": "Presets",
+        "subtitle": "Ready-made channels to get up and running quickly",
+        "top": (131, 24, 67),    # pink-900
+        "bottom": (236, 72, 153),# pink-500
+        "mark": (80, 7, 36),     # pink-950
+    },
+    {
+        "id": "com.channelflow.scheduler",
+        "title": "Scheduler",
+        "subtitle": "Builds each channel's broadcast day from six layers",
+        "top": (30, 58, 138),    # blue-900
+        "bottom": (59, 130, 246),# blue-500
+        "mark": (23, 37, 84),    # blue-950
+    },
+    {
+        "id": "com.channelflow.holidaychannel",
+        "title": "The Holiday Channel",
+        "subtitle": "Seasonal holiday TV and movies, with the period logos",
+        "top": (153, 27, 27),    # red-800
+        "bottom": (21, 128, 61), # green-700
+        "mark": (69, 10, 10),    # red-950
+    },
 ]
 
 
 def main() -> int:
+    """Render every banner, or just those named on the command line (by plugin
+    id or short name) — so generating a new plugin's banner never rewrites
+    artwork that shipped by hand."""
     OUT.mkdir(exist_ok=True)
+    wanted = {arg.rsplit(".", 1)[-1] for arg in sys.argv[1:]}
     for plugin in PLUGINS:
+        if wanted and plugin["id"].rsplit(".", 1)[-1] not in wanted:
+            continue
         target = OUT / f"{plugin['id']}.png"
         render(plugin).save(target)
         print(f"wrote {target.relative_to(ROOT)}")
