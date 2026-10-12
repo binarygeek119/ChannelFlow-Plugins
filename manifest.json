@@ -9,22 +9,6 @@
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
     "versions": [
       {
-        "version": "2.0.0",
-        "min_base_version": "2.0.0",
-        "max_base_version": "2.999.999",
-        "timestamp": "2026-10-10T00:00:00Z",
-        "artifacts": {
-          "linux-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.0/com.channelflow.pasttense-v2.0.0-linux-x86_64.zip",
-            "size": 0
-          },
-          "windows-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.0/com.channelflow.pasttense-v2.0.0-windows-x86_64.zip",
-            "size": 0
-          }
-        }
-      },
-      {
         "version": "2.0.2",
         "min_base_version": "2.0.0",
         "max_base_version": "2.999.999",
@@ -54,22 +38,6 @@
     "category": "catalog",
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
     "versions": [
-      {
-        "version": "2.0.0",
-        "min_base_version": "2.0.0",
-        "max_base_version": "2.999.999",
-        "timestamp": "2026-10-10T00:00:00Z",
-        "artifacts": {
-          "linux-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.0/com.channelflow.local-v2.0.0-linux-x86_64.zip",
-            "size": 0
-          },
-          "windows-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.0/com.channelflow.local-v2.0.0-windows-x86_64.zip",
-            "size": 0
-          }
-        }
-      },
       {
         "version": "2.0.4",
         "min_base_version": "2.0.0",
@@ -130,22 +98,6 @@
     "category": "catalog",
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
     "versions": [
-      {
-        "version": "2.0.0",
-        "min_base_version": "2.0.0",
-        "max_base_version": "2.999.999",
-        "timestamp": "2026-10-10T00:00:00Z",
-        "artifacts": {
-          "linux-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.0/com.channelflow.presets-v2.0.0-linux-x86_64.zip",
-            "size": 0
-          },
-          "windows-x86_64": {
-            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/presets-v2.0.0/com.channelflow.presets-v2.0.0-windows-x86_64.zip",
-            "size": 0
-          }
-        }
-      },
       {
         "version": "2.0.12",
         "min_base_version": "2.0.0",
