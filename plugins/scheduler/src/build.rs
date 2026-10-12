@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use channelflow_plugin_api::core::{CatalogFilter, ChatMessage, ChatRequest, CoreData};
+use channelflow_plugin_api::core::{CatalogFilter, CatalogRow, ChatMessage, ChatRequest, CoreData};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -90,9 +90,50 @@ pub fn catalog_filter(items: &ItemsLayer) -> CatalogFilter {
     }
 }
 
+/// Take up to `cap` rows, round-robin across kinds when the filter names more
+/// than one, so a "TV and movies" pool is not all one kind.
+fn interleave(rows: Vec<CatalogRow>, kinds: &[String], cap: usize) -> Vec<PoolItem> {
+    let mut buckets: Vec<Vec<CatalogRow>> = Vec::new();
+    if kinds.len() > 1 {
+        for kind in kinds {
+            buckets.push(
+                rows.iter()
+                    .filter(|row| &row.kind == kind)
+                    .cloned()
+                    .collect(),
+            );
+        }
+    } else {
+        buckets.push(rows);
+    }
+    let mut out = Vec::new();
+    let mut index = 0;
+    while out.len() < cap {
+        let mut progressed = false;
+        for bucket in &buckets {
+            if let Some(row) = bucket.get(index) {
+                progressed = true;
+                out.push(PoolItem {
+                    match_key: row.match_key.clone(),
+                    kind: row.kind.clone(),
+                    title: row.title.clone(),
+                    runtime_ms: row.runtime_ms,
+                });
+                if out.len() >= cap {
+                    break;
+                }
+            }
+        }
+        if !progressed {
+            break;
+        }
+        index += 1;
+    }
+    out
+}
+
 /// The MaxPerDay rules, as `(kind, n)` pairs the validator checks.
-fn max_per_day(rules: &[Rule]) -> Vec<(String, u32)> {
-    rules
+fn max_per_day(rules: &[Rule]) -> Vec<(String, u32)> {    rules
         .iter()
         .filter_map(|rule| match rule {
             Rule::MaxPerDay { kind, n } => Some((kind.clone(), *n)),
@@ -288,16 +329,7 @@ pub async fn build_day(
         .catalog(catalog_filter(&layers.items))
         .await
         .map_err(|error| error.to_string())?;
-    let pool: Vec<PoolItem> = rows
-        .into_iter()
-        .take(settings.pool_cap as usize)
-        .map(|row| PoolItem {
-            match_key: row.match_key,
-            kind: row.kind,
-            title: row.title,
-            runtime_ms: row.runtime_ms,
-        })
-        .collect();
+    let pool = interleave(rows, &layers.items.filter.kinds, settings.pool_cap as usize);
     let compiled = layers::compile(layers, pool);
     let hash = input_hash(&compiled);
     let now = chrono::Local::now().to_rfc3339();
@@ -482,6 +514,30 @@ mod tests {
             }))
             .collect::<Vec<_>>() })
         .to_string()
+    }
+
+    fn crow(key: &str, kind: &str) -> CatalogRow {
+        CatalogRow {
+            match_key: key.into(),
+            kind: kind.into(),
+            title: key.into(),
+            year: None,
+            runtime_ms: None,
+            genres: vec![],
+            official_rating: None,
+            tags: vec![],
+            series_key: None,
+            season: None,
+            episode: None,
+        }
+    }
+
+    #[test]
+    fn a_multi_kind_pool_is_interleaved() {
+        let rows = vec![crow("m1", "movie"), crow("m2", "movie"), crow("s1", "series")];
+        let pool = interleave(rows, &["movie".to_string(), "series".to_string()], 3);
+        let kinds: Vec<&str> = pool.iter().map(|item| item.kind.as_str()).collect();
+        assert_eq!(kinds, ["movie", "series", "movie"], "the pool mixes kinds");
     }
 
     fn settings() -> SchedulerSettings {
