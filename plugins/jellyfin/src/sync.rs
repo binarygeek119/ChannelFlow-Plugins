@@ -178,6 +178,46 @@ fn build_catalog_item(kind: &str, remote: &str, raw: &Value, library: &str) -> C
         .tags(tags)
         .detail(item_detail(raw))
         .people(item_people(raw))
+        .files(catalog_files(raw))
+}
+
+/// The playable files a Jellyfin item reports, as the base's `CatalogFile`s —
+/// the same `MediaSources` `item_detail` keeps, but first-class so the base
+/// stores them in its own `media_files` table for scheduling.
+fn catalog_files(raw: &Value) -> Vec<channelflow_plugin_api::media::CatalogFile> {
+    raw.get("MediaSources")
+        .and_then(Value::as_array)
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|source| {
+                    let path = source.get("Path").and_then(Value::as_str)?.trim();
+                    if path.is_empty() {
+                        return None;
+                    }
+                    Some(
+                        channelflow_plugin_api::media::CatalogFile::new(path)
+                            .remote_id(source.get("Id").and_then(Value::as_str).map(str::to_string))
+                            .container(
+                                source
+                                    .get("Container")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string),
+                            )
+                            .size_bytes(source.get("Size").and_then(Value::as_i64))
+                            .runtime_seconds(
+                                source
+                                    .get("RunTimeTicks")
+                                    .and_then(Value::as_i64)
+                                    .map(|ticks| ticks / 10_000_000),
+                            )
+                            .streams(source.get("MediaStreams").cloned())
+                            .chapters(source.get("Chapters").cloned()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The rich metadata a Jellyfin item carries beyond the summary fields, kept

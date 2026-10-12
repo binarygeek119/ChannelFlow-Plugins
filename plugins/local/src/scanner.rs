@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use channelflow_plugin_api::media::CatalogItem;
+use channelflow_plugin_api::media::{CatalogFile, CatalogItem};
 
 const VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "mov", "m2ts", "ts", "webm", "wmv", "m4v", "mpg", "mpeg"];
 const AUDIO_EXTS: &[&str] = &["mp3", "flac", "m4a", "aac", "ogg", "oga", "wma", "opus", "wav"];
@@ -259,21 +259,22 @@ pub fn scan_folder(root: &str, kind: &str) -> Vec<ScannedItem> {
                 {
                     continue;
                 }
-                let media = dir.join(format!("{stem}.*"));
-                let has_media = std::fs::read_dir(&dir).map(|read| {
-                    read.flatten().any(|entry| {
-                        entry.path().is_file()
-                            && entry
-                                .path()
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .is_some_and(|s| s == stem)
-                            && is_media_kind_file(kind, &entry.path())
-                    })
-                }).unwrap_or(false);
-                if !has_media {
+                // The actual media file beside the NFO, so the base can play it.
+                let media_path = std::fs::read_dir(&dir).ok().and_then(|read| {
+                    read.flatten()
+                        .map(|entry| entry.path())
+                        .find(|path| {
+                            path.is_file()
+                                && path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .is_some_and(|s| s == stem)
+                                && is_media_kind_file(kind, path)
+                        })
+                });
+                let Some(media_path) = media_path else {
                     continue;
-                }
+                };
                 if let Some(info) = parse_nfo(nfo) {
                     let fallback = stem.to_string();
                     let remote = unique_id(&info, &fallback);
@@ -291,7 +292,10 @@ pub fn scan_folder(root: &str, kind: &str) -> Vec<ScannedItem> {
                             .year(info.year)
                             .overview(info.overview.clone())
                             .match_id(provider_match(&info))
-                            .library(kind),
+                            .library(kind)
+                            .files(vec![CatalogFile::new(
+                                media_path.to_string_lossy().to_string(),
+                            )]),
                     });
                 }
             }
