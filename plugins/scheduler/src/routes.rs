@@ -51,6 +51,9 @@ pub fn router(state: Arc<RoutesState>) -> Router {
         .route("/scopes/{id}", put(update_scope).delete(delete_scope))
         .route("/build", post(build_horizon))
         .route("/build/status", get(build_status))
+        .route("/build/cancel", post(cancel_build))
+        .route("/channels/{id}/clear", post(clear_channel))
+        .route("/guide/clear", post(clear_guide))
         .with_state(state)
 }
 
@@ -316,21 +319,28 @@ async fn build_one(
     let settings = state.settings.lock().await.clone();
     let previous = state::read_day(state.storage.as_ref(), &id, &date).await;
 
-    let outcome = match build::build_day(
-        &state.core,
-        &id,
-        &date,
-        resolved,
-        &settings,
-        previous.as_ref(),
-    )
-    .await
-    {
-        Ok(outcome) => outcome,
-        Err(error) => return fail(StatusCode::INTERNAL_SERVER_ERROR, error),
+    let horizon = state.horizon.clone();
+    let core = state.core.clone();
+    let storage = state.storage.clone();
+    let channel = id.clone();
+    let build_date = date.clone();
+    let handle = tokio::spawn(async move {
+        build::build_day(&core, &channel, &build_date, resolved, &settings, previous.as_ref()).await
+    });
+    horizon.set_abort(handle.abort_handle());
+    let outcome = match handle.await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(error)) => return fail(StatusCode::INTERNAL_SERVER_ERROR, error),
+        Err(_) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "status": "cancelled" })),
+            )
+                .into_response()
+        }
     };
     if !outcome.skipped {
-        if let Err(error) = state::store_day(state.storage.as_ref(), &id, &outcome.day).await {
+        if let Err(error) = state::store_day(storage.as_ref(), &id, &outcome.day).await {
             return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
         }
     }
@@ -409,16 +419,57 @@ async fn build_horizon(State(state): State<Arc<RoutesState>>) -> Response {
     let config_root = state.config_root.clone();
     let settings = state.settings.lock().await.clone();
     let logger = state.logger.clone();
-    tokio::spawn(async move {
-        horizon
+    let task_horizon = horizon.clone();
+    let handle = tokio::spawn(async move {
+        task_horizon
             .run(&core, &storage, &config_root, settings, &logger, "manual")
             .await;
     });
+    horizon.set_abort(handle.abort_handle());
     (
         StatusCode::ACCEPTED,
         Json(json!({ "status": "started" })),
     )
         .into_response()
+}
+
+async fn cancel_build(State(state): State<Arc<RoutesState>>) -> Response {
+    state.horizon.cancel();
+    Json(json!({ "status": "cancelling" })).into_response()
+}
+
+/// Clear everything the scheduler produced for one channel: its days, index,
+/// history, and the channel's guide programmes.
+async fn clear_channel(
+    State(state): State<Arc<RoutesState>>,
+    Path(id): Path<String>,
+) -> Response {
+    let storage = state.storage.as_ref();
+    let index = state::read_days_index(storage, &id).await;
+    for date in &index {
+        let _ = state::delete_day(storage, &id, date).await;
+    }
+    let _ = storage.delete(&state::days_index_key(&id)).await;
+    let _ = storage.delete(&state::history_key(&id)).await;
+    let _ = state.core.set_channel_guide(&id, Vec::new()).await;
+    Json(json!({ "cleared_days": index.len() })).into_response()
+}
+
+/// Clear every channel's guide programmes.
+async fn clear_guide(State(state): State<Arc<RoutesState>>) -> Response {
+    let channels = state.core.channels().await.unwrap_or_default();
+    let mut cleared = 0usize;
+    for channel in &channels {
+        if state
+            .core
+            .set_channel_guide(&channel.id, Vec::new())
+            .await
+            .is_ok()
+        {
+            cleared += 1;
+        }
+    }
+    Json(json!({ "cleared_channels": cleared })).into_response()
 }
 
 async fn build_status(State(state): State<Arc<RoutesState>>) -> Response {

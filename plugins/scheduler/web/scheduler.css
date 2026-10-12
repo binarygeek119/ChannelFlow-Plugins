@@ -8,6 +8,8 @@
 
 .sched-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 .sched-check { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; cursor: pointer; }
+.sched-inline { display: flex; gap: 0.5rem; align-items: center; }
+.sched-inline select { flex: 1; }
 
 .sched-grid textarea, #sched-scope-json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
 

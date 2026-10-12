@@ -42,6 +42,7 @@
     <div class="sched-actions">
       <button type="submit" class="primary">Save settings</button>
       <button type="button" class="ghost" id="sched-build-horizon">Build horizon now</button>
+      <button type="button" class="ghost" id="sched-cancel-horizon">Cancel build</button>
     </div>
     <p class="field-note" id="sched-settings-result"></p>
   </form>
@@ -79,6 +80,7 @@
     <input id="sched-date" type="date">
     <button type="button" class="ghost" id="sched-preview">Preview prompt</button>
     <button type="button" class="ghost" id="sched-build-day">Build this day</button>
+    <button type="button" class="ghost" id="sched-cancel-day">Cancel</button>
   </div>
   <p class="field-note" id="sched-layers-result"></p>
   <pre id="sched-prompt" class="sched-pre" hidden></pre>
@@ -102,6 +104,28 @@
     <span class="count" id="sched-progress"></span>
   </div>
   <div id="sched-days"></div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Maintenance</h2>
+  </div>
+  <div class="sched-row">
+    <div class="field">
+      <label class="field-label" for="sched-clear-channel">Clear a channel's schedule</label>
+      <div class="sched-inline">
+        <select id="sched-clear-channel"></select>
+        <button type="button" class="ghost" id="sched-clear-channel-btn">Clear channel</button>
+      </div>
+      <p class="field-note">Removes that channel's generated days and its guide programmes.</p>
+    </div>
+    <div class="field">
+      <label class="field-label">Clear the whole guide</label>
+      <button type="button" class="ghost" id="sched-clear-guide">Clear whole guide</button>
+      <p class="field-note">Removes every channel's guide programmes.</p>
+    </div>
+  </div>
+  <p class="field-note" id="sched-maintenance-result"></p>
 </div>
 
 <dialog id="sched-scope-dialog" class="settings-dialog">

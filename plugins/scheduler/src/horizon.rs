@@ -49,18 +49,51 @@ pub struct Progress {
 /// scheduled run and a manual run from overlapping.
 pub struct Horizon {
     running: AtomicBool,
+    /// Set by `cancel`; the day loop checks it between days.
+    cancel: AtomicBool,
     progress: Mutex<Progress>,
+    /// The running task, so `cancel` can abort a build that is mid-call.
+    abort: std::sync::Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 impl Horizon {
     pub fn new() -> Self {
         Self {
             running: AtomicBool::new(false),
+            cancel: AtomicBool::new(false),
             progress: Mutex::new(Progress {
                 state: "idle".to_string(),
                 ..Default::default()
             }),
+            abort: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Remember the task running the build, so it can be aborted.
+    pub fn set_abort(&self, handle: tokio::task::AbortHandle) {
+        if let Ok(mut guard) = self.abort.lock() {
+            *guard = Some(handle);
+        }
+    }
+
+    /// Stop the current build: the day loop notices between days, and the task
+    /// is aborted so a build stuck in a slow model call returns at once.
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        if let Ok(mut guard) = self.abort.lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+    }
+
+    /// Clear a previous cancel so a fresh build is not stopped at once.
+    pub fn reset_cancel(&self) {
+        self.cancel.store(false, Ordering::SeqCst);
     }
 
     pub async fn snapshot(&self) -> Progress {
@@ -86,6 +119,7 @@ impl Horizon {
             logger.info("scheduler: a build is already running; skipping this trigger");
             return;
         }
+        self.cancel.store(false, Ordering::SeqCst);
         {
             let mut progress = self.progress.lock().await;
             *progress = Progress {
@@ -101,12 +135,16 @@ impl Horizon {
 
         let mut progress = self.progress.lock().await;
         progress.finished_at = Some(chrono::Local::now().to_rfc3339());
-        progress.state = match result {
-            Ok(()) if progress.errors.is_empty() => "done".to_string(),
-            Ok(()) => "done-with-errors".to_string(),
-            Err(error) => {
-                progress.errors.push(error);
-                "failed".to_string()
+        progress.state = if self.cancelled() {
+            "cancelled".to_string()
+        } else {
+            match result {
+                Ok(()) if progress.errors.is_empty() => "done".to_string(),
+                Ok(()) => "done-with-errors".to_string(),
+                Err(error) => {
+                    progress.errors.push(error);
+                    "failed".to_string()
+                }
             }
         };
         drop(progress);
@@ -137,6 +175,9 @@ impl Horizon {
                 progress.channel_id = Some(channel.id.clone());
             }
             for day in 0..settings.days_to_build {
+                if self.cancelled() {
+                    return Ok(());
+                }
                 let date_naive = today + chrono::Duration::days(day as i64);
                 let date = date_naive.format("%Y-%m-%d").to_string();
                 let weekday = chrono::Datelike::weekday(&date_naive).num_days_from_sunday();

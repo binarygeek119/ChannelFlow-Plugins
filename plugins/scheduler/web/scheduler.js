@@ -53,6 +53,18 @@ function fillChannels() {
   });
   schedChannelId = current;
   if (current) select.value = current;
+  const clearSelect = $("sched-clear-channel");
+  if (clearSelect) {
+    const keep = clearSelect.value;
+    clearSelect.textContent = "";
+    schedChannels.forEach((channel) => {
+      const option = document.createElement("option");
+      option.value = channel.id;
+      option.textContent = `${channel.number} — ${channel.name}`;
+      clearSelect.appendChild(option);
+    });
+    if (keep) clearSelect.value = keep;
+  }
   const count = $("sched-count");
   if (count) count.textContent = `${schedChannels.length} channel(s)`;
   if (!$("sched-date").value) {
@@ -268,6 +280,46 @@ async function deleteDay(date) {  if (!window.confirm(`Delete the day ${date}?`)
   }
 }
 
+// ── cancel and clear ─────────────────────────────────────────────────────────
+
+async function cancelBuild() {
+  const result = $("sched-settings-result");
+  try {
+    await request(`${SCHED}/build/cancel`, { method: "POST" });
+    if (result) result.textContent = "Cancelling the build…";
+    setTimeout(pollProgress, 500);
+  } catch (error) {
+    if (result) result.textContent = error.message;
+  }
+}
+
+async function clearChannel() {
+  const select = $("sched-clear-channel");
+  const result = $("sched-maintenance-result");
+  const id = select ? select.value : "";
+  if (!id) return;
+  const name = (select.options[select.selectedIndex] || {}).textContent || id;
+  if (!window.confirm(`Clear the schedule and guide for ${name}?`)) return;
+  try {
+    const data = await request(`${SCHED}/channels/${id}/clear`, { method: "POST" });
+    result.textContent = `Cleared ${data.cleared_days} day(s).`;
+    if (schedChannelId === id) await loadDays();
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
+async function clearGuide() {
+  const result = $("sched-maintenance-result");
+  if (!window.confirm("Clear the whole guide for every channel?")) return;
+  try {
+    const data = await request(`${SCHED}/guide/clear`, { method: "POST" });
+    result.textContent = `Cleared the guide for ${data.cleared_channels} channel(s).`;
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
 // ── rule scopes ──────────────────────────────────────────────────────────────
 
 function renderScopes() {
@@ -387,6 +439,8 @@ function renderProgress(progress) {
   if (!label) return;
   if (progress.state === "running") {
     label.textContent = `building ${progress.channel_index}/${progress.channel_total} · day ${progress.day_index}/${progress.day_total}`;
+  } else if (progress.state === "cancelled") {
+    label.textContent = "cancelled";
   } else {
     label.textContent = `${progress.built || 0} built · ${progress.skipped || 0} skipped · ${progress.degraded || 0} degraded`;
   }
@@ -423,6 +477,14 @@ async function pollProgress() {
   if (build) build.addEventListener("click", buildDay);
   const horizon = $("sched-build-horizon");
   if (horizon) horizon.addEventListener("click", buildHorizon);
+  const cancelHorizon = $("sched-cancel-horizon");
+  if (cancelHorizon) cancelHorizon.addEventListener("click", cancelBuild);
+  const cancelDay = $("sched-cancel-day");
+  if (cancelDay) cancelDay.addEventListener("click", cancelBuild);
+  const clearChannelButton = $("sched-clear-channel-btn");
+  if (clearChannelButton) clearChannelButton.addEventListener("click", clearChannel);
+  const clearGuideButton = $("sched-clear-guide");
+  if (clearGuideButton) clearGuideButton.addEventListener("click", clearGuide);
   const addScope = $("sched-scope-add");
   if (addScope) addScope.addEventListener("click", () => openScopeDialog(null));
   const saveScopeButton = $("sched-scope-save");
