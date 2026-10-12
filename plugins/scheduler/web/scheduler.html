@@ -1,0 +1,114 @@
+<div class="panel">
+  <div class="panel-head">
+    <h2>Scheduler</h2>
+    <span class="count" id="sched-count"></span>
+  </div>
+  <p class="hint">
+    Each channel's broadcast day is built from six layers. Layers 1 (the output contract) and 5
+    (free text) are shown read-only or as text; layers 2–4 and the rule scopes below are yours to
+    edit. Preview shows the exact prompt before any model is called.
+  </p>
+  <form id="sched-settings-form" class="ms-form" autocomplete="off">
+    <div class="sched-row">
+      <div class="field">
+        <label class="field-label" for="sched-days">Days to build</label>
+        <input id="sched-days" type="number" min="1" max="14" step="1">
+      </div>
+      <div class="field">
+        <label class="field-label" for="sched-time">Build time (HH:MM)</label>
+        <input id="sched-time" type="text" placeholder="02:00">
+      </div>
+      <div class="field">
+        <label class="field-label" for="sched-retries">Max retries</label>
+        <input id="sched-retries" type="number" min="0" max="5" step="1">
+      </div>
+      <div class="field">
+        <label class="field-label" for="sched-pool">Pool cap</label>
+        <input id="sched-pool" type="number" min="1" max="2000" step="1">
+      </div>
+    </div>
+    <label class="sched-check" for="sched-enabled">
+      <input id="sched-enabled" type="checkbox">
+      <span>Build the horizon automatically at the build time</span>
+    </label>
+    <div class="sched-actions">
+      <button type="submit" class="primary">Save settings</button>
+      <button type="button" class="ghost" id="sched-build-horizon">Build horizon now</button>
+    </div>
+    <p class="field-note" id="sched-settings-result"></p>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Channel layers</h2>
+    <span class="count" id="sched-layers-state"></span>
+  </div>
+  <div class="field">
+    <label class="field-label" for="sched-channel">Channel</label>
+    <select id="sched-channel"></select>
+  </div>
+  <div class="sched-grid">
+    <div class="field">
+      <label class="field-label" for="sched-hours">Layer 2 — hours (JSON: day_start, off_air, dayparts)</label>
+      <textarea id="sched-hours" rows="5" spellcheck="false"></textarea>
+    </div>
+    <div class="field">
+      <label class="field-label" for="sched-rules">Layer 3 — rules (JSON array)</label>
+      <textarea id="sched-rules" rows="5" spellcheck="false"></textarea>
+    </div>
+    <div class="field">
+      <label class="field-label" for="sched-items">Layer 4 — items (JSON: filter, list_ids, match_keys, pins)</label>
+      <textarea id="sched-items" rows="5" spellcheck="false"></textarea>
+    </div>
+    <div class="field">
+      <label class="field-label" for="sched-prompt-layer">Layer 5 — channel direction</label>
+      <textarea id="sched-prompt-layer" rows="5"></textarea>
+    </div>
+  </div>
+  <div class="sched-actions">
+    <button type="button" class="primary" id="sched-save-layers">Save layers</button>
+    <input id="sched-date" type="date">
+    <button type="button" class="ghost" id="sched-preview">Preview prompt</button>
+    <button type="button" class="ghost" id="sched-build-day">Build this day</button>
+  </div>
+  <p class="field-note" id="sched-layers-result"></p>
+  <pre id="sched-prompt" class="sched-pre" hidden></pre>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Rule scopes (layer 6)</h2>
+    <button type="button" class="ghost" id="sched-scope-add">Add scope</button>
+  </div>
+  <p class="hint">
+    A scope rewrites a layer for a date, range, holiday or weekday. Precedence: specific date &gt;
+    range &gt; holiday &gt; weekday &gt; always, then priority.
+  </p>
+  <div id="sched-scopes"></div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Generated days</h2>
+    <span class="count" id="sched-progress"></span>
+  </div>
+  <div id="sched-days"></div>
+</div>
+
+<dialog id="sched-scope-dialog" class="settings-dialog">
+  <div class="settings-dialog-head">
+    <h2 id="sched-scope-title">Add scope</h2>
+    <button type="button" class="ghost" id="sched-scope-close">Close</button>
+  </div>
+  <div class="settings-dialog-body">
+    <div class="field">
+      <label class="field-label" for="sched-scope-json">Scope (JSON)</label>
+      <textarea id="sched-scope-json" rows="10" spellcheck="false"></textarea>
+    </div>
+    <p class="field-note" id="sched-scope-result"></p>
+    <div class="sched-actions">
+      <button type="button" class="primary" id="sched-scope-save">Save scope</button>
+    </div>
+  </div>
+</dialog>

@@ -1,7 +1,7 @@
 {
   "id": "com.channelflow.scheduler",
   "name": "Scheduler",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
   "author": "ChannelFlow",
@@ -24,5 +24,16 @@
   "entrypoint": {
     "linux-x86_64": "libchannelflow_plugin_scheduler.so",
     "windows-x86_64": "channelflow_plugin_scheduler.dll"
-  }
+  },
+  "ui_contributions": [
+    {
+      "type": "page",
+      "id": "scheduler",
+      "path": "/webui/scheduler",
+      "title": "Scheduler",
+      "icon": "calendar",
+      "section": "main",
+      "component": "SchedulerPage"
+    }
+  ]
 }

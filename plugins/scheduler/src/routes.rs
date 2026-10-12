@@ -33,6 +33,7 @@ pub struct RoutesState {
 pub fn router(state: Arc<RoutesState>) -> Router {
     Router::new()
         .route("/", get(get_settings).put(put_settings))
+        .route("/channels", get(list_channels))
         .route("/channels/{id}/hours", get(get_hours).put(put_hours))
         .route("/channels/{id}/rules", get(get_rules).put(put_rules))
         .route("/channels/{id}/items", get(get_items).put(put_items))
@@ -57,6 +58,14 @@ fn fail(status: StatusCode, message: impl Into<String>) -> Response {
 async fn get_settings(State(state): State<Arc<RoutesState>>) -> Response {
     let settings = state.settings.lock().await.clone();
     Json(json!({ "settings": settings })).into_response()
+}
+
+/// The channel list, from the core, so the page can pick one.
+async fn list_channels(State(state): State<Arc<RoutesState>>) -> Response {
+    match state.core.channels().await {
+        Ok(channels) => Json(json!({ "channels": channels })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
 }
 
 async fn put_settings(State(state): State<Arc<RoutesState>>, Json(value): Json<Value>) -> Response {

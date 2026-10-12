@@ -61,6 +61,11 @@ impl Plugin for SchedulerPlugin {
     }
 
     async fn on_load(&mut self, api: PluginApi) -> Result<(), PluginError> {
+        // The web UI this plugin ships is hosted from its own folder: the core
+        // serves it at /plugin/{id}/web/...
+        api.web.serve_embedded("scheduler.css", "text/css", include_bytes!("../web/scheduler.css"));
+        api.web.serve_embedded("scheduler.html", "text/html", include_bytes!("../web/scheduler.html"));
+        api.web.serve_embedded("scheduler.js", "text/javascript", include_bytes!("../web/scheduler.js"));
         let settings = api
             .storage
             .get(SETTINGS_KEY)
