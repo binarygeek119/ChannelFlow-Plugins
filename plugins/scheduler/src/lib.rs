@@ -6,9 +6,11 @@
 //! horizon builder, the UI, and the playout writer land in later phases.
 
 mod build;
+mod horizon;
 mod layers;
 mod routes;
 mod settings;
+mod state;
 
 use std::sync::Arc;
 
@@ -67,12 +69,45 @@ impl Plugin for SchedulerPlugin {
             .flatten()
             .and_then(|value| SchedulerSettings::parse(&value).ok())
             .unwrap_or_default();
+        let horizon = Arc::new(horizon::Horizon::new());
         self.state = Some(Arc::new(routes::RoutesState {
             storage: api.storage.clone(),
             core: api.core.clone(),
             settings: Mutex::new(settings),
+            horizon: horizon.clone(),
             logger: api.logger.clone(),
         }));
+
+        // The horizon scheduler: every minute, at the configured build time,
+        // build the horizon once for the day. The Tasks page stays base-owned;
+        // this plugin owns its own loop and its own status route.
+        if let Some(state) = self.state.clone() {
+            tokio::spawn(async move {
+                let mut last_date = String::new();
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    ticker.tick().await;
+                    let settings = state.settings.lock().await.clone();
+                    if !settings.enabled {
+                        continue;
+                    }
+                    let now = chrono::Local::now();
+                    let today = now.format("%Y-%m-%d").to_string();
+                    if now.format("%H:%M").to_string() != settings.build_time {
+                        continue;
+                    }
+                    if last_date == today {
+                        continue;
+                    }
+                    last_date = today;
+                    state
+                        .horizon
+                        .run(&state.core, &state.storage, settings, &state.logger, "schedule")
+                        .await;
+                }
+            });
+        }
+
         api.logger.info("loaded");
         Ok(())
     }
