@@ -3,7 +3,7 @@
     "id": "com.channelflow.pasttense",
     "guid": "com.channelflow.pasttense",
     "name": "Past Tense News",
-    "description": "Home-movie news coverage played as live breaking news: pick a folder of events, each event folder holds its coverage videos",
+    "description": "Old news played as if it's breaking now: point ChannelFlow at local media files, each event folder holding that story's coverage",
     "owner": "ChannelFlow",
     "category": "catalog",
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
@@ -31,7 +31,7 @@
     "id": "com.channelflow.local",
     "guid": "com.channelflow.local",
     "name": "Local Files",
-    "description": "A media source for files on this machine \u2014 no media server. Pick a folder, say what's in it, and ChannelFlow reads .nfo files and poster.jpg/png",
+    "description": "A media source for files on this machine \u2014 no media server. Pick a folder, say what's in it, and ChannelFlow reads the Jellyfin-format .nfo files and poster.jpg/png",
     "owner": "ChannelFlow",
     "category": "catalog",
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
@@ -68,15 +68,17 @@
         "version": "2.0.0",
         "min_base_version": "2.0.0",
         "max_base_version": "2.999.999",
-        "timestamp": "2026-10-10T00:00:00Z",
+        "timestamp": "2026-10-12T22:30:37Z",
         "artifacts": {
           "linux-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/lists-v2.0.0/com.channelflow.lists-v2.0.0-linux-x86_64.zip",
-            "size": 0
+            "checksum": "sha256:c137f911bb6aa2773ee08d230e1c0fc1ae30be3035ae9b1dc08f76d5f1d12f7a",
+            "size": 258216
           },
           "windows-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/lists-v2.0.0/com.channelflow.lists-v2.0.0-windows-x86_64.zip",
-            "size": 0
+            "checksum": "sha256:20d6c48038fc93ead068891b3b15bf7f0734ea1175ee0ae3797d531ecca5fd63",
+            "size": 221435
           }
         }
       }
@@ -337,7 +339,7 @@
     "id": "com.channelflow.commercialbrainz",
     "guid": "com.channelflow.commercialbrainz",
     "name": "CommercialBrainz",
-    "description": "Ad avails synced from CommercialBrainz \u2014 the server, pool mode, and content filters",
+    "description": "Ad avails synced from CommercialBrainz \u2014 the server and content filters",
     "owner": "ChannelFlow",
     "category": "commercials",
     "homepage": "https://github.com/binarygeek119/ChannelFlow",
