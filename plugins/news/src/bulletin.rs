@@ -91,6 +91,23 @@ const OUTRO_FADE_SECONDS: f64 = 1.2;
 const STORY_LINE1_MARGIN_V: i32 = 126;
 const STORY_LINE2_MARGIN_V: i32 = 17;
 
+/// The headline is a single line centred in the bright band of the headline bar
+/// (rows 43–197 of the 0–221 bar), vertically centred here.
+const HEADLINE_CENTER_Y: i32 = 120;
+/// The width one headline line is grown to fill, using the same side margins
+/// as the story bar. A headline too short to reach this at the maximum size is
+/// centred instead of stretched.
+const HEADLINE_TARGET_PX: f64 = 1700.0;
+/// The smallest and largest headline sizes. The headline bar is much taller
+/// than the story bar, so a headline can be far bigger than the copy; only once
+/// it cannot fit at the floor does it crawl instead of shrinking further.
+const HEADLINE_MIN_PX: f64 = 40.0;
+const HEADLINE_MAX_PX: f64 = 96.0;
+/// Liberation Sans Bold advances about this many pixels per point per
+/// character (measured from the installed font), used to size a headline to
+/// fill the bar. The text is bold, so this is larger than the story factor.
+const HEADLINE_ADVANCE: f64 = 0.5;
+
 /// The window a story's picture is shown in: the bright box in the middle of
 /// the map band, where the anchor's portrait sits. A picture is scaled to fit
 /// here without changing its aspect ratio, drawn over the map, the mute overlay
@@ -964,25 +981,40 @@ fn build_ass(beats: &[Beat]) -> String {
     for beat in beats {
         if !beat.title.trim().is_empty() {
             let title = escape_ass(&beat.title);
-            // Scroll headlines longer than 45 chars: animate right-to-left, loop if needed.
-            if title.chars().count() > 45 {
-                let duration = (beat.end - beat.start).max(4.0);
-                // Speed: ~30 chars per second, minimum 8s scroll
-                let scroll_ms = (title.chars().count() as f64 * 1000.0 / 30.0).max(8000.0) as i64;
-                // \move(x1,y1,x2,y2,t1,t2) - start right edge, end left edge
-                let move_tag = format!("{{\\move(1920,110,-800,110,0,{scroll_ms})}}");
+            let chars = title.chars().count();
+            if headline_scrolls(chars) {
+                // Only genuinely long headlines crawl: they cannot fit on one
+                // static line at the floor size, so slide them right-to-left at
+                // that size, from fully off the right to fully off the left,
+                // finishing as the story ends.
+                let size = HEADLINE_MIN_PX;
+                let width = headline_width(chars, size);
+                let x_start = WIDTH as f64 + width / 2.0 + 60.0;
+                let x_end = -(width / 2.0) - 60.0;
+                let duration_ms = ((beat.end - beat.start).max(1.0) * 1000.0) as i64;
+                let scroll_ms = ((chars as f64 * 1000.0 / 30.0).max(8000.0) as i64)
+                    .min(duration_ms)
+                    .max(1);
+                let move_tag = format!(
+                    "{{\\an5\\move({x_start:.0},{HEADLINE_CENTER_Y},{x_end:.0},{HEADLINE_CENTER_Y},0,{scroll_ms})\\fs{HEADLINE_MIN_PX:.0}}}"
+                );
                 events.push_str(&format!(
-                    "Dialogue: 0,{0},{1},Headline,,0,0,0,,{{\\b1}}{2}{3}{{\\b0}}\n",
+                    "Dialogue: 0,{0},{1},Headline,,0,0,0,,{2}{3}\n",
                     ass_time(beat.start),
                     ass_time(beat.end),
                     move_tag,
                     title
                 ));
             } else {
+                // A single static line, sized to span the bar's full width and
+                // centred in its band — no crawl unless it overflows.
+                let font = headline_font_size(chars);
                 events.push_str(&format!(
-                    "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\b1}}{}{{\\b0}}\n",
+                    "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\an5\\pos(960,{})\\fs{:.0}}}{}\n",
                     ass_time(beat.start),
                     ass_time(beat.end),
+                    HEADLINE_CENTER_Y,
+                    font,
                     title
                 ));
             }
@@ -1023,10 +1055,11 @@ fn build_ass(beats: &[Beat]) -> String {
     ass.push_str(&format!("PlayResY: {HEIGHT}\n\n"));
     ass.push_str("[V4+ Styles]\n");
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
-    // Headline: top-centre, smaller font to fit more, positioned in the bar.
-    // Story1/Story2: bottom-centre, one line in each marked story area — the
-    // first line in the green box, the second in the red box at the very bottom.
-    ass.push_str("Style: Headline, Liberation Sans, 44, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 8, 100, 100, 110, 1\n");
+    // Headline: a single line, sized per event to fill the bar and centred in
+    // its band (the \fs and \an5\pos anchors are set on each event). Story1/
+    // Story2: bottom-centre, one line in each marked story area — the first in
+    // the green box, the second in the red box at the very bottom.
+    ass.push_str("Style: Headline, Liberation Sans, 44, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 1, 0, 0, 0, 100, 100, 0, 0, 1, 3, 0, 5, 40, 40, 0, 1\n");
     ass.push_str(&format!("Style: Story1, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, {STORY_LINE1_MARGIN_V}, 1\n"));
     ass.push_str(&format!("Style: Story2, Liberation Sans, 32, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 0, 2, 100, 100, {STORY_LINE2_MARGIN_V}, 1\n\n"));
     ass.push_str("[Events]\n");
@@ -1108,6 +1141,29 @@ fn story_font_size(chars: usize) -> f64 {
         return MAX_PX;
     }
     (TARGET_PX / (chars as f64 * 0.44)).clamp(MIN_PX, MAX_PX)
+}
+
+/// Size a single headline line to fill the width of the headline bar. Like the
+/// story lines, a short headline is grown (up to `HEADLINE_MAX_PX`) so it uses
+/// the bar rather than sitting in the centre; a long one is shrunk toward the
+/// floor. It is the caller's job to crawl a headline that even the floor cannot
+/// fit — see `headline_scrolls`.
+fn headline_font_size(chars: usize) -> f64 {
+    if chars == 0 {
+        return HEADLINE_MAX_PX;
+    }
+    (HEADLINE_TARGET_PX / (chars as f64 * HEADLINE_ADVANCE)).clamp(HEADLINE_MIN_PX, HEADLINE_MAX_PX)
+}
+
+/// A headline crawls only when it cannot be shown in full on one static line at
+/// the smallest readable size — otherwise the whole bar holds it without moving.
+fn headline_scrolls(chars: usize) -> bool {
+    chars > 0 && HEADLINE_TARGET_PX / (chars as f64 * HEADLINE_ADVANCE) < HEADLINE_MIN_PX
+}
+
+/// How wide a headline is, in pixels, when drawn at `size` points.
+fn headline_width(chars: usize, size: f64) -> f64 {
+    chars as f64 * HEADLINE_ADVANCE * size
 }
 
 /// Greedy wrap of the copy into at most two lines (bottom bar), with an
@@ -1218,6 +1274,70 @@ mod tests {
         assert!(ass.contains("Headline One"));
         assert!(ass.contains("Spoken copy here."));
         assert!(!ass.contains("Crawl"), "the crawl is gone, two-line copy replaces it");
+    }
+
+    #[test]
+    fn a_normal_headline_fills_the_bar_without_scrolling() {
+        // A typical headline is a single static line, centred in the bar's band
+        // and sized to span its width instead of sitting at a fixed 44.
+        let title = "City council approves budget after a marathon overnight session";
+        let beats = vec![Beat {
+            start: 0.0,
+            end: 8.0,
+            title: title.into(),
+            body: String::new(),
+        }];
+        let ass = build_ass(&beats);
+        assert!(!ass.contains("\\move"), "a headline that fits does not crawl: {ass}");
+        assert!(ass.contains("\\an5\\pos(960,120)"), "it is centred in the bar's band: {ass}");
+        let size = headline_font_size(title.chars().count());
+        assert!(ass.contains(&format!("\\fs{size:.0}")), "the fitted size is on the event: {ass}");
+        assert!(size > 44.0, "a headline can be bigger than the old fixed 44");
+    }
+
+    #[test]
+    fn shorter_headlines_are_drawn_bigger_to_fill_the_bar() {
+        assert!(headline_font_size(20) >= headline_font_size(60));
+        assert!(headline_font_size(60) > headline_font_size(85));
+        for chars in [0, 10, 60, 85, 200] {
+            let size = headline_font_size(chars);
+            assert!(
+                (HEADLINE_MIN_PX..=HEADLINE_MAX_PX).contains(&size),
+                "font {size} stays in range"
+            );
+        }
+        // A short headline grows to the cap rather than being stretched.
+        assert_eq!(headline_font_size(10), HEADLINE_MAX_PX);
+    }
+
+    #[test]
+    fn only_headlines_that_overflow_the_bar_crawl() {
+        // 85 characters is the boundary: at the floor size they exactly span
+        // the bar, so only longer ones need to crawl.
+        assert!(!headline_scrolls(84), "a headline that fits stays put");
+        assert!(headline_scrolls(86), "one that cannot fit at the floor crawls");
+        assert!(!headline_scrolls(0));
+
+        let long = "A".repeat(140);
+        let beats = vec![Beat { start: 0.0, end: 12.0, title: long, body: String::new() }];
+        let ass = build_ass(&beats);
+        assert!(ass.contains("\\move("), "an over-long headline crawls: {ass}");
+        assert!(
+            ass.contains(&format!("\\fs{:.0}", HEADLINE_MIN_PX)),
+            "it crawls at the floor size: {ass}"
+        );
+        assert!(headline_width(140, HEADLINE_MIN_PX) > HEADLINE_TARGET_PX);
+    }
+
+    #[test]
+    fn headline_sizing_targets_the_bar_width() {
+        // The fitted size really does reach the bar for a mid-length headline.
+        let chars = 68;
+        let size = headline_font_size(chars);
+        let width = headline_width(chars, size);
+        assert!((HEADLINE_TARGET_PX - 1.0..=HEADLINE_TARGET_PX + 1.0).contains(&width));
+        // And the vertical centre keeps it inside the bar's band (43–197).
+        assert!(HEADLINE_CENTER_Y > 43 && HEADLINE_CENTER_Y < 197);
     }
 
     #[test]
