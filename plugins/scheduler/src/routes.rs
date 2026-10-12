@@ -8,13 +8,14 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use channelflow_plugin_api::core::{CatalogFilter, CoreData};
+use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::plugin::PluginLogger;
 use channelflow_plugin_api::storage::PluginStorage;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
+use crate::build::{self, GeneratedDay};
 use crate::layers::{self, ItemsLayer, PoolItem, ResolvedLayers, Rule, RuleScope};
 use crate::settings::{
     layer_key, read_scopes, write_scopes, SchedulerSettings, SETTINGS_KEY,
@@ -37,6 +38,9 @@ pub fn router(state: Arc<RoutesState>) -> Router {
         .route("/channels/{id}/items", get(get_items).put(put_items))
         .route("/channels/{id}/prompt", get(get_prompt).put(put_prompt))
         .route("/channels/{id}/compile", post(compile))
+        .route("/channels/{id}/build", post(build_one))
+        .route("/channels/{id}/days", get(list_days))
+        .route("/channels/{id}/days/{date}", get(get_day).delete(delete_day))
         .route("/scopes", get(get_scopes).post(add_scope))
         .route("/scopes/{id}", put(update_scope).delete(delete_scope))
         .route("/build/status", get(build_status))
@@ -242,25 +246,12 @@ async fn compile(
     let weekday = chrono::Datelike::weekday(&parsed).num_days_from_sunday();
 
     let channel = id.clone();
-    let layers = ResolvedLayers {
-        hours: serde_json::from_value(read_layer(&state, &channel, "hours").await)
-            .unwrap_or_default(),
-        rules: serde_json::from_value(read_layer(&state, &channel, "rules").await)
-            .unwrap_or_default(),
-        items: serde_json::from_value(read_layer(&state, &channel, "items").await)
-            .unwrap_or_default(),
-        prompt: read_layer(&state, &channel, "prompt")
-            .await
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        applied: Vec::new(),
-    };
+    let layers = read_channel_layers(&state, &channel).await;
     let scopes = read_scopes(state.storage.as_ref()).await;
     let resolved = layers::resolve(layers, &scopes, &channel, &date, weekday, &[]);
 
     let settings = state.settings.lock().await.clone();
-    let filter = catalog_filter(&resolved.items);
+    let filter = build::catalog_filter(&resolved.items);
     let rows = match state.core.catalog(filter).await {
         Ok(rows) => rows,
         Err(error) => return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
@@ -288,25 +279,191 @@ async fn compile(
     .into_response()
 }
 
-/// Map the items layer onto the core's catalog filter. List ids are not
-/// resolved yet (a later phase reads them from the Lists plugin).
-fn catalog_filter(items: &ItemsLayer) -> CatalogFilter {
-    let mut match_keys = items.match_keys.clone();
-    for pin in &items.pins {
-        if !pin.exclude {
-            match_keys.push(pin.match_key.clone());
+// ── build one day, and the stored days ───────────────────────────────────────
+
+fn day_key(channel: &str, date: &str) -> String {
+    format!("day_{channel}_{date}")
+}
+
+fn days_index_key(channel: &str) -> String {
+    format!("days_{channel}")
+}
+
+fn history_key(channel: &str) -> String {
+    format!("history_{channel}")
+}
+
+/// Read a channel's four layer documents.
+async fn read_channel_layers(state: &RoutesState, channel: &str) -> ResolvedLayers {
+    ResolvedLayers {
+        hours: serde_json::from_value(read_layer(state, channel, "hours").await)
+            .unwrap_or_default(),
+        rules: serde_json::from_value(read_layer(state, channel, "rules").await)
+            .unwrap_or_default(),
+        items: serde_json::from_value(read_layer(state, channel, "items").await)
+            .unwrap_or_default(),
+        prompt: read_layer(state, channel, "prompt")
+            .await
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
+        applied: Vec::new(),
+    }
+}
+
+async fn read_days_index(state: &RoutesState, channel: &str) -> Vec<String> {
+    state
+        .storage
+        .get(&days_index_key(channel))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
+
+async fn read_day(state: &RoutesState, channel: &str, date: &str) -> Option<GeneratedDay> {
+    state
+        .storage
+        .get(&day_key(channel, date))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| serde_json::from_value(value).ok())
+}
+
+/// Store a day, add it to the channel's index, and append its items to the
+/// channel's history (capped) so the next day can avoid repeats.
+async fn store_day(state: &RoutesState, channel: &str, day: &GeneratedDay) -> Result<(), String> {
+    let value = serde_json::to_value(day).map_err(|error| error.to_string())?;
+    state
+        .storage
+        .set(&day_key(channel, &day.date), &value)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut index = read_days_index(state, channel).await;
+    if !index.contains(&day.date) {
+        index.push(day.date.clone());
+        index.sort();
+        let value = serde_json::to_value(&index).map_err(|error| error.to_string())?;
+        state
+            .storage
+            .set(&days_index_key(channel), &value)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+
+    let mut history: Vec<Value> = state
+        .storage
+        .get(&history_key(channel))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
+    for block in &day.blocks {
+        for item in &block.items {
+            history.push(json!({
+                "match_key": item.match_key,
+                "date": day.date,
+                "start_ms": block.start_ms,
+            }));
         }
     }
-    CatalogFilter {
-        kind: items.filter.kind.clone(),
-        genres: items.filter.genres.clone(),
-        tags: items.filter.tags.clone(),
-        year_min: items.filter.year_min,
-        year_max: items.filter.year_max,
-        rating_max: items.filter.rating_max.clone(),
-        match_keys,
-        limit: None,
+    const HISTORY_CAP: usize = 2000;
+    if history.len() > HISTORY_CAP {
+        let drop = history.len() - HISTORY_CAP;
+        history.drain(0..drop);
     }
+    let value = serde_json::to_value(&history).map_err(|error| error.to_string())?;
+    state
+        .storage
+        .set(&history_key(channel), &value)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn build_one(
+    State(state): State<Arc<RoutesState>>,
+    Path(id): Path<String>,
+    Query(query): Query<CompileQuery>,
+) -> Response {
+    let date = query
+        .date
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+    let Some(parsed) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok() else {
+        return fail(StatusCode::BAD_REQUEST, "date must be YYYY-MM-DD");
+    };
+    let weekday = chrono::Datelike::weekday(&parsed).num_days_from_sunday();
+
+    let layers = read_channel_layers(&state, &id).await;
+    let scopes = read_scopes(state.storage.as_ref()).await;
+    let resolved = layers::resolve(layers, &scopes, &id, &date, weekday, &[]);
+    let settings = state.settings.lock().await.clone();
+    let previous = read_day(&state, &id, &date).await;
+
+    let outcome = match build::build_day(
+        &state.core,
+        &id,
+        &date,
+        resolved,
+        &settings,
+        previous.as_ref(),
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => return fail(StatusCode::INTERNAL_SERVER_ERROR, error),
+    };
+    if !outcome.skipped {
+        if let Err(error) = store_day(&state, &id, &outcome.day).await {
+            return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+        }
+    }
+    Json(json!({ "outcome": outcome })).into_response()
+}
+
+async fn list_days(State(state): State<Arc<RoutesState>>, Path(id): Path<String>) -> Response {
+    let index = read_days_index(&state, &id).await;
+    let mut days = Vec::new();
+    for date in index {
+        if let Some(day) = read_day(&state, &id, &date).await {
+            days.push(json!({
+                "date": day.date,
+                "degraded": day.degraded,
+                "blocks": day.blocks.len(),
+                "provider": day.provider,
+                "created_at": day.created_at,
+            }));
+        }
+    }
+    Json(json!({ "days": days })).into_response()
+}
+
+async fn get_day(
+    State(state): State<Arc<RoutesState>>,
+    Path((id, date)): Path<(String, String)>,
+) -> Response {
+    match read_day(&state, &id, &date).await {
+        Some(day) => Json(json!({ "day": day })).into_response(),
+        None => fail(StatusCode::NOT_FOUND, "no day built for that date"),
+    }
+}
+
+async fn delete_day(
+    State(state): State<Arc<RoutesState>>,
+    Path((id, date)): Path<(String, String)>,
+) -> Response {
+    if let Err(error) = state.storage.delete(&day_key(&id, &date)).await {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
+    }
+    let mut index = read_days_index(&state, &id).await;
+    index.retain(|entry| entry != &date);
+    if let Ok(value) = serde_json::to_value(&index) {
+        let _ = state.storage.set(&days_index_key(&id), &value).await;
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // ── build status ─────────────────────────────────────────────────────────────

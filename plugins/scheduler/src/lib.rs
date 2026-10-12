@@ -5,6 +5,7 @@
 //! layer-6 override resolution, and the compile dry-run; the LLM build loop, the
 //! horizon builder, the UI, and the playout writer land in later phases.
 
+mod build;
 mod layers;
 mod routes;
 mod settings;
