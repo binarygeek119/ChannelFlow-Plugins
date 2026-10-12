@@ -18,7 +18,6 @@ use std::path::PathBuf;
 
 use axum::Router;
 use channelflow_plugin_api::contrib::PresetContribution;
-use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;

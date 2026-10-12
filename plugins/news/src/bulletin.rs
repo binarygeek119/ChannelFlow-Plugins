@@ -103,10 +103,6 @@ const HEADLINE_TARGET_PX: f64 = 1700.0;
 /// it cannot fit at the floor does it crawl instead of shrinking further.
 const HEADLINE_MIN_PX: f64 = 40.0;
 const HEADLINE_MAX_PX: f64 = 96.0;
-/// Liberation Sans Bold advances about this many pixels per point per
-/// character (measured from the installed font), used to size a headline to
-/// fill the bar. The text is bold, so this is larger than the story factor.
-const HEADLINE_ADVANCE: f64 = 0.5;
 
 /// The window a story's picture is shown in: the bright box in the middle of
 /// the map band, where the anchor's portrait sits. A picture is scaled to fit
@@ -711,7 +707,18 @@ async fn render_bulletin(
         input_index += 1;
         picture_slot += 1;
     }
-    filter_parts.push(format!("[6:v]scale=560:-1,{intro_fade}[lg];[base][lg]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];[v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',fade=t=in:st={lead}:d=0.8:alpha=1[v2];[v2]ass='{ass}'[v3];[v3][lg]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',fade=t=in:st={show_total}:d=0.8:alpha=1,fade=t=out:st={fade_start}:d={fade}[final];{audio}", intro_fade=logo_fade_in(), ass=escape_filter_path(&ass_path), fade_start=fade_start, fade=OUTRO_FADE_SECONDS, audio=audio, lead=lead, show_total=show_total));
+    filter_parts.push(format!(
+        "{};{audio}",
+        logo_and_outro_filter(
+            &cur,
+            &escape_filter_path(&ass_path),
+            OUTRO_FADE_SECONDS,
+            lead,
+            show_total,
+            fade_start,
+        ),
+        audio = audio,
+    ));
     let filter = filter_parts.join(";");
 
     let mut args: Vec<String> = vec![
@@ -887,24 +894,44 @@ fn escape_filter_path(path: &Path) -> String {
         .replace('\'', "\\'")
 }
 
-/// The desktop (map, anchor, bars, captions, mute) is on screen only while the
-/// show runs: from the end of the intro music (`lead`) to the anchor's close
-/// (`show_total`).
-fn desktop_enable(lead: f64, show_total: f64) -> String {
-    format!("between(t\\,{lead}\\,{show_total})")
-}
-
-/// The FlowWire logo shows over black exactly when the desktop is not up — while
-/// the intro music plays, and again after the close while the outro music
-/// plays.
-fn logo_enable(lead: f64, show_total: f64) -> String {
-    format!("not(between(t\\,{lead}\\,{show_total}))")
-}
-
 /// The logo eases up from black at the very start of the video, over the opening
 /// of the intro music. The outro brings it back with a hard cut instead.
 fn logo_fade_in() -> String {
     format!("fade=t=in:st=0:d={INTRO_FADE_SECONDS}")
+}
+
+/// The closing chain of the render: the FlowWire logo over black before the show,
+/// the desktop while it runs, then the logo again over black for the outro music,
+/// eased in at the close and faded out into the final fade to black. `cur` is the
+/// label of the last desktop layer, `ass` the caption file path, `fade` how long
+/// the final fade to black takes. The logo stream is split before being handed to
+/// the intro and outro overlays: ffmpeg starves a second overlay that reads the
+/// same label directly, so without the split the outro logo is never drawn.
+fn logo_and_outro_filter(
+    cur: &str,
+    ass: &str,
+    fade: f64,
+    lead: f64,
+    show_total: f64,
+    fade_start: f64,
+) -> String {
+    format!(
+        "[6:v]scale=560:-1,{intro_fade},split[lg1][lg2];\
+         [base][lg1]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];\
+         [v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',\
+         fade=t=in:st={lead}:d=0.8:alpha=1[v2];\
+         [v2]ass='{ass}'[v3];\
+         [v3][lg2]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',\
+         fade=t=in:st={show_total}:d=0.8:alpha=1,\
+         fade=t=out:st={fade_start}:d={fade}[final]",
+        intro_fade = logo_fade_in(),
+        cur = cur,
+        ass = ass,
+        fade = fade,
+        lead = lead,
+        show_total = show_total,
+        fade_start = fade_start,
+    )
 }
 
 /// The scrolling-map layer: crop the soft (transparent) right edge off, scale
@@ -981,18 +1008,16 @@ fn build_ass(beats: &[Beat]) -> String {
     for beat in beats {
         if !beat.title.trim().is_empty() {
             let title = escape_ass(&beat.title);
-            let chars = title.chars().count();
-            if headline_scrolls(chars) {
+            if headline_scrolls(&title) {
                 // Only genuinely long headlines crawl: they cannot fit on one
-                // static line at the floor size, so slide them right-to-left at
+                // static line at the floor size, so they slide right-to-left at
                 // that size, from fully off the right to fully off the left,
                 // finishing as the story ends.
-                let size = HEADLINE_MIN_PX;
-                let width = headline_width(chars, size);
+                let width = headline_width(&title, HEADLINE_MIN_PX);
                 let x_start = WIDTH as f64 + width / 2.0 + 60.0;
                 let x_end = -(width / 2.0) - 60.0;
                 let duration_ms = ((beat.end - beat.start).max(1.0) * 1000.0) as i64;
-                let scroll_ms = ((chars as f64 * 1000.0 / 30.0).max(8000.0) as i64)
+                let scroll_ms = ((title.chars().count() as f64 * 1000.0 / 30.0).max(8000.0) as i64)
                     .min(duration_ms)
                     .max(1);
                 let move_tag = format!(
@@ -1008,7 +1033,7 @@ fn build_ass(beats: &[Beat]) -> String {
             } else {
                 // A single static line, sized to span the bar's full width and
                 // centred in its band — no crawl unless it overflows.
-                let font = headline_font_size(chars);
+                let font = headline_font_size(&title);
                 events.push_str(&format!(
                     "Dialogue: 0,{},{},Headline,,0,0,0,,{{\\an5\\pos(960,{})\\fs{:.0}}}{}\n",
                     ass_time(beat.start),
@@ -1143,67 +1168,60 @@ fn story_font_size(chars: usize) -> f64 {
     (TARGET_PX / (chars as f64 * 0.44)).clamp(MIN_PX, MAX_PX)
 }
 
+/// Advance widths (per 1000 em) for ASCII 32..=126 in Liberation Sans Bold,
+/// read from the installed font. Summing these gives a headline's width far
+/// more accurately than a flat per-character factor, so a mixed-case headline
+/// fills the bar while an all-caps one is sized down instead of clipping.
+const HEADLINE_GLYPH_W: [u16; 95] = [
+    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
+    556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611,
+    975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778,
+    667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556,
+    333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
+    611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
+
 /// Size a single headline line to fill the width of the headline bar. Like the
 /// story lines, a short headline is grown (up to `HEADLINE_MAX_PX`) so it uses
 /// the bar rather than sitting in the centre; a long one is shrunk toward the
 /// floor. It is the caller's job to crawl a headline that even the floor cannot
 /// fit — see `headline_scrolls`.
-fn headline_font_size(chars: usize) -> f64 {
-    if chars == 0 {
+fn headline_font_size(text: &str) -> f64 {
+    let units = headline_units(text);
+    if units <= 0.0 {
         return HEADLINE_MAX_PX;
     }
-    (HEADLINE_TARGET_PX / (chars as f64 * HEADLINE_ADVANCE)).clamp(HEADLINE_MIN_PX, HEADLINE_MAX_PX)
+    (HEADLINE_TARGET_PX * 1000.0 / units).clamp(HEADLINE_MIN_PX, HEADLINE_MAX_PX)
 }
 
 /// A headline crawls only when it cannot be shown in full on one static line at
 /// the smallest readable size — otherwise the whole bar holds it without moving.
-fn headline_scrolls(chars: usize) -> bool {
-    chars > 0 && HEADLINE_TARGET_PX / (chars as f64 * HEADLINE_ADVANCE) < HEADLINE_MIN_PX
+fn headline_scrolls(text: &str) -> bool {
+    let units = headline_units(text);
+    units > 0.0 && HEADLINE_TARGET_PX * 1000.0 / units < HEADLINE_MIN_PX
 }
 
-/// How wide a headline is, in pixels, when drawn at `size` points.
-fn headline_width(chars: usize, size: f64) -> f64 {
-    chars as f64 * HEADLINE_ADVANCE * size
+/// How wide `text` is, in pixels, when drawn at `size` points.
+fn headline_width(text: &str, size: f64) -> f64 {
+    headline_units(text) * size / 1000.0
 }
 
-/// Greedy wrap of the copy into at most two lines (bottom bar), with an
-/// ellipsis when a line overflows. Kept narrow because the story font is
-/// large.
-fn wrap_two(text: &str) -> String {
-    const MAX: usize = 40;
-    let mut words = text.split_whitespace();
-    let mut first = String::new();
-    while let Some(word) = words.next() {
-        if !first.is_empty() && first.len() + word.len() + 1 > MAX {
-            break;
-        }
-        if !first.is_empty() {
-            first.push(' ');
-        }
-        first.push_str(word);
-        if first.len() >= MAX {
-            break;
-        }
-    }
-    let mut second = String::new();
-    for word in words {
-        if !second.is_empty() && second.len() + word.len() + 1 > MAX {
-            second.push_str(" …");
-            break;
-        }
-        if !second.is_empty() {
-            second.push(' ');
-        }
-        second.push_str(word);
-    }
-    if second.is_empty() {
-        if first.len() > MAX {
-            first.push_str(" …");
-        }
-        first
-    } else {
-        format!("{first}\\N{second}")
-    }
+/// The width of a headline in font units, summed per character. Characters
+/// outside printable ASCII fall back to a typical bold letter width (or the
+/// space width for other whitespace).
+fn headline_units(text: &str) -> f64 {
+    text.chars()
+        .map(|c| {
+            let code = c as u32;
+            if (32..=126).contains(&code) {
+                HEADLINE_GLYPH_W[(code - 32) as usize] as f64
+            } else if c.is_whitespace() {
+                278.0
+            } else {
+                611.0
+            }
+        })
+        .sum()
 }
 
 fn ass_time(seconds: f64) -> String {
@@ -1262,7 +1280,6 @@ mod tests {
 
     #[test]
     fn ass_puts_the_headline_in_the_bar_and_the_copy_as_two_lines() {
-        let stories = vec![json!({ "title": "Headline One", "summary": "Spoken copy here." })];
         let beats = vec![
             Beat { start: 0.0, end: 3.0, title: "FlowWire News".into(), body: String::new() },
             Beat { start: 3.0, end: 7.0, title: "Headline One".into(), body: "Spoken copy here.".into() },
@@ -1290,51 +1307,54 @@ mod tests {
         let ass = build_ass(&beats);
         assert!(!ass.contains("\\move"), "a headline that fits does not crawl: {ass}");
         assert!(ass.contains("\\an5\\pos(960,120)"), "it is centred in the bar's band: {ass}");
-        let size = headline_font_size(title.chars().count());
+        let size = headline_font_size(title);
         assert!(ass.contains(&format!("\\fs{size:.0}")), "the fitted size is on the event: {ass}");
         assert!(size > 44.0, "a headline can be bigger than the old fixed 44");
     }
 
     #[test]
     fn shorter_headlines_are_drawn_bigger_to_fill_the_bar() {
-        assert!(headline_font_size(20) >= headline_font_size(60));
-        assert!(headline_font_size(60) > headline_font_size(85));
+        // Sized against the headline's own glyph widths: more characters means
+        // a smaller point size, down to the floor; a short line grows to the
+        // cap rather than being stretched.
+        assert!(headline_font_size(&"a".repeat(20)) >= headline_font_size(&"a".repeat(60)));
+        assert!(headline_font_size(&"a".repeat(60)) > headline_font_size(&"a".repeat(85)));
         for chars in [0, 10, 60, 85, 200] {
-            let size = headline_font_size(chars);
+            let size = headline_font_size(&"a".repeat(chars));
             assert!(
                 (HEADLINE_MIN_PX..=HEADLINE_MAX_PX).contains(&size),
                 "font {size} stays in range"
             );
         }
-        // A short headline grows to the cap rather than being stretched.
-        assert_eq!(headline_font_size(10), HEADLINE_MAX_PX);
+        assert_eq!(headline_font_size(&"a".repeat(10)), HEADLINE_MAX_PX);
     }
 
     #[test]
     fn only_headlines_that_overflow_the_bar_crawl() {
-        // 85 characters is the boundary: at the floor size they exactly span
-        // the bar, so only longer ones need to crawl.
-        assert!(!headline_scrolls(84), "a headline that fits stays put");
-        assert!(headline_scrolls(86), "one that cannot fit at the floor crawls");
-        assert!(!headline_scrolls(0));
+        // The bar holds roughly sixty of the widest letters ('A') at the floor
+        // size, so a headline well past that overflows and has to crawl; a short
+        // one stays put on a single static line.
+        assert!(!headline_scrolls(&"A".repeat(50)), "a headline that fits stays put");
+        assert!(headline_scrolls(&"A".repeat(70)), "one that cannot fit at the floor crawls");
+        assert!(!headline_scrolls(""));
 
         let long = "A".repeat(140);
-        let beats = vec![Beat { start: 0.0, end: 12.0, title: long, body: String::new() }];
+        let beats = vec![Beat { start: 0.0, end: 12.0, title: long.clone(), body: String::new() }];
         let ass = build_ass(&beats);
         assert!(ass.contains("\\move("), "an over-long headline crawls: {ass}");
         assert!(
             ass.contains(&format!("\\fs{:.0}", HEADLINE_MIN_PX)),
             "it crawls at the floor size: {ass}"
         );
-        assert!(headline_width(140, HEADLINE_MIN_PX) > HEADLINE_TARGET_PX);
+        assert!(headline_width(&long, HEADLINE_MIN_PX) > HEADLINE_TARGET_PX);
     }
 
     #[test]
     fn headline_sizing_targets_the_bar_width() {
         // The fitted size really does reach the bar for a mid-length headline.
-        let chars = 68;
-        let size = headline_font_size(chars);
-        let width = headline_width(chars, size);
+        let text = "City council approves budget after a marathon overnight session";
+        let size = headline_font_size(text);
+        let width = headline_width(text, size);
         assert!((HEADLINE_TARGET_PX - 1.0..=HEADLINE_TARGET_PX + 1.0).contains(&width));
         // And the vertical centre keeps it inside the bar's band (43–197).
         assert!(HEADLINE_CENTER_Y > 43 && HEADLINE_CENTER_Y < 197);
@@ -1456,14 +1476,23 @@ mod tests {
 
     #[test]
     fn the_logo_comes_back_for_the_outro_then_fades_to_black() {
-        // The desktop is up only for the show; the logo fills the gaps on both
-        // sides of it, so the close cuts to black + logo for the outro music.
-        assert_eq!(desktop_enable(3.5, 120.0), "between(t\\,3.5\\,120)");
-        assert_eq!(logo_enable(3.5, 120.0), "not(between(t\\,3.5\\,120))");
-        // The video runs on past the music so the picture can fade to black.
+        let chain = logo_and_outro_filter("desk", "news.ass", OUTRO_FADE_SECONDS, 3.5, 120.0, 129.0);
+        // The desktop is up only between the end of the intro music and the
+        // anchor's close.
         assert!(
-            OUTRO_FADE_SECONDS > 0.0,
-            "the outro needs room to fade to black"
+            chain.contains("enable='between(t,3.5,120)'"),
+            "the desktop runs only during the show: {chain}"
+        );
+        // The logo fills the gaps on both sides of the show: up before the lead
+        // and back on from the close, while the outro music plays.
+        assert!(chain.contains("enable='lte(t,3.5)'"), "the logo is up before the show: {chain}");
+        assert!(chain.contains("enable='gte(t,120)'"), "the outro brings the logo back: {chain}");
+        // The video runs on past the music so the picture can fade to black,
+        // and that fade-out dims the logo as the end approaches.
+        assert!(OUTRO_FADE_SECONDS > 0.0, "the outro needs room to fade to black");
+        assert!(
+            chain.contains(&format!("fade=t=out:st=129:d={OUTRO_FADE_SECONDS}")),
+            "the outro fades to black at the end: {chain}"
         );
     }
 
@@ -1475,6 +1504,40 @@ mod tests {
         assert!(
             INTRO_FADE_SECONDS > 0.0,
             "the intro logo should ease in, not pop in"
+        );
+    }
+
+    #[test]
+    fn the_outro_logo_uses_its_own_fork_of_the_logo_stream() {
+        let chain = logo_and_outro_filter("desk", "news.ass", 1.2, 3.5, 120.0, 123.5);
+        // Two overlays must not read the same label: ffmpeg starves the second
+        // one, so without the split the outro logo is never drawn (the outro
+        // would stay black while the outro music plays).
+        assert!(
+            chain.contains(",split[lg1][lg2]"),
+            "the logo is split before its two uses: {chain}"
+        );
+        assert!(
+            chain.contains("[base][lg1]overlay"),
+            "the intro overlay reads the first fork: {chain}"
+        );
+        assert!(
+            chain.contains("[v3][lg2]overlay"),
+            "the outro overlay reads the second fork: {chain}"
+        );
+        // The outro overlay brings the logo back for the music and fades it out
+        // into the final fade to black.
+        assert!(
+            chain.contains("enable='gte(t,120)'"),
+            "the logo returns for the outro music: {chain}"
+        );
+        assert!(
+            chain.contains("fade=t=out:st=123.5:d=1.2"),
+            "the outro fades the logo out as the end approaches: {chain}"
+        );
+        assert!(
+            chain.contains("fade=t=in:st=120:d=0.8:alpha=1"),
+            "the outro logo eases back in: {chain}"
         );
     }
 
