@@ -23,6 +23,24 @@
             "size": 0
           }
         }
+      },
+      {
+        "version": "2.0.2",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-12T22:31:31Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.2/com.channelflow.pasttense-v2.0.2-linux-x86_64.zip",
+            "checksum": "sha256:673fbf62c9cf67c4b65e5d56706e73f0dcb7e353ae4c6b8174100490acedfff0",
+            "size": 255894
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/pasttense-v2.0.2/com.channelflow.pasttense-v2.0.2-windows-x86_64.zip",
+            "checksum": "sha256:d03e0273e71d5898fb37772e20a189b77e00deccab37fee87f726924ec5aa7f8",
+            "size": 221430
+          }
+        }
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.pasttense.png"
@@ -49,6 +67,24 @@
           "windows-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.0/com.channelflow.local-v2.0.0-windows-x86_64.zip",
             "size": 0
+          }
+        }
+      },
+      {
+        "version": "2.0.4",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-12T22:31:32Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.4/com.channelflow.local-v2.0.4-linux-x86_64.zip",
+            "checksum": "sha256:d994f6b0aad5cd890d29e3ff6d5cbc4e986690f5889b142d44a0b4d2f3ba118f",
+            "size": 274229
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/local-v2.0.4/com.channelflow.local-v2.0.4-windows-x86_64.zip",
+            "checksum": "sha256:3a7ac618a6264c2000086751196768359143b996240e5653d3842d8a12e14333",
+            "size": 221446
           }
         }
       }
@@ -438,6 +474,66 @@
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/weather-v2.0.0/com.channelflow.weather-v2.0.0-windows-x86_64.zip",
             "checksum": "sha256:291186a82e42f0803586829496ff1bd1f01f75ce5cface2b765fd2b05c90104a",
             "size": 221463
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "com.channelflow.holidaychannel",
+    "guid": "com.channelflow.holidaychannel",
+    "name": "The Holiday Channel",
+    "description": "Seasonal holiday TV and movies: the active holiday, its windows, and today's catalog lineup, with the period logos from v1.0.0",
+    "owner": "ChannelFlow",
+    "category": "catalog",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "",
+    "versions": [
+      {
+        "version": "2.0.4",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-12T22:31:27Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/holidaychannel-v2.0.4/com.channelflow.holidaychannel-v2.0.4-linux-x86_64.zip",
+            "checksum": "sha256:414d8c6ad39ca7c7fa99366fbeccf9ff54a2f3cd88edecd2a302e5186ef16936",
+            "size": 257692
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/holidaychannel-v2.0.4/com.channelflow.holidaychannel-v2.0.4-windows-x86_64.zip",
+            "checksum": "sha256:af456452c5168fe4422df3fb3705167994d890eee57bf7cbd7313a0864e64990",
+            "size": 221496
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "com.channelflow.scheduler",
+    "guid": "com.channelflow.scheduler",
+    "name": "Scheduler",
+    "description": "Builds each channel's broadcast day from six layers and the AI page's providers",
+    "owner": "ChannelFlow",
+    "category": "scheduling",
+    "homepage": "https://github.com/binarygeek119/ChannelFlow",
+    "imageUrl": "",
+    "versions": [
+      {
+        "version": "2.0.10",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-12T22:31:33Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.10/com.channelflow.scheduler-v2.0.10-linux-x86_64.zip",
+            "checksum": "sha256:cef2041ed703469c78c698c193eb0a5696dbd0d5a49920ae0875898b56d5d60a",
+            "size": 282442
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.10/com.channelflow.scheduler-v2.0.10-windows-x86_64.zip",
+            "checksum": "sha256:a4980c5751ce3c89da12d6e3615a332be814933375ce649a7e0529e71eddb740",
+            "size": 221488
           }
         }
       }
