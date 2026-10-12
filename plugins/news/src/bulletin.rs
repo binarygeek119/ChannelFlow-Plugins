@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use crate::api;
 use crate::rewrite;
-use crate::settings::NewsSettings;
+use crate::settings::{NewsSettings, TtsEngine};
 use crate::NewsState;
 use channelflow_plugin_api::core::TtsProvider;
 use channelflow_plugin_api::plugin::PluginLogger;
@@ -552,9 +552,9 @@ async fn render_bulletin(
     }
     texts.push(outro_line.clone());
 
-    // The anchor's copy is read aloud with the TTS provider from the AI page.
-    // Without one — or when it fails — Google TTS reads it, so the show still
-    // has narration.
+    // The engine switch picks the voice: the AI page's TTS provider, or Google
+    // TTS. In AI mode, when no provider is set — or the call fails — Google TTS
+    // reads it, so the show still has narration.
     let mut speech: Vec<Option<(PathBuf, f64)>> = vec![None; texts.len()];
     if settings.tts_enabled {
         for (index, text) in texts.iter().enumerate() {
@@ -562,22 +562,27 @@ async fn render_bulletin(
                 continue;
             }
             let path = work_dir.join(format!("speech-{index}.mp3"));
-            let spoken = match ai_provider.as_ref() {
-                Some(provider) => match crate::tts::synthesize_ai(
-                    http,
-                    text,
-                    &provider.base_url,
-                    &provider.api_key,
-                    &provider.tts_model,
-                    &provider.voice,
-                    &path,
-                )
-                .await
-                {
-                    Ok(count) if count > 0 => Ok(count),
-                    _ => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
+            let spoken = match settings.tts_engine {
+                TtsEngine::Google => {
+                    crate::tts::synthesize(http, text, &settings.tts_voice, &path).await
+                }
+                TtsEngine::Ai => match ai_provider.as_ref() {
+                    Some(provider) => match crate::tts::synthesize_ai(
+                        http,
+                        text,
+                        &provider.base_url,
+                        &provider.api_key,
+                        &provider.tts_model,
+                        &provider.voice,
+                        &path,
+                    )
+                    .await
+                    {
+                        Ok(count) if count > 0 => Ok(count),
+                        _ => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
+                    },
+                    None => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
                 },
-                None => crate::tts::synthesize(http, text, &settings.tts_voice, &path).await,
             };
             if let Ok(count) = spoken {
                 if count > 0 {

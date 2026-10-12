@@ -41,12 +41,23 @@ function setNewsCheck(id, value) {
   if (el) el.checked = value !== false;
 }
 
+// Accent whichever engine the switch is on, so the two-sided picker reads as a
+// choice between AI TTS and Google TTS.
+function syncNewsEngine() {
+  const box = $("news-tts-ai");
+  const on = !!(box && box.checked);
+  document.querySelectorAll(".news-engine-option").forEach((el) => {
+    el.classList.toggle("is-on", (el.dataset.engine === "ai") === on);
+  });
+}
+
 function collectNewsSettings() {
   return {
     header: $("news-header").value.trim(),
     article_count: Number($("news-count").value) || 8,
     refresh_minutes: Number($("news-refresh").value) || 10,
     tts_voice: $("news-voice").value,
+    tts_engine: $("news-tts-ai").checked ? "ai" : "google",
     anchor_intro: anchorValue("news-intro", NEWS_DEFAULTS.intro),
     anchor_outro: anchorValue("news-outro", NEWS_DEFAULTS.outro),
     use_24_hour: $("news-24h").checked,
@@ -78,6 +89,8 @@ async function loadNews() {
     $("news-outro").value = settings.anchor_outro || NEWS_DEFAULTS.outro;
     setNewsCheck("news-24h", settings.use_24_hour);
     setNewsCheck("news-tts", settings.tts_enabled);
+    setNewsCheck("news-tts-ai", settings.tts_engine !== "google");
+    syncNewsEngine();
     setNewsCheck("news-ai-rewrite", settings.ai_rewrite);
     setNewsCheck("news-show-header", settings.show_header);
     setNewsCheck("news-headlines-only", settings.headlines_only);
@@ -271,6 +284,8 @@ async function buildBulletinNow() {
   if (preview) preview.addEventListener("click", previewNews);
   const build = $("news-bulletin-build");
   if (build) build.addEventListener("click", buildBulletinNow);
+  const engine = $("news-tts-ai");
+  if (engine) engine.addEventListener("change", syncNewsEngine);
 }
 
 CF.define("news", { onShow: loadNews });

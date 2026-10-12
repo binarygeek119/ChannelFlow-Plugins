@@ -24,8 +24,23 @@
               <label class="field-label" for="news-voice">TTS voice / language</label>
               <select id="news-voice"></select>
               <p class="field-note">
-                The AI page's voice reads the show when a TTS provider is set there; this voice is the
-                Google TTS fallback.
+                The Google TTS voice, used when the voice engine below is Google TTS (or as the AI
+                provider's fallback).
+              </p>
+            </div>
+            <div class="field">
+              <span class="field-label">Voice engine</span>
+              <label class="news-toggle" for="news-tts-ai">
+                <span class="news-toggle-text">Which voice reads the show</span>
+                <span class="news-engine">
+                  <span class="news-engine-option" data-engine="ai">AI TTS</span>
+                  <span class="switch"><input id="news-tts-ai" type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+                  <span class="news-engine-option" data-engine="google">Google TTS</span>
+                </span>
+              </label>
+              <p class="field-note">
+                AI TTS reads the show with the AI page's TTS provider (falling back to Google if it
+                fails); Google TTS always uses the language above.
               </p>
             </div>
             <div class="field">

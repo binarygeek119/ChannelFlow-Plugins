@@ -2,9 +2,9 @@
 //! articles and how often to refresh, the TTS voice, the anchor intro/outro,
 //! the bulletin schedule, and the RSS feeds. Mirrors 1.0.0's News tab.
 //!
-//! The voice that reads the show comes from the AI page (the core hands the
-//! plugin a TTS provider); the only voice kept here is the language Google
-//! TTS falls back to when no AI provider is set.
+//! The voice that reads the show is chosen here: the AI page's TTS provider
+//! (the core hands the plugin a TTS provider) or Google TTS. The language kept
+//! here is the Google voice, and the fallback when the AI provider fails.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,14 +13,30 @@ pub const SETTINGS_KEY: &str = "settings";
 
 /// The old AI-TTS fields, dropped before parsing so a document saved by an
 /// earlier version still loads (`deny_unknown_fields` would otherwise reject
-/// it). The AI page owns the endpoint, key, model, and voice now.
-const LEGACY_TTS_FIELDS: [&str; 5] = [
-    "tts_engine",
+/// it). The AI page owns the endpoint, key, model, and voice now. `tts_engine`
+/// is kept: it is a real setting again (AI vs Google).
+const LEGACY_TTS_FIELDS: [&str; 4] = [
     "ai_tts_base_url",
     "ai_tts_api_key",
     "ai_tts_model",
     "ai_tts_voice",
 ];
+
+/// Which voice reads the show: the AI page's TTS provider, or Google TTS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TtsEngine {
+    Ai,
+    Google,
+}
+
+impl Default for TtsEngine {
+    fn default() -> Self {
+        // Prefer the AI page's provider when one is set (falling back to Google
+        // if it fails), matching how the show has always been read.
+        TtsEngine::Ai
+    }
+}
 
 /// One RSS feed, saved even when disabled.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,9 +53,11 @@ pub struct NewsSettings {
     pub header: String,
     pub article_count: u32,
     pub refresh_minutes: u32,
-    /// The Google TTS language (e.g. `en-US`), used only when no AI provider is
-    /// configured on the AI page.
+    /// The Google TTS language (e.g. `en-US`), used when the engine is Google
+    /// (or as the fallback when the AI provider fails).
     pub tts_voice: String,
+    /// Which voice reads the show: the AI page's provider or Google TTS.
+    pub tts_engine: TtsEngine,
     pub anchor_intro: String,
     pub anchor_outro: String,
     /// Speak the build time as 24-hour (`15:00`) instead of 12-hour (`3 P M`).
@@ -64,6 +82,7 @@ impl Default for NewsSettings {
             article_count: 8,
             refresh_minutes: 10,
             tts_voice: "en-US".to_string(),
+            tts_engine: TtsEngine::default(),
             anchor_intro: String::new(),
             anchor_outro: String::new(),
             use_24_hour: false,
@@ -189,13 +208,14 @@ mod tests {
         assert!(NewsSettings::parse(&bad).is_err());
     }
 
-    /// A document saved before the AI-TTS fields were retired still loads, and
-    /// the retired fields are gone afterwards.
+    /// A document saved before the AI-TTS fields were retired still loads: the
+    /// retired `ai_tts_*` fields are dropped, but `tts_engine` is a real setting
+    /// again and is honoured.
     #[test]
     fn drops_the_retired_ai_tts_fields() {
         let old = serde_json::json!({
             "header": "FlowWire News",
-            "tts_engine": "ai",
+            "tts_engine": "google",
             "ai_tts_base_url": "https://example.com/v1",
             "ai_tts_api_key": "secret",
             "ai_tts_model": "kokoro",
@@ -205,8 +225,19 @@ mod tests {
         let settings = NewsSettings::parse(&old).expect("the old document still loads");
         assert_eq!(settings.header, "FlowWire News");
         assert_eq!(settings.feeds.len(), 1);
+        assert_eq!(settings.tts_engine, TtsEngine::Google);
         let round_trip = serde_json::to_value(&settings).expect("serializes");
         assert!(round_trip.get("ai_tts_base_url").is_none());
-        assert!(round_trip.get("tts_engine").is_none());
+        assert!(round_trip.get("ai_tts_api_key").is_none());
+        assert_eq!(round_trip["tts_engine"], "google");
+    }
+
+    #[test]
+    fn the_tts_engine_defaults_to_the_ai_provider() {
+        // A document with no engine keeps the long-standing behaviour: use the
+        // AI page's provider, falling back to Google.
+        let settings = NewsSettings::parse(&serde_json::json!({ "header": "FlowWire News" }))
+            .expect("loads");
+        assert_eq!(settings.tts_engine, TtsEngine::Ai);
     }
 }
