@@ -91,26 +91,48 @@ pub fn resolve_show_name(header: &str) -> String {
     value.to_string()
 }
 
-/// The token in the anchor's intro/outro that the build time replaces, so the
-/// anchor can say when the newscast went to air.
-pub const TIME_TOKEN: &str = "@@";
+/// The token in the anchor's intro/outro that **just the hour** of the build
+/// replaces, so the anchor can say when the newscast went to air: `@@` becomes
+/// `3 P M` in 12-hour mode, or `15` in 24-hour mode.
+pub const HOUR_TOKEN: &str = "@@";
 
-/// The default anchor open, with the `@@` time token.
+/// The token that the **full build time** replaces: `@@@@` becomes `3 14 P M`
+/// in 12-hour mode, or `15 14` in 24-hour mode.
+pub const FULL_TIME_TOKEN: &str = "@@@@";
+
+/// The default anchor open. Uses the full-time token so the anchor says the
+/// whole build time unless the user changes the script.
 pub fn default_intro(show_name: &str) -> String {
-    format!("I'm Catherine Wolfe, And you're watching {show_name} At {TIME_TOKEN}")
+    format!("I'm Catherine Wolfe, And you're watching {show_name} At {FULL_TIME_TOKEN}")
 }
 
-/// The default anchor close, with the `@@` time token.
+/// The default anchor close, with the full-time token.
 pub fn default_outro(show_name: &str) -> String {
-    format!("I'm Catherine Wolfe, This was {show_name} At {TIME_TOKEN}")
+    format!("I'm Catherine Wolfe, This was {show_name} At {FULL_TIME_TOKEN}")
 }
 
-/// A time as the anchor says it. 24-hour keeps `15:00`; 12-hour becomes
-/// `3 P M`. The AM/PM letters are spaced so the TTS reads them as letters
-/// rather than the words "am"/"pm".
+/// Just the hour, as the anchor reads it. 24-hour keeps the hour (two digits,
+/// `15`); 12-hour converts it to `3 P M` — the AM/PM letters are spaced so the
+/// TTS reads them as letters rather than the words "am"/"pm".
+pub fn spoken_hour(hour: u32, use_24_hour: bool) -> String {
+    if use_24_hour {
+        return format!("{hour:02}");
+    }
+    let period = if hour % 24 < 12 { "A M" } else { "P M" };
+    let mut twelve = hour % 12;
+    if twelve == 0 {
+        twelve = 12;
+    }
+    format!("{twelve} {period}")
+}
+
+/// The full build time, as the anchor reads it: the hour and the minute with a
+/// space between them, so the TTS says "ten fourteen", not "ten-colon-fourteen".
+/// 24-hour keeps `15 14`; 12-hour becomes `3 14 P M`, and the minutes are
+/// dropped on the hour rather than saying "3 00".
 pub fn spoken_time(hour: u32, minute: u32, use_24_hour: bool) -> String {
     if use_24_hour {
-        return format!("{hour:02}:{minute:02}");
+        return format!("{hour:02} {minute:02}");
     }
     let period = if hour % 24 < 12 { "A M" } else { "P M" };
     let mut twelve = hour % 12;
@@ -120,12 +142,14 @@ pub fn spoken_time(hour: u32, minute: u32, use_24_hour: bool) -> String {
     if minute == 0 {
         format!("{twelve} {period}")
     } else {
-        format!("{twelve}:{minute:02} {period}")
+        format!("{twelve} {minute:02} {period}")
     }
 }
 
 /// Resolve one anchor line: the custom text when set, otherwise the default,
-/// with every `@@` replaced by the time the bulletin was built.
+/// with `@@@@` replaced by the full build time and every `@@` that is left by
+/// just the hour. The `@@@@` is replaced first so its two `@@` halves are not
+/// consumed by the hour rule.
 pub fn anchor_line(
     custom: &str,
     default: String,
@@ -138,7 +162,8 @@ pub fn anchor_line(
     } else {
         custom.trim().to_string()
     };
-    line.replace(TIME_TOKEN, &spoken_time(hour, minute, use_24_hour))
+    let full = line.replace(FULL_TIME_TOKEN, &spoken_time(hour, minute, use_24_hour));
+    full.replace(HOUR_TOKEN, &spoken_hour(hour, use_24_hour))
 }
 
 /// Fetch every enabled feed and build the newscast show — the stories plus
@@ -521,34 +546,55 @@ mod tests {
 
     #[test]
     fn the_anchor_time_is_spelled_for_speech() {
-        // 12-hour keeps the letters apart so the TTS says "A M", not "am".
+        // A bare `@@` is just the hour. 12-hour keeps the letters apart so the
+        // TTS says "A M", not "am".
+        assert_eq!(spoken_hour(8, false), "8 A M");
+        assert_eq!(spoken_hour(15, false), "3 P M");
+        assert_eq!(spoken_hour(0, false), "12 A M");
+        assert_eq!(spoken_hour(12, false), "12 P M");
+        // 24-hour keeps the hour as the clock shows it.
+        assert_eq!(spoken_hour(15, true), "15");
+        assert_eq!(spoken_hour(6, true), "06");
+        // `@@@@` is the full time: hour and minute, space-separated so the TTS
+        // reads "ten fourteen", not "ten colon fourteen".
         assert_eq!(spoken_time(8, 0, false), "8 A M");
         assert_eq!(spoken_time(15, 0, false), "3 P M");
         assert_eq!(spoken_time(0, 0, false), "12 A M");
         assert_eq!(spoken_time(12, 0, false), "12 P M");
-        assert_eq!(spoken_time(8, 30, false), "8:30 A M");
-        // 24-hour keeps the clock notation.
-        assert_eq!(spoken_time(15, 0, true), "15:00");
-        assert_eq!(spoken_time(6, 0, true), "06:00");
+        assert_eq!(spoken_time(8, 30, false), "8 30 A M");
+        assert_eq!(spoken_time(15, 0, true), "15 00");
+        assert_eq!(spoken_time(6, 0, true), "06 00");
+        assert_eq!(spoken_time(15, 14, true), "15 14");
     }
 
     #[test]
     fn the_build_time_fills_the_anchor_lines() {
+        // The default lines carry the full-time token (`@@@@`): on the hour the
+        // minutes are dropped, so 8:00 reads "8 A M" as before.
         let intro = anchor_line("", default_intro("FlowWire News"), 8, 0, false);
         assert_eq!(
             intro,
             "I'm Catherine Wolfe, And you're watching FlowWire News At 8 A M"
         );
-        let outro = anchor_line("", default_outro("FlowWire News"), 15, 0, false);
-        assert_eq!(outro, "I'm Catherine Wolfe, This was FlowWire News At 3 P M");
-        // A custom line keeps the token, and 24-hour keeps the colon.
+        let outro = anchor_line("", default_outro("FlowWire News"), 15, 14, false);
+        assert_eq!(outro, "I'm Catherine Wolfe, This was FlowWire News At 3 14 P M");
+        // A bare `@@` says only the hour; `@@@@` says the full time.
         assert_eq!(
-            anchor_line("Good evening, it's @@ now.", String::new(), 20, 0, false),
+            anchor_line("Good evening, it's @@ now.", String::new(), 20, 12, false),
             "Good evening, it's 8 P M now."
         );
         assert_eq!(
-            anchor_line("It's @@.", String::new(), 15, 0, true),
-            "It's 15:00."
+            anchor_line("It's @@.", String::new(), 15, 12, true),
+            "It's 15."
+        );
+        assert_eq!(
+            anchor_line("It's @@@@.", String::new(), 15, 12, true),
+            "It's 15 12."
+        );
+        // Both tokens in one line resolve independently.
+        assert_eq!(
+            anchor_line("The time is @@@@, the hour is @@.", String::new(), 15, 14, false),
+            "The time is 3 14 P M, the hour is 3 P M."
         );
     }
 
