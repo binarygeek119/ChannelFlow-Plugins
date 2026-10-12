@@ -31,6 +31,14 @@
       <input id="sched-enabled" type="checkbox">
       <span>Build the horizon automatically at the build time</span>
     </label>
+    <label class="sched-check" for="sched-write-playout">
+      <input id="sched-write-playout" type="checkbox">
+      <span>Write playout JSON and the guide as each day is built</span>
+    </label>
+    <div class="field">
+      <label class="field-label" for="sched-playout-dir">Playout folder (blank = &lt;config&gt;/playout)</label>
+      <input id="sched-playout-dir" type="text" placeholder="/config/playout">
+    </div>
     <div class="sched-actions">
       <button type="submit" class="primary">Save settings</button>
       <button type="button" class="ghost" id="sched-build-horizon">Build horizon now</button>

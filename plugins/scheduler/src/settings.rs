@@ -24,6 +24,13 @@ pub struct SchedulerSettings {
     pub pool_cap: u32,
     /// Build a horizon automatically on the schedule.
     pub enabled: bool,
+    /// Where playout JSON is written. Empty means `<config>/playout`; the
+    /// channel id is always a subfolder.
+    #[serde(default)]
+    pub playout_dir: String,
+    /// Write playout JSON (and the guide) as each day is built.
+    #[serde(default)]
+    pub write_playout: bool,
 }
 
 impl Default for SchedulerSettings {
@@ -34,6 +41,8 @@ impl Default for SchedulerSettings {
             max_retries: 2,
             pool_cap: 120,
             enabled: false,
+            playout_dir: String::new(),
+            write_playout: false,
         }
     }
 }
@@ -47,6 +56,7 @@ impl SchedulerSettings {
         settings.max_retries = settings.max_retries.min(5);
         settings.pool_cap = settings.pool_cap.clamp(1, 2000);
         settings.build_time = settings.build_time.trim().to_string();
+        settings.playout_dir = settings.playout_dir.trim().to_string();
         Ok(settings)
     }
 }

@@ -8,6 +8,7 @@
 mod build;
 mod horizon;
 mod layers;
+mod playout;
 mod routes;
 mod settings;
 mod state;
@@ -75,11 +76,20 @@ impl Plugin for SchedulerPlugin {
             .and_then(|value| SchedulerSettings::parse(&value).ok())
             .unwrap_or_default();
         let horizon = Arc::new(horizon::Horizon::new());
+        // `api.dir` is `<config>/plugins/{id}`; its grandparent is `<config>`,
+        // where the playout folder lives.
+        let config_root = api
+            .dir
+            .parent()
+            .and_then(|plugins| plugins.parent())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| api.dir.clone());
         self.state = Some(Arc::new(routes::RoutesState {
             storage: api.storage.clone(),
             core: api.core.clone(),
             settings: Mutex::new(settings),
             horizon: horizon.clone(),
+            config_root,
             logger: api.logger.clone(),
         }));
 
@@ -107,7 +117,14 @@ impl Plugin for SchedulerPlugin {
                     last_date = today;
                     state
                         .horizon
-                        .run(&state.core, &state.storage, settings, &state.logger, "schedule")
+                        .run(
+                            &state.core,
+                            &state.storage,
+                            &state.config_root,
+                            settings,
+                            &state.logger,
+                            "schedule",
+                        )
                         .await;
                 }
             });

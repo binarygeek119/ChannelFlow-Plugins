@@ -2,6 +2,7 @@
 //! day-major, one build at a time. Progress is readable while it runs so the
 //! UI can show "channel x/y, day d/N".
 
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -76,6 +77,7 @@ impl Horizon {
         &self,
         core: &Arc<dyn CoreData>,
         storage: &Arc<dyn PluginStorage>,
+        config_root: &Path,
         settings: SchedulerSettings,
         logger: &PluginLogger,
         trigger: &str,
@@ -95,7 +97,7 @@ impl Horizon {
             };
         }
 
-        let result = self.build_all(core, storage, &settings, logger).await;
+        let result = self.build_all(core, storage, config_root, &settings, logger).await;
 
         let mut progress = self.progress.lock().await;
         progress.finished_at = Some(chrono::Local::now().to_rfc3339());
@@ -115,6 +117,7 @@ impl Horizon {
         &self,
         core: &Arc<dyn CoreData>,
         storage: &Arc<dyn PluginStorage>,
+        config_root: &Path,
         settings: &SchedulerSettings,
         logger: &PluginLogger,
     ) -> Result<(), String> {
@@ -165,6 +168,21 @@ impl Horizon {
                                 let mut progress = self.progress.lock().await;
                                 progress.errors.push(format!("{} {date}: {error}", channel.id));
                                 continue;
+                            }
+                        }
+                        if settings.write_playout {
+                            let dir = crate::playout::channel_dir(
+                                config_root,
+                                &settings.playout_dir,
+                                &channel.id,
+                            );
+                            if let Err(error) =
+                                crate::playout::write(core, &outcome.day, &dir).await
+                            {
+                                let mut progress = self.progress.lock().await;
+                                progress
+                                    .errors
+                                    .push(format!("{} {date} playout: {error}", channel.id));
                             }
                         }
                         let mut progress = self.progress.lock().await;
@@ -295,7 +313,7 @@ mod tests {
         };
         let logger = PluginLogger::new("com.channelflow.scheduler");
 
-        horizon.run(&core, &storage, settings, &logger, "test").await;
+        horizon.run(&core, &storage, &std::env::temp_dir(), settings, &logger, "test").await;
 
         let progress = horizon.snapshot().await;
         assert_eq!(progress.state, "done");
@@ -310,7 +328,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        horizon.run(&core, &storage, settings, &logger, "test").await;
+        horizon.run(&core, &storage, &std::env::temp_dir(), settings, &logger, "test").await;
         let progress = horizon.snapshot().await;
         assert_eq!(progress.skipped, 2, "an unchanged input is skipped");
         assert_eq!(progress.built, 0);

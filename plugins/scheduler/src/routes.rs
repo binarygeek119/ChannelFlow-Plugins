@@ -1,6 +1,7 @@
 //! The Scheduler plugin's HTTP API: settings, the per-channel layers, the rule
 //! scopes, the compile dry-run, one-day and whole-horizon builds, and status.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -27,6 +28,8 @@ pub struct RoutesState {
     pub core: Arc<dyn CoreData>,
     pub settings: Mutex<SchedulerSettings>,
     pub horizon: Arc<Horizon>,
+    /// `<config>`, where the playout folder lives.
+    pub config_root: PathBuf,
     pub logger: PluginLogger,
 }
 
@@ -42,6 +45,7 @@ pub fn router(state: Arc<RoutesState>) -> Router {
         .route("/channels/{id}/build", post(build_one))
         .route("/channels/{id}/days", get(list_days))
         .route("/channels/{id}/days/{date}", get(get_day).delete(delete_day))
+        .route("/channels/{id}/playout", post(write_playout))
         .route("/scopes", get(get_scopes).post(add_scope))
         .route("/scopes/{id}", put(update_scope).delete(delete_scope))
         .route("/build", post(build_horizon))
@@ -343,6 +347,25 @@ async fn delete_day(
 
 // ── the whole horizon ────────────────────────────────────────────────────────
 
+async fn write_playout(
+    State(state): State<Arc<RoutesState>>,
+    Path(id): Path<String>,
+    Query(query): Query<DateQuery>,
+) -> Response {
+    let date = query
+        .date
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+    let Some(day) = state::read_day(state.storage.as_ref(), &id, &date).await else {
+        return fail(StatusCode::NOT_FOUND, "no day built for that date");
+    };
+    let settings = state.settings.lock().await.clone();
+    let dir = crate::playout::channel_dir(&state.config_root, &settings.playout_dir, &id);
+    match crate::playout::write(&state.core, &day, &dir).await {
+        Ok(report) => Json(json!({ "report": report })).into_response(),
+        Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
+}
+
 async fn build_horizon(State(state): State<Arc<RoutesState>>) -> Response {
     if state.horizon.is_running() {
         return (
@@ -354,11 +377,12 @@ async fn build_horizon(State(state): State<Arc<RoutesState>>) -> Response {
     let horizon = state.horizon.clone();
     let core = state.core.clone();
     let storage = state.storage.clone();
+    let config_root = state.config_root.clone();
     let settings = state.settings.lock().await.clone();
     let logger = state.logger.clone();
     tokio::spawn(async move {
         horizon
-            .run(&core, &storage, settings, &logger, "manual")
+            .run(&core, &storage, &config_root, settings, &logger, "manual")
             .await;
     });
     (

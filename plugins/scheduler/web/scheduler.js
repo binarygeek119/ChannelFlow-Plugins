@@ -36,6 +36,8 @@ function fillSettings() {
   $("sched-retries").value = schedSettings.max_retries;
   $("sched-pool").value = schedSettings.pool_cap;
   $("sched-enabled").checked = !!schedSettings.enabled;
+  $("sched-write-playout").checked = !!schedSettings.write_playout;
+  $("sched-playout-dir").value = schedSettings.playout_dir || "";
 }
 
 function fillChannels() {
@@ -120,6 +122,8 @@ async function saveSettings(event) {
     max_retries: Number($("sched-retries").value) || 0,
     pool_cap: Number($("sched-pool").value) || 120,
     enabled: $("sched-enabled").checked,
+    write_playout: $("sched-write-playout").checked,
+    playout_dir: $("sched-playout-dir").value.trim(),
   };
   try {
     const data = await request(SCHED, { method: "PUT", body: JSON.stringify(body) });
@@ -198,12 +202,18 @@ function renderDays() {
     show.className = "ghost";
     show.textContent = "Show";
     show.addEventListener("click", () => toggleDay(card, day.date));
+    const playout = document.createElement("button");
+    playout.type = "button";
+    playout.className = "ghost";
+    playout.textContent = "Playout";
+    playout.addEventListener("click", () => writePlayout(day.date));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "ghost";
     remove.textContent = "Delete";
     remove.addEventListener("click", () => deleteDay(day.date));
     head.appendChild(show);
+    head.appendChild(playout);
     head.appendChild(remove);
     card.appendChild(head);
     host.appendChild(card);
@@ -235,8 +245,21 @@ async function toggleDay(card, date) {
   }
 }
 
-async function deleteDay(date) {
-  if (!window.confirm(`Delete the day ${date}?`)) return;
+async function writePlayout(date) {
+  const result = $("sched-layers-result");
+  result.textContent = "Writing playout…";
+  try {
+    const data = await request(`${SCHED}/channels/${schedChannelId}/playout?date=${date}`, {
+      method: "POST",
+    });
+    const report = data.report || {};
+    result.textContent = `Wrote ${report.path} (${report.items} item(s), ${report.missing} slate).`;
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
+async function deleteDay(date) {  if (!window.confirm(`Delete the day ${date}?`)) return;
   try {
     await request(`${SCHED}/channels/${schedChannelId}/days/${date}`, { method: "DELETE" });
     await loadDays();
