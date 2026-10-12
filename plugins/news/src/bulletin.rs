@@ -91,6 +91,19 @@ const OUTRO_FADE_SECONDS: f64 = 1.2;
 const STORY_LINE1_MARGIN_V: i32 = 126;
 const STORY_LINE2_MARGIN_V: i32 = 17;
 
+/// The window a story's picture is shown in: the bright box in the middle of
+/// the map band, where the anchor's portrait sits. A picture is scaled to fit
+/// here without changing its aspect ratio, drawn over the map, the mute overlay
+/// and the anchor, and kept clear of the headline and story bars — its height is
+/// the map band's, so the bars always stay on top of their own areas.
+const IMAGE_BOX_X: u32 = 650;
+const IMAGE_BOX_Y: u32 = 221;
+const IMAGE_BOX_W: u32 = 650;
+const IMAGE_BOX_H: u32 = 639;
+/// How long a story's picture takes to fade up as the story opens and back out
+/// as it closes, so it eases over the map instead of popping.
+const IMAGE_FADE_SECONDS: f64 = 0.4;
+
 /// The plugin's record of what it has broadcast, so a run can tell new
 /// stories from ones already on air.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -453,23 +466,32 @@ async fn render_bulletin(
     let outro_mp3 = work_dir.join("outro.mp3");
     std::fs::write(&outro_mp3, OUTRO_MP3).map_err(|error| error.to_string())?;
 
-    // Download story images when present.
+    // Download each story's picture when the feed carries one. Anything that is
+    // not really an image is dropped here rather than handed to ffmpeg, where a
+    // bad input would sink the whole bulletin.
     let mut story_images: Vec<Option<PathBuf>> = vec![None; stories.len()];
-    for (i, story) in stories.iter().enumerate() {
-        if let Some(img_url) = story.get("image").and_then(|v| v.as_str()) {
-            let trimmed = img_url.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let p = work_dir.join(format!("story_img_{}.jpg", i));
-            if let Ok(resp) = http.get(trimmed).send().await {
-                if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes().await {
-                        let _ = std::fs::write(&p, &bytes);
-                        story_images[i] = Some(p);
-                    }
-                }
-            }
+    for (index, story) in stories.iter().enumerate() {
+        let Some(url) = story.get("image").and_then(Value::as_str).map(str::trim) else {
+            continue;
+        };
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            continue;
+        }
+        let Ok(response) = http.get(url).send().await else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let Ok(bytes) = response.bytes().await else {
+            continue;
+        };
+        if !looks_like_image(&bytes) {
+            continue;
+        }
+        let path = work_dir.join(format!("story-image-{index}.img"));
+        if std::fs::write(&path, &bytes).is_ok() {
+            story_images[index] = Some(path);
         }
     }
 
@@ -636,30 +658,41 @@ async fn render_bulletin(
     // the outro music plays, just the FlowWire logo shows over black. The logo
     // eases up from black as the intro music starts, and the last
     // OUTRO_FADE_SECONDS of the video fade the whole picture to black.
-    let mut filter_parts = Vec::new();
-    filter_parts.push(format!("[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];[src]split[base][bg];{map};[2:v]scale=650:650[p];[m2][p]overlay=650:221[l1];[3:v]scale=1920:1080[hb];[l1][hb]overlay=0:0[l2];[4:v]scale=1920:1080[sb];[l2][sb]overlay=0:0[l3];[5:v]scale=1920:1080[mm];[l3][mm]overlay=0:0[desk]", total=total, map=map_layer()));
+    let mut filter_parts = vec![format!(
+        "[0:v]trim=duration={total},setpts=PTS-STARTPTS[src];\
+         [src]split[base][bg];\
+         {map}\
+         [2:v]scale=650:650[p];\
+         [m2][p]overlay=650:221[l1];\
+         [3:v]scale=1920:1080[hb];\
+         [l1][hb]overlay=0:0[l2];\
+         [4:v]scale=1920:1080[sb];\
+         [l2][sb]overlay=0:0[l3];\
+         [5:v]scale=1920:1080[mm];\
+         [l3][mm]overlay=0:0[desk]",
+        total = total,
+        map = map_layer(),
+    )];
+    // The picture inputs sit after the nine fixed inputs (background, map,
+    // anchor, headline bar, story bar, mute overlay, logo, intro music, outro
+    // music) and one input per spoken segment.
+    let mut input_index = 9 + speech.iter().filter(|segment| segment.is_some()).count();
     let mut cur = "desk".to_string();
-    let _img_input_idx = 9 + speech.len(); // placeholder (unused)
-    // easier: track from args before adding; compute properly by counting speech we already added? speech count is number of flattened
-    let speech_count = speech.iter().filter(|s| s.is_some()).count();
-    let mut img_input = 7 + 2 + speech_count; // after logo(6),intro(7),outro(8) are 7,8? indices: 6 is logo (input 7 in ffmpeg list), 7 intro, 8 outro -> so total inputs before speech = 9 (0-8). speech adds 9..9+s. So first image input index = 9 + s
-    let mut story_img_inputs: Vec<usize> = Vec::new();
-    for _ in story_images.iter().flatten() {
-        story_img_inputs.push(img_input);
-        img_input += 1;
-    }
-    let mut si = 0;
-    for (i, img) in story_images.iter().enumerate() {
-        if img.is_some() {
-            let start = starts.get(i+1).copied().unwrap_or(lead + intro_dur);
-            let duration = beats.get(i+1).map(|b| b.end - b.start).unwrap_or(6.0).max(0.5);
-            let end = start + duration;
-            let in_name = format!("[{}:v]", story_img_inputs[si]);
-            let out_name = format!("si_{}", si);
-            filter_parts.push(format!("{in_name}scale='if(gt(iw/ih,1920/639),1920,-1)':'if(gt(iw/ih,1920/639),-1,639)',setsar=1[sc_{si}];[sc_{si}]fade=t=in:st={start}:d=0.4,fade=t=out:st={end}-0.4:d=0.4[tmp_{si}];[{cur}][tmp_{si}]overlay=(W-w)/2:(221+639-h)/2:enable='between(t,{start},{end})'[{out_name}]", start=start, end=end-0.4, si=si, cur=cur));
-            cur = out_name;
-            si += 1;
+    let mut picture_slot = 0usize;
+    for (index, picture) in story_images.iter().enumerate() {
+        if picture.is_none() {
+            continue;
         }
+        let start = starts.get(index + 1).copied().unwrap_or(lead);
+        let end = beats
+            .get(index + 1)
+            .map(|beat| beat.end)
+            .unwrap_or(start + SECONDS_PER_STORY)
+            .max(start + 0.5);
+        filter_parts.push(story_image_layer(input_index, picture_slot, &cur, start, end));
+        cur = format!("picture{picture_slot}");
+        input_index += 1;
+        picture_slot += 1;
     }
     filter_parts.push(format!("[6:v]scale=560:-1,{intro_fade}[lg];[base][lg]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];[v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',fade=t=in:st={lead}:d=0.8:alpha=1[v2];[v2]ass='{ass}'[v3];[v3][lg]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',fade=t=in:st={show_total}:d=0.8:alpha=1,fade=t=out:st={fade_start}:d={fade}[final];{audio}", intro_fade=logo_fade_in(), ass=escape_filter_path(&ass_path), fade_start=fade_start, fade=OUTRO_FADE_SECONDS, audio=audio, lead=lead, show_total=show_total));
     let filter = filter_parts.join(";");
@@ -874,6 +907,45 @@ fn map_layer() -> String {
         tile = MAP_TILE_W,
         top = MAP_TOP,
         speed = MAP_SCROLL_SPEED,
+    )
+}
+
+/// Whether the first bytes of a download look like an image ffmpeg can decode,
+/// so an HTML error page or a stray video is never fed to the renderer.
+fn looks_like_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xFF, 0xD8, 0xFF]) // jpeg
+        || bytes.starts_with(&[0x89, b'P', b'N', b'G']) // png
+        || bytes.starts_with(b"GIF8") // gif
+        || bytes.starts_with(b"BM") // bmp
+        || (bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP")) // webp
+        || bytes.starts_with(b"II*\0")
+        || bytes.starts_with(b"MM\0*") // tiff
+}
+
+/// One story's picture, drawn into the anchor's window for that story's window.
+/// The picture is scaled to fit `IMAGE_BOX_*` with its aspect ratio intact and
+/// centred there, then faded in as the story opens and out as it closes.
+fn story_image_layer(input: usize, slot: usize, base: &str, start: f64, end: f64) -> String {
+    let fade = IMAGE_FADE_SECONDS;
+    let in_start = start.max(0.0);
+    let out_start = (end - fade).max(in_start);
+    format!(
+        "[{input}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,setsar=1,\
+         format=rgba,fade=t=in:st={in_start}:d={fade}:alpha=1,\
+         fade=t=out:st={out_start}:d={fade}:alpha=1[pic{slot}];\
+         [{base}][pic{slot}]overlay=x={x}+({w}-w)/2:y={y}+({h}-h)/2:\
+         enable='between(t,{in_start},{end})'[picture{slot}]",
+        input = input,
+        slot = slot,
+        base = base,
+        w = IMAGE_BOX_W,
+        h = IMAGE_BOX_H,
+        x = IMAGE_BOX_X,
+        y = IMAGE_BOX_Y,
+        in_start = in_start,
+        out_start = out_start,
+        fade = fade,
+        end = end,
     )
 }
 
@@ -1284,6 +1356,65 @@ mod tests {
             INTRO_FADE_SECONDS > 0.0,
             "the intro logo should ease in, not pop in"
         );
+    }
+
+    #[test]
+    fn a_story_picture_fits_the_anchor_window_without_stretching() {
+        let layer = story_image_layer(9, 0, "desk", 10.0, 16.0);
+        // Scaled to fit the window with the aspect ratio kept.
+        assert!(
+            layer.contains(&format!(
+                "scale={IMAGE_BOX_W}:{IMAGE_BOX_H}:force_original_aspect_ratio=decrease"
+            )),
+            "the picture fits the window without stretching: {layer}"
+        );
+        // Centred inside the window.
+        assert!(
+            layer.contains(&format!("x={IMAGE_BOX_X}+({IMAGE_BOX_W}-w)/2")),
+            "the picture is centred horizontally: {layer}"
+        );
+        assert!(
+            layer.contains(&format!("y={IMAGE_BOX_Y}+({IMAGE_BOX_H}-h)/2")),
+            "the picture is centred vertically: {layer}"
+        );
+        // Drawn over the desktop (map, mute overlay, anchor) and only while the
+        // story is on air.
+        assert!(layer.starts_with("[9:v]"), "the picture input is used: {layer}");
+        assert!(layer.contains("[desk][pic0]"), "it is drawn over the desktop: {layer}");
+        assert!(
+            layer.contains("enable='between(t,10,16)'"),
+            "it shows only during the story: {layer}"
+        );
+        // The window is inside the map band, so the bars stay uncovered.
+        assert_eq!(IMAGE_BOX_Y, MAP_TOP);
+        assert_eq!(IMAGE_BOX_Y + IMAGE_BOX_H, MAP_TOP + MAP_BAND_H);
+    }
+
+    #[test]
+    fn a_story_picture_fades_in_and_out() {
+        let layer = story_image_layer(9, 0, "desk", 10.0, 16.0);
+        assert!(
+            layer.contains("format=rgba"),
+            "an alpha fade needs an alpha channel: {layer}"
+        );
+        assert!(
+            layer.contains("fade=t=in:st=10:d=0.4:alpha=1"),
+            "the picture fades up as the story opens: {layer}"
+        );
+        assert!(
+            layer.contains("fade=t=out:st=15.6:d=0.4:alpha=1"),
+            "the picture fades back out as the story closes: {layer}"
+        );
+    }
+
+    #[test]
+    fn only_real_images_are_handed_to_the_renderer() {
+        assert!(looks_like_image(b"\xff\xd8\xff\xe0 and a jpeg body"));
+        assert!(looks_like_image(b"\x89PNG\r\n\x1a\n and a png body"));
+        assert!(looks_like_image(b"GIF89a and a gif body"));
+        assert!(looks_like_image(b"RIFF\x00\x00\x00\x00WEBPVP8 "));
+        assert!(!looks_like_image(b"<html><body>not an image</body></html>"));
+        assert!(!looks_like_image(b""));
     }
 
     #[test]
