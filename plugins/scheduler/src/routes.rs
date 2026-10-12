@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 
 use crate::build;
 use crate::horizon::Horizon;
-use crate::layers::{self, ItemsLayer, PoolItem, Rule, RuleScope};
+use crate::layers::{self, ItemsLayer, Rule, RuleScope};
 use crate::settings::{read_scopes, write_scopes, SchedulerSettings, SETTINGS_KEY};
 use crate::state;
 
@@ -281,16 +281,7 @@ async fn compile(
         Ok(rows) => rows,
         Err(error) => return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
     };
-    let pool: Vec<PoolItem> = rows
-        .into_iter()
-        .take(settings.pool_cap as usize)
-        .map(|row| PoolItem {
-            match_key: row.match_key,
-            kind: row.kind,
-            title: row.title,
-            runtime_ms: row.runtime_ms,
-        })
-        .collect();
+    let pool = build::interleave(rows, &resolved.items.filter.kinds, settings.pool_cap as usize);
 
     let compiled = layers::compile(resolved, pool);
     Json(json!({

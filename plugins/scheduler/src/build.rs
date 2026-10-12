@@ -91,8 +91,9 @@ pub fn catalog_filter(items: &ItemsLayer) -> CatalogFilter {
 }
 
 /// Take up to `cap` rows, round-robin across kinds when the filter names more
-/// than one, so a "TV and movies" pool is not all one kind.
-fn interleave(rows: Vec<CatalogRow>, kinds: &[String], cap: usize) -> Vec<PoolItem> {
+/// than one, so a "TV and movies" pool is not all one kind. Shared by the build
+/// loop and the compile dry-run so both see the same pool.
+pub(crate) fn interleave(rows: Vec<CatalogRow>, kinds: &[String], cap: usize) -> Vec<PoolItem> {
     let mut buckets: Vec<Vec<CatalogRow>> = Vec::new();
     if kinds.len() > 1 {
         for kind in kinds {
