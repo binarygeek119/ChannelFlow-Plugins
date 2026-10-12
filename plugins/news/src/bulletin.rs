@@ -92,6 +92,9 @@ const OUTRO_DESKTOP_FADE_SECONDS: f64 = 1.0;
 /// How long the FlowWire logo takes to fade up over black at the start of the
 /// outro music.
 const OUTRO_LOGO_IN_SECONDS: f64 = 0.8;
+/// How long the anchor's screen takes to fade up from black once the intro
+/// music (and logo) is done.
+const DESKTOP_FADE_IN_SECONDS: f64 = 0.8;
 /// How far the two story lines are raised off the bottom of the frame (the ASS
 /// `MarginV`): line 1, then line 2 nearest the bottom. Both sit down in the
 /// marked story areas.
@@ -909,14 +912,14 @@ fn logo_fade_in() -> String {
 
 /// The opening and closing chains of the render: the FlowWire logo eases up over
 /// black as the intro music starts, holds for the music, then fades back out as
-/// the music ends before the desktop (and the anchor) comes up; the desktop runs
-/// through the show; then, after the anchor's close, the desktop fades to black,
-/// the FlowWire logo fades up over black for the outro music, and the logo fades
-/// back out to black as the music ends. `cur` is the label of the last desktop
-/// layer, `ass` the caption file path, `fade` how long the final fade to black
-/// takes. The logo stream is split before being handed to the intro and outro
-/// overlays: ffmpeg starves a second overlay that reads the same label directly,
-/// so without the split the outro logo is never drawn.
+/// the music ends; the desktop (the anchor on the map) then fades up from black
+/// and runs through the show; after the anchor's close the desktop fades to
+/// black, the FlowWire logo fades up over black for the outro music, and the
+/// logo fades back out to black as the music ends. `cur` is the label of the last
+/// desktop layer, `ass` the caption file path, `fade` how long the final fade to
+/// black takes. The logo stream is split before being handed to the intro and
+/// outro overlays: ffmpeg starves a second overlay that reads the same label
+/// directly, so without the split the outro logo is never drawn.
 fn logo_and_outro_filter(
     cur: &str,
     ass: &str,
@@ -940,8 +943,8 @@ fn logo_and_outro_filter(
          [lg1]fade=t=out:st={intro_out_start}:d={intro_out_dur}[lg_in];\
          [lg2]fade=t=in:st={show_total}:d={logo_in}[lg_out];\
          [base][lg_in]overlay=(W-w)/2:(H-h)/2:enable='lte(t,{lead})'[v1];\
-         [v1][{cur}]overlay=0:0:enable='between(t,{lead},{show_total})',\
-         fade=t=in:st={lead}:d=0.8:alpha=1[v2];\
+         [{cur}]fade=t=in:st={lead}:d={desk_in}[desk_in];\
+         [v1][desk_in]overlay=0:0:enable='between(t,{lead},{show_total})'[v2];\
          [v2]ass='{ass}'[v3];\
          [v3]fade=t=out:st={desk_out_start}:d={desk_out_dur}[v4];\
          [v4][lg_out]overlay=(W-w)/2:(H-h)/2:enable='gte(t,{show_total})',\
@@ -958,6 +961,7 @@ fn logo_and_outro_filter(
         desk_out_start = desk_out_start,
         desk_out_dur = desk_out_dur,
         logo_in = logo_in,
+        desk_in = DESKTOP_FADE_IN_SECONDS,
     )
 }
 
@@ -1541,6 +1545,28 @@ mod tests {
         assert!(
             chain.contains("enable='between(t,4,120)'"),
             "the presenter screen comes up at the music's end: {chain}"
+        );
+    }
+
+    #[test]
+    fn the_anchor_screen_fades_in_after_the_intro_logo() {
+        let chain = logo_and_outro_filter("desk", "news.ass", 1.2, 4.0, 120.0, 129.0);
+        // The desktop (the anchor on the map) fades up from black once the
+        // intro music is done, instead of popping in.
+        assert!(
+            chain.contains("[desk]fade=t=in:st=4:d=0.8[desk_in]"),
+            "the anchor's screen fades in on its own layer: {chain}"
+        );
+        assert!(
+            chain.contains("[v1][desk_in]overlay=0:0:enable='between(t,4,120)'"),
+            "the faded desktop is what gets drawn: {chain}"
+        );
+        // The fade is on the desktop layer, not the composite: a colour fade on
+        // the composite would black out the intro logo that is still up before
+        // the lead.
+        assert!(
+            !chain.contains("enable='between(t,4,120)',fade=t=in"),
+            "the fade must not sit on the composite: {chain}"
         );
     }
 
