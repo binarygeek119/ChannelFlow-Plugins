@@ -1,12 +1,10 @@
-//! Library sync, in two phases, one media library type at a time.
+//! Library sync, one media library at a time.
 //!
-//! **Phase 1 — metadata and paths.** Every enabled library is walked in full
-//! (moving on to the next library type when it finishes) and reported to the
-//! base's catalog: titles, files, cast and detail. No images are fetched.
-//!
-//! **Phase 2 — images.** Every library is walked again: posters (for movies,
-//! series and music videos) and every cast member's picture are fetched, saved
-//! under `<config>/Images/`, and their paths reported with the catalog entries.
+//! Each enabled library is fetched once and reported to the base's catalog —
+//! titles, files, cast and detail — and then the images it does not already
+//! have are fetched: posters (movies, series, music videos) and every cast
+//! member's picture, saved under `<config>/Images/` and reported with the
+//! entries. An image already on disk is kept, so a re-sync does no downloads.
 
 
 use channelflow_plugin_api::media::{CatalogItem, MediaCatalog, SyncCtx, SyncReport};
@@ -303,13 +301,15 @@ fn item_people(raw: &Value) -> Vec<channelflow_plugin_api::media::PersonCredit> 
         .unwrap_or_default()
 }
 
-/// Which pass a `walk` is doing: either metadata (phase 1) or images (phase 2).
-async fn sync_catalog(
+/// One library, end to end: report every item to the base catalog, then fetch
+/// the posters and cast photos it does not already have. Returns how many items
+/// were reported.
+async fn sync_library(
     client: &JellyfinClient,
     ctx: &SyncCtx,
     library: &channelflow_plugin_api::media::Library,
     catalog: &std::sync::Arc<dyn MediaCatalog>,
-    with_images: bool,
+    progress: &'static std::sync::Mutex<SyncProgress>,
 ) -> Result<usize, String> {
     let raws = client
         .catalog(&library.remote_id)
@@ -328,26 +328,29 @@ async fn sync_catalog(
         items.push(build_catalog_item(kind, remote, raw, &library.name));
         origins.push(index);
     }
-
-    if !with_images {
-        let count = items.len();
-        catalog
-            .replace_library(ctx.connection_id, &library.name, items)
-            .await?;
-        return Ok(count);
+    {
+        let mut state = progress.lock().unwrap();
+        state.total = items.len() as u64;
+        state.current = 0;
     }
-
+    let count = items.len();
     catalog
         .replace_library(ctx.connection_id, &library.name, items.clone())
         .await?;
 
     // Cast pictures, fetched once per name: the People page shows them, and a
-    // music artist with no primary image borrows their own.
+    // music artist with no primary image borrows their own. `waiting` counts
+    // only the images this pass had to fetch, so a re-sync that finds every
+    // file already on disk never rewrites the library.
     let mut people_images: std::collections::HashMap<String, Option<String>> =
         std::collections::HashMap::new();
     let mut waiting = 0usize;
     let mut last = std::time::Instant::now();
     for index in 0..items.len() {
+        {
+            let mut state = progress.lock().unwrap();
+            state.current += 1;
+        }
         let raw = &raws[origins[index]];
         for credit in items[index].people.iter_mut() {
             if let Some(cached) = people_images.get(&credit.name) {
@@ -366,15 +369,16 @@ async fn sync_catalog(
                 .and_then(|person| person.get("Id"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let path = write_people_image(ctx, client, person_id, &credit.name)
+            let stored = write_people_image(ctx, client, person_id, &credit.name)
                 .await
                 .ok()
                 .flatten();
-            people_images.insert(credit.name.clone(), path.clone());
-            credit.image_path = path;
-            if credit.image_path.is_some() {
+            if stored.as_ref().is_some_and(|image| image.fetched) {
                 waiting += 1;
             }
+            let path = stored.map(|image| image.path);
+            people_images.insert(credit.name.clone(), path.clone());
+            credit.image_path = path;
         }
 
         // Posters the Media page shows: movies, shows, music videos, and — the
@@ -385,16 +389,23 @@ async fn sync_catalog(
         ) {
             let remote = items[index].remote_id.clone();
             let kind = items[index].kind.clone();
-            if let Ok(Some(path)) = write_poster(ctx, client, &remote, &kind, &remote).await {
-                items[index].poster_path = Some(path);
-                waiting += 1;
-            } else if matches!(kind.as_str(), "album" | "artist") {
-                // No primary image on the server (soundtrack composers usually
-                // have none) — fall back to the synced person photo when the
-                // same name has one, so music artists still show an image.
-                if let Some(Some(path)) = people_images.get(&items[index].title) {
-                    items[index].poster_path = Some(path.clone());
-                    waiting += 1;
+            match write_poster(ctx, client, &remote, &kind, &remote).await {
+                Ok(Some(image)) => {
+                    if image.fetched {
+                        waiting += 1;
+                    }
+                    items[index].poster_path = Some(image.path);
+                }
+                _ => {
+                    // No primary image on the server (soundtrack composers
+                    // usually have none) — fall back to the synced person photo
+                    // when the same name has one, so music artists still show
+                    // an image.
+                    if matches!(kind.as_str(), "album" | "artist") {
+                        if let Some(Some(path)) = people_images.get(&items[index].title) {
+                            items[index].poster_path = Some(path.clone());
+                        }
+                    }
                 }
             }
         }
@@ -407,10 +418,13 @@ async fn sync_catalog(
             last = std::time::Instant::now();
         }
     }
-    let count = items.len();
-    catalog
-        .replace_library(ctx.connection_id, &library.name, items)
-        .await?;
+    // The library was already reported above; rewrite it only when this pass
+    // fetched an image that has not been flushed yet.
+    if waiting > 0 {
+        catalog
+            .replace_library(ctx.connection_id, &library.name, items)
+            .await?;
+    }
     Ok(count)
 }
 
@@ -450,25 +464,18 @@ pub async fn run(ctx: &SyncCtx) -> SyncReport {
         return report;
     };
 
-    // ---- Phase 1: metadata and paths, one library type at a time. ----------
+    // One library at a time, end to end: report its catalog, then fetch only
+    // the images it does not already have. The catalog is fetched once — the
+    // old two-pass shape walked every library twice and re-downloaded every
+    // image each time.
     for library in &ctx.enabled_libraries {
         start_library(&progress, library);
-        match sync_catalog(&client, ctx, library, catalog, false).await {
+        match sync_library(&client, ctx, library, catalog, &progress).await {
             Ok(count) => report.added += count as u64,
             Err(error) => {
                 tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
                 report.errors += 1;
             }
-        }
-        mark_done(&progress);
-    }
-
-    // ---- Phase 2: images (posters + cast), one library type at a time. -----
-    for library in &ctx.enabled_libraries {
-        start_library(&progress, library);
-        if let Err(error) = sync_catalog(&client, ctx, library, catalog, true).await {
-            tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
-            report.errors += 1;
         }
         mark_done(&progress);
     }
@@ -499,9 +506,9 @@ fn mark_done(progress: &'static std::sync::Mutex<SyncProgress>) {
 
 /// Fetch the primary image and write it to
 /// `<image_root>/posters/{group}/{dedup_key}.jpg`. A poster already on disk is
-/// kept as it is: re-downloading every image on every pass is what made a full
+/// kept as it is — re-downloading every image on every pass is what made a full
 /// sync crawl, and a poster that changed on the server is picked up once its
-/// file — or the images directory — is removed. A 404 (no image) leaves the old
+/// file (or the images directory) is removed. A 404 (no image) leaves the old
 /// file (or none) alone.
 async fn write_poster(
     ctx: &SyncCtx,
@@ -509,7 +516,7 @@ async fn write_poster(
     jellyfin_id: &str,
     media_type: &str,
     dedup_key: &str,
-) -> Result<Option<String>, PluginError> {
+) -> Result<Option<StoredImage>, PluginError> {
     let group = match media_type {
         "movie" => "Movies",
         "series" | "season" | "episode" => "TV",
@@ -518,7 +525,10 @@ async fn write_poster(
     let dir = ctx.image_root.join("posters").join(group);
     let path = dir.join(format!("{dedup_key}.jpg"));
     if path.exists() {
-        return Ok(Some(store_path(&ctx.image_root, &path)));
+        return Ok(Some(StoredImage {
+            path: store_path(&ctx.image_root, &path),
+            fetched: false,
+        }));
     }
     let bytes = match client.image(jellyfin_id, "Primary").await {
         Ok(bytes) => bytes,
@@ -528,7 +538,17 @@ async fn write_poster(
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
         .map_err(|error| PluginError::new(format!("writing {}: {error}", path.display())))?;
-    Ok(Some(store_path(&ctx.image_root, &path)))
+    Ok(Some(StoredImage {
+        path: store_path(&ctx.image_root, &path),
+        fetched: true,
+    }))
+}
+
+/// A stored image: where it lives (relative to the images root) and whether
+/// this call had to fetch it.
+struct StoredImage {
+    path: String,
+    fetched: bool,
 }
 
 /// The form a stored image path takes: relative to the images root, as the
@@ -548,7 +568,7 @@ async fn write_people_image(
     client: &JellyfinClient,
     person_id: &str,
     name: &str,
-) -> Result<Option<String>, PluginError> {
+) -> Result<Option<StoredImage>, PluginError> {
     let file = if person_id.trim().is_empty() {
         sanitise_filename(name)
     } else {
@@ -557,7 +577,10 @@ async fn write_people_image(
     let dir = ctx.image_root.join("people");
     let path = dir.join(format!("{file}.jpg"));
     if path.exists() {
-        return Ok(Some(store_path(&ctx.image_root, &path)));
+        return Ok(Some(StoredImage {
+            path: store_path(&ctx.image_root, &path),
+            fetched: false,
+        }));
     }
     let bytes = match client.person_image(person_id, name).await {
         Ok(bytes) => bytes,
@@ -567,7 +590,10 @@ async fn write_people_image(
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
         .map_err(|error| PluginError::new(format!("writing {}: {error}", path.display())))?;
-    Ok(Some(store_path(&ctx.image_root, &path)))
+    Ok(Some(StoredImage {
+        path: store_path(&ctx.image_root, &path),
+        fetched: true,
+    }))
 }
 
 /// A filesystem-safe name fallback for a person without a Jellyfin id.
