@@ -12,7 +12,6 @@
 use channelflow_plugin_api::media::{CatalogItem, MediaCatalog, SyncCtx, SyncReport};
 use channelflow_plugin_api::PluginError;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::client::JellyfinClient;
 
@@ -499,9 +498,11 @@ fn mark_done(progress: &'static std::sync::Mutex<SyncProgress>) {
 }
 
 /// Fetch the primary image and write it to
-/// `<image_root>/posters/{group}/{dedup_key}.jpg`, but only when the bytes
-/// changed — re-syncing must not churn unchanged posters. A 404 (no image)
-/// leaves the old file (or none) alone.
+/// `<image_root>/posters/{group}/{dedup_key}.jpg`. A poster already on disk is
+/// kept as it is: re-downloading every image on every pass is what made a full
+/// sync crawl, and a poster that changed on the server is picked up once its
+/// file — or the images directory — is removed. A 404 (no image) leaves the old
+/// file (or none) alone.
 async fn write_poster(
     ctx: &SyncCtx,
     client: &JellyfinClient,
@@ -509,10 +510,6 @@ async fn write_poster(
     media_type: &str,
     dedup_key: &str,
 ) -> Result<Option<String>, PluginError> {
-    let bytes = match client.image(jellyfin_id, "Primary").await {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(None),
-    };
     let group = match media_type {
         "movie" => "Movies",
         "series" | "season" | "episode" => "TV",
@@ -521,13 +518,12 @@ async fn write_poster(
     let dir = ctx.image_root.join("posters").join(group);
     let path = dir.join(format!("{dedup_key}.jpg"));
     if path.exists() {
-        match std::fs::read(&path) {
-            Ok(existing) if sha256(&existing) == sha256(&bytes) => {
-                return Ok(Some(store_path(&ctx.image_root, &path)));
-            }
-            _ => {}
-        }
+        return Ok(Some(store_path(&ctx.image_root, &path)));
     }
+    let bytes = match client.image(jellyfin_id, "Primary").await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
     std::fs::create_dir_all(&dir)
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
@@ -545,17 +541,14 @@ fn store_path(image_root: &std::path::Path, path: &std::path::Path) -> String {
 }
 
 /// A cast member's picture, saved under `<config>/Images/people/` keyed by the
-/// person's Jellyfin id (or a sanitised name when no id is exposed).
+/// person's Jellyfin id (or a sanitised name when no id is exposed). Like a
+/// poster, an image already on disk is kept as it is.
 async fn write_people_image(
     ctx: &SyncCtx,
     client: &JellyfinClient,
     person_id: &str,
     name: &str,
 ) -> Result<Option<String>, PluginError> {
-    let bytes = match client.person_image(person_id, name).await {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(None),
-    };
     let file = if person_id.trim().is_empty() {
         sanitise_filename(name)
     } else {
@@ -564,13 +557,12 @@ async fn write_people_image(
     let dir = ctx.image_root.join("people");
     let path = dir.join(format!("{file}.jpg"));
     if path.exists() {
-        match std::fs::read(&path) {
-            Ok(existing) if sha256(&existing) == sha256(&bytes) => {
-                return Ok(Some(store_path(&ctx.image_root, &path)));
-            }
-            _ => {}
-        }
+        return Ok(Some(store_path(&ctx.image_root, &path)));
     }
+    let bytes = match client.person_image(person_id, name).await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
     std::fs::create_dir_all(&dir)
         .map_err(|error| PluginError::new(format!("creating {dir:?}: {error}")))?;
     std::fs::write(&path, &bytes)
@@ -589,11 +581,6 @@ fn sanitise_filename(name: &str) -> String {
             }
         })
         .collect()
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]
