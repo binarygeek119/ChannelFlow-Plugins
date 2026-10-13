@@ -200,7 +200,7 @@ dependencies = [
 [[package]]
 name = "channelflow-plugin-api"
 version = "2.0.0"
-source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#4fe7d81a4e295a687618ffecca033c42c931fe58"
+source = "git+https://github.com/binarygeek119/ChannelFlow?branch=2.0.0#8186b60d29c29e25e78bb2ffbe82a524757f0dab"
 dependencies = [
  "async-trait",
  "axum",
