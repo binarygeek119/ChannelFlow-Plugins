@@ -1,29 +1,21 @@
 //! Library sync, in two phases, one media library type at a time.
 //!
 //! **Phase 1 — metadata and paths.** Every enabled library is walked in full
-//! (moving on to the next library type when it finishes): items, sources,
-//! files, streams, people and hierarchies are stored, and the base Media
-//! catalog gets the titles. No images are fetched.
+//! (moving on to the next library type when it finishes) and reported to the
+//! base's catalog: titles, files, cast and detail. No images are fetched.
 //!
 //! **Phase 2 — images.** Every library is walked again: posters (for movies,
 //! series and music videos) and every cast member's picture are fetched, saved
-//! under `<config>/Images/`, and their paths written into the plugin's tables
-//! and the base catalog.
+//! under `<config>/Images/`, and their paths reported with the catalog entries.
 
-use std::path::Path;
-use std::sync::Arc;
 
-use channelflow_plugin_api::database::PluginDatabase;
 use channelflow_plugin_api::media::{CatalogItem, MediaCatalog, SyncCtx, SyncReport};
 use channelflow_plugin_api::PluginError;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::client::JellyfinClient;
-use crate::db::{ItemDetail, MediaDb};
-use crate::dedup;
 
-const PAGE: usize = 200;
 
 /// A live snapshot of an in-flight sync, for the progress popup: the stage
 /// (Movies / TV / Music), the count within the current library, and the
@@ -304,6 +296,7 @@ fn item_people(raw: &Value) -> Vec<channelflow_plugin_api::media::PersonCredit> 
                         role_type: person.get("Type").and_then(Value::as_str).unwrap_or("").to_string(),
                         role: person.get("Role").and_then(Value::as_str).unwrap_or("").to_string(),
                         character: person.get("Role").and_then(Value::as_str).unwrap_or("").to_string(),
+                        image_path: None,
                     })
                 })
                 .collect()
@@ -312,47 +305,81 @@ fn item_people(raw: &Value) -> Vec<channelflow_plugin_api::media::PersonCredit> 
 }
 
 /// Which pass a `walk` is doing: either metadata (phase 1) or images (phase 2).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Metadata,
-    Images,
-}
-
-/// Fill the base media catalog for one library from a light top-level query.
-/// Phase 1 (`with_images=false`) reports titles straight away; phase 2
-/// (`with_images=true`) adds the posters as they are fetched.
 async fn sync_catalog(
     client: &JellyfinClient,
     ctx: &SyncCtx,
     library: &channelflow_plugin_api::media::Library,
     catalog: &std::sync::Arc<dyn MediaCatalog>,
     with_images: bool,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    let raws = client
+        .catalog(&library.remote_id)
+        .await
+        .map_err(|error| error.0)?;
     let mut items: Vec<CatalogItem> = Vec::new();
-    for raw in client.catalog(&library.remote_id).await.map_err(|error| error.0)? {
+    // Which raw item each catalog entry came from, for its cast photos.
+    let mut origins: Vec<usize> = Vec::new();
+    for (index, raw) in raws.iter().enumerate() {
         let Some(kind) = catalog_kind(raw.get("Type").and_then(Value::as_str).unwrap_or("")) else {
             continue;
         };
         let Some(remote) = raw.get("Id").and_then(Value::as_str) else {
             continue;
         };
-        items.push(build_catalog_item(kind, remote, &raw, &library.name));
+        items.push(build_catalog_item(kind, remote, raw, &library.name));
+        origins.push(index);
     }
 
     if !with_images {
-        catalog.replace_library(ctx.connection_id, &library.name, items).await?;
-        return Ok(());
+        let count = items.len();
+        catalog
+            .replace_library(ctx.connection_id, &library.name, items)
+            .await?;
+        return Ok(count);
     }
 
     catalog
         .replace_library(ctx.connection_id, &library.name, items.clone())
         .await?;
 
+    // Cast pictures, fetched once per name: the People page shows them, and a
+    // music artist with no primary image borrows their own.
+    let mut people_images: std::collections::HashMap<String, Option<String>> =
+        std::collections::HashMap::new();
     let mut waiting = 0usize;
     let mut last = std::time::Instant::now();
     for index in 0..items.len() {
-        // Posters the Media page shows: movies, shows, music videos, and —
-        // the music tab's — album covers and artist images.
+        let raw = &raws[origins[index]];
+        for credit in items[index].people.iter_mut() {
+            if let Some(cached) = people_images.get(&credit.name) {
+                credit.image_path = cached.clone();
+                continue;
+            }
+            let person_id = raw
+                .get("People")
+                .and_then(Value::as_array)
+                .and_then(|people| {
+                    people.iter().find(|person| {
+                        person.get("Name").and_then(Value::as_str).map(str::trim)
+                            == Some(credit.name.as_str())
+                    })
+                })
+                .and_then(|person| person.get("Id"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let path = write_people_image(ctx, client, person_id, &credit.name)
+                .await
+                .ok()
+                .flatten();
+            people_images.insert(credit.name.clone(), path.clone());
+            credit.image_path = path;
+            if credit.image_path.is_some() {
+                waiting += 1;
+            }
+        }
+
+        // Posters the Media page shows: movies, shows, music videos, and — the
+        // music tab's — album covers and artist images.
         if matches!(
             items[index].kind.as_str(),
             "movie" | "series" | "musicvideo" | "album" | "artist"
@@ -366,15 +393,13 @@ async fn sync_catalog(
                 // No primary image on the server (soundtrack composers usually
                 // have none) — fall back to the synced person photo when the
                 // same name has one, so music artists still show an image.
-                let media = MediaDb::new(ctx.db.clone());
-                if let Ok(Some(person_path)) =
-                    media.person_image_by_name(&items[index].title).await
-                {
-                    items[index].poster_path = Some(person_path);
+                if let Some(Some(path)) = people_images.get(&items[index].title) {
+                    items[index].poster_path = Some(path.clone());
                     waiting += 1;
                 }
             }
         }
+
         if waiting > 0 && last.elapsed() >= std::time::Duration::from_secs(2) {
             catalog
                 .replace_library(ctx.connection_id, &library.name, items.clone())
@@ -383,13 +408,14 @@ async fn sync_catalog(
             last = std::time::Instant::now();
         }
     }
+    let count = items.len();
     catalog
         .replace_library(ctx.connection_id, &library.name, items)
         .await?;
-    Ok(())
+    Ok(count)
 }
 
-pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
+pub async fn run(ctx: &SyncCtx) -> SyncReport {
     let progress = progress_state();
     {
         let mut state = progress.lock().unwrap();
@@ -399,17 +425,6 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
     }
 
     let mut report = SyncReport::default();
-    let media = MediaDb::new(db);
-    if let Err(error) = media.init().await {
-        tracing::error!(error = %error, "jellyfin: could not initialise tables");
-        report.errors += 1;
-        {
-            let mut state = progress.lock().unwrap();
-            state.running = false;
-            state.errors = report.errors;
-        }
-        return report;
-    }
     let client = match JellyfinClient::new(&ctx.connection, &ctx.api_key) {
         Ok(client) => client,
         Err(error) => {
@@ -423,41 +438,42 @@ pub async fn run(ctx: &SyncCtx, db: Arc<dyn PluginDatabase>) -> SyncReport {
             return report;
         }
     };
-    let synced_at = chrono::Utc::now().to_rfc3339();
+    // The catalog handle is how this sync reaches the base: without it there is
+    // nowhere to write. The base's task always passes one.
+    let Some(catalog) = &ctx.catalog else {
+        tracing::warn!("jellyfin: sync without a catalog handle");
+        report.errors += 1;
+        {
+            let mut state = progress.lock().unwrap();
+            state.running = false;
+            state.errors = report.errors;
+        }
+        return report;
+    };
 
     // ---- Phase 1: metadata and paths, one library type at a time. ----------
     for library in &ctx.enabled_libraries {
         start_library(&progress, library);
-        if let Some(catalog) = &ctx.catalog {
-            if let Err(error) = sync_catalog(&client, ctx, library, catalog, false).await {
+        match sync_catalog(&client, ctx, library, catalog, false).await {
+            Ok(count) => report.added += count as u64,
+            Err(error) => {
                 tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
                 report.errors += 1;
             }
         }
-        walk(&client, ctx, &media, library, &synced_at, Phase::Metadata, &progress, &mut report).await;
         mark_done(&progress);
     }
 
-    // ---- Phase 2: images (posters + people), one library type at a time. ---
+    // ---- Phase 2: images (posters + cast), one library type at a time. -----
     for library in &ctx.enabled_libraries {
         start_library(&progress, library);
-        if let Some(catalog) = &ctx.catalog {
-            if let Err(error) = sync_catalog(&client, ctx, library, catalog, true).await {
-                tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
-                report.errors += 1;
-            }
+        if let Err(error) = sync_catalog(&client, ctx, library, catalog, true).await {
+            tracing::warn!(library = %library.name, %error, "jellyfin: could not build the media catalog");
+            report.errors += 1;
         }
-        walk(&client, ctx, &media, library, &synced_at, Phase::Images, &progress, &mut report).await;
         mark_done(&progress);
     }
 
-    match media.mark_absent_missing(ctx.connection_id).await {
-        Ok(removed) => report.removed = removed,
-        Err(error) => {
-            tracing::warn!(error = %error, "jellyfin: could not mark absent sources");
-            report.errors += 1;
-        }
-    }
     {
         let mut state = progress.lock().unwrap();
         state.running = false;
@@ -480,330 +496,6 @@ fn start_library(progress: &'static std::sync::Mutex<SyncProgress>, library: &ch
 fn mark_done(progress: &'static std::sync::Mutex<SyncProgress>) {
     let mut state = progress.lock().unwrap();
     state.done += 1;
-}
-
-async fn walk(
-    client: &JellyfinClient,
-    ctx: &SyncCtx,
-    media: &MediaDb,
-    library: &channelflow_plugin_api::media::Library,
-    synced_at: &str,
-    phase: Phase,
-    progress: &'static std::sync::Mutex<SyncProgress>,
-    report: &mut SyncReport,
-) {
-    let mut offset = 0usize;
-    loop {
-        let page = match client.items(&library.remote_id, offset).await {
-            Ok(page) => page,
-            Err(error) => {
-                tracing::warn!(library = %library.name, %error, "jellyfin: library page failed");
-                report.errors += 1;
-                {
-                    let mut state = progress.lock().unwrap();
-                    state.errors = report.errors;
-                }
-                break;
-            }
-        };
-        {
-            let mut state = progress.lock().unwrap();
-            state.total = page.total_record_count as u64;
-        }
-        for raw in &page.items {
-            {
-                let mut state = progress.lock().unwrap();
-                state.current += 1;
-            }
-            let result = match phase {
-                Phase::Metadata => metadata_upsert(media, ctx, raw, synced_at).await,
-                Phase::Images => image_upsert(media, ctx, client, raw).await.map(|_| false),
-            };
-            match result {
-                Ok(created) if phase == Phase::Metadata => {
-                    if created {
-                        report.added += 1;
-                    } else {
-                        report.updated += 1;
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(error = %error, "jellyfin: item upsert failed");
-                    report.errors += 1;
-                }
-            }
-            {
-                let mut state = progress.lock().unwrap();
-                state.added = report.added;
-                state.updated = report.updated;
-                state.errors = report.errors;
-            }
-        }
-        offset += PAGE;
-        if offset >= page.total_record_count {
-            break;
-        }
-    }
-}
-
-/// Phase 1: store an item's metadata and paths, without fetching any image.
-async fn metadata_upsert(
-    media: &MediaDb,
-    ctx: &SyncCtx,
-    raw: &Value,
-    synced_at: &str,
-) -> Result<bool, PluginError> {
-    let jellyfin_id = raw
-        .get("Id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| PluginError::new("item has no Id"))?;
-    let media_type = map_type(raw.get("Type").and_then(Value::as_str).unwrap_or(""));
-    let title = raw.get("Name").and_then(Value::as_str).unwrap_or("").to_string();
-    let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
-    let dedup_key = if media_type == "episode" {
-        dedup::episode_key(
-            raw.get("SeriesName").and_then(Value::as_str).unwrap_or(""),
-            None,
-            raw.get("ParentIndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
-            raw.get("IndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
-        )
-    } else {
-        dedup::key(&media_type, &title, year)
-    };
-
-    let (item_id, created) = media
-        .upsert_item_by_source(
-            ctx.connection_id,
-            jellyfin_id,
-            &dedup_key,
-            &media_type,
-            &title,
-            year,
-            None,
-            &ItemDetail::from_raw(raw),
-            synced_at,
-        )
-        .await
-        .map_err(plugin_database)?;
-    let source_id = media
-        .upsert_source(
-            item_id,
-            ctx.connection_id,
-            jellyfin_id,
-            raw.get("Path").and_then(Value::as_str),
-            false,
-            synced_at,
-        )
-        .await
-        .map_err(plugin_database)?;
-    media
-        .replace_files(source_id, raw)
-        .await
-        .map_err(plugin_database)?;
-
-    // Jellyfin nests every track under an album; build the album → artist
-    // nodes and link this track into them (best-effort — a lone track stays
-    // ungrouped rather than failing the sync).
-    if let Err(error) =
-        ensure_hierarchy(media, raw, item_id, &media_type, synced_at).await
-    {
-        tracing::warn!(error = %error.0, "jellyfin: could not build album/track hierarchy");
-    }
-    // Cast metadata: people rows + item links. Their images arrive in phase 2.
-    if let Err(error) = media.upsert_people(item_id, raw).await {
-        tracing::warn!(error = %error.0, "jellyfin: could not store item people");
-    }
-    // Genres and studios links, for the item detail page (best-effort).
-    if let Err(error) = media.set_genres_and_studios(item_id, raw).await {
-        tracing::warn!(error = %error.0, "jellyfin: could not store item genres/studios");
-    }
-
-    Ok(created)
-}
-
-/// Phase 2: fetch posters and cast pictures, save them under
-/// `<config>/Images/`, and record the paths in the database.
-async fn image_upsert(
-    media: &MediaDb,
-    ctx: &SyncCtx,
-    client: &JellyfinClient,
-    raw: &Value,
-) -> Result<(), PluginError> {
-    let jellyfin_id = raw
-        .get("Id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| PluginError::new("item has no Id"))?;
-    let media_type = map_type(raw.get("Type").and_then(Value::as_str).unwrap_or(""));
-    let title = raw.get("Name").and_then(Value::as_str).unwrap_or("").to_string();
-    let year = raw.get("ProductionYear").and_then(Value::as_i64).map(|year| year as i32);
-    let dedup_key = if media_type == "episode" {
-        dedup::episode_key(
-            raw.get("SeriesName").and_then(Value::as_str).unwrap_or(""),
-            None,
-            raw.get("ParentIndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
-            raw.get("IndexNumber").and_then(Value::as_i64).unwrap_or(0) as i32,
-        )
-    } else {
-        dedup::key(&media_type, &title, year)
-    };
-
-    // Posters for the kinds the Media page shows.
-    if matches!(media_type, "movie" | "series" | "musicvideo") {
-        if let Some(path) = write_poster(ctx, client, jellyfin_id, &media_type, &dedup_key).await? {
-            media
-                .set_poster(ctx.connection_id, jellyfin_id, &path)
-                .await
-                .map_err(plugin_database)?;
-        }
-    }
-    // Cast pictures, saved under <config>/Images/people/.
-    if let Some(people) = raw.get("People").and_then(Value::as_array) {
-        for person in people {
-            let name = person.get("Name").and_then(Value::as_str).unwrap_or("").trim();
-            if name.is_empty() {
-                continue;
-            }
-            let person_id = person.get("Id").and_then(Value::as_str).unwrap_or("");
-            if let Some(path) = write_people_image(ctx, client, person_id, name).await? {
-                media
-                    .set_people_image(name, &path)
-                    .await
-                    .map_err(plugin_database)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Jellyfin returns `Audio` items (tracks) with their `Album`, `AlbumArtist`
-/// and disc/track numbers, but never the album/artist items themselves —
-/// those are built here as synthesised grouping nodes so the library gets a
-/// real album → track (and artist) hierarchy instead of a flat track list.
-async fn ensure_hierarchy(
-    media: &MediaDb,
-    raw: &Value,
-    item_id: i64,
-    media_type: &str,
-    synced_at: &str,
-) -> Result<(), PluginError> {
-    match media_type {
-        "track" => {
-            let Some(album_title) = album_title(raw) else {
-                return Ok(());
-            };
-            let year = raw
-                .get("ProductionYear")
-                .and_then(Value::as_i64)
-                .map(|year| year as i32);
-            let artist_item = match album_artist(raw) {
-                Some(artist) => {
-                    let (artist_id, _) = media
-                        .upsert_grouping(
-                            &dedup::key("artist", &artist, None),
-                            "artist",
-                            &artist,
-                            None,
-                            synced_at,
-                        )
-                        .await
-                        .map_err(plugin_database)?;
-                    media.ensure_artist_row(artist_id).await.map_err(plugin_database)?;
-                    Some(artist_id)
-                }
-                None => None,
-            };
-            let (album_id, _) = media
-                .upsert_grouping(
-                    &dedup::key("album", &album_title, year),
-                    "album",
-                    &album_title,
-                    year,
-                    synced_at,
-                )
-                .await
-                .map_err(plugin_database)?;
-            media.ensure_album_row(album_id, artist_item).await.map_err(plugin_database)?;
-            let (track_number, disc_number) = track_numbers(raw);
-            media
-                .link_track(item_id, album_id, track_number, disc_number)
-                .await
-                .map_err(plugin_database)?;
-            Ok(())
-        }
-        "musicvideo" => {
-            if let Some(artist) = album_artist(raw) {
-                let (artist_id, _) = media
-                    .upsert_grouping(
-                        &dedup::key("artist", &artist, None),
-                        "artist",
-                        &artist,
-                        None,
-                        synced_at,
-                    )
-                    .await
-                    .map_err(plugin_database)?;
-                media.ensure_artist_row(artist_id).await.map_err(plugin_database)?;
-                media.link_music_video(item_id, Some(artist_id)).await.map_err(plugin_database)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-/// The album a track belongs to, from the track's own fields.
-fn album_title(raw: &Value) -> Option<String> {
-    let title = raw.get("Album").and_then(Value::as_str).unwrap_or("").trim();
-    if title.is_empty() {
-        None
-    } else {
-        Some(title.to_string())
-    }
-}
-
-/// The artist for an album/track/music-video, in Jellyfin's field order.
-fn album_artist(raw: &Value) -> Option<String> {
-    let direct = raw.get("AlbumArtist").and_then(Value::as_str);
-    let from_album_artists = raw
-        .get("AlbumArtists")
-        .and_then(Value::as_array)
-        .and_then(|artists| artists.first())
-        .and_then(|artist| artist.get("Name"))
-        .and_then(Value::as_str);
-    let from_artist_items = raw
-        .get("ArtistItems")
-        .and_then(Value::as_array)
-        .and_then(|artists| artists.first())
-        .and_then(|artist| artist.get("Name"))
-        .and_then(Value::as_str);
-    [direct, from_album_artists, from_artist_items]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|name| !name.is_empty())
-        .map(str::to_string)
-}
-
-/// `(track_number, disc_number)` — Jellyfin's `IndexNumber` /
-/// `ParentIndexNumber`.
-fn track_numbers(raw: &Value) -> (Option<i32>, Option<i32>) {
-    (
-        raw.get("IndexNumber").and_then(Value::as_i64).map(|n| n as i32),
-        raw.get("ParentIndexNumber").and_then(Value::as_i64).map(|n| n as i32),
-    )
-}
-
-fn map_type(raw: &str) -> &'static str {
-    match raw {
-        "Movie" => "movie",
-        "Series" => "series",
-        "Season" => "season",
-        "Episode" => "episode",
-        "Audio" => "track",
-        "MusicVideo" => "musicvideo",
-        _ => "unknown",
-    }
 }
 
 /// Fetch the primary image and write it to
@@ -904,77 +596,9 @@ fn sha256(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn plugin_database(error: channelflow_plugin_api::database::PluginDatabaseError) -> PluginError {
-    PluginError::new(error.0)
-}
-
-/// Remove the poster files for items that lost every source (used after a
-/// connection delete; the database rows cascade first). Returns the removed
-/// paths. Called by the base, not from this crate's routes.
-#[allow(dead_code)]
-pub async fn sweep_orphan_posters(db: Arc<dyn PluginDatabase>) -> Vec<String> {
-    let media = MediaDb::new(db);
-    match media.orphan_sweep().await {
-        Ok(posters) => {
-            for path in &posters {
-                let _ = std::fs::remove_file(Path::new(path));
-            }
-            posters
-        }
-        Err(error) => {
-            tracing::warn!(error = %error, "jellyfin: orphan sweep failed");
-            Vec::new()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn album_and_artist_come_from_the_track_fields() {
-        let raw = serde_json::json!({
-            "Album": "Random Access Memories",
-            "AlbumArtist": "Daft Punk",
-            "AlbumArtists": [{"Name": "Daft Punk", "Id": "a1"}],
-            "ArtistItems": [{"Name": "Someone Else", "Id": "x"}],
-        });
-        assert_eq!(album_title(&raw).as_deref(), Some("Random Access Memories"));
-        assert_eq!(album_artist(&raw).as_deref(), Some("Daft Punk"));
-    }
-
-    #[test]
-    fn artist_falls_back_to_album_artists_then_artist_items() {
-        let raw = serde_json::json!({
-            "Album": "Greatest Hits",
-            "AlbumArtists": [{"Name": "The Band"}],
-        });
-        assert_eq!(album_artist(&raw).as_deref(), Some("The Band"));
-
-        let raw = serde_json::json!({
-            "Album": "Live",
-            "ArtistItems": [{"Name": "Live Artist"}],
-        });
-        assert_eq!(album_artist(&raw).as_deref(), Some("Live Artist"));
-    }
-
-    #[test]
-    fn missing_album_means_no_grouping() {
-        let raw = serde_json::json!({ "Name": "Lone Track" });
-        assert_eq!(album_title(&raw), None);
-        assert_eq!(album_artist(&raw), None);
-    }
-
-    #[test]
-    fn disc_and_track_numbers_are_extracted() {
-        let raw = serde_json::json!({
-            "IndexNumber": 7,
-            "ParentIndexNumber": 2,
-        });
-        assert_eq!(track_numbers(&raw), (Some(7), Some(2)));
-        assert_eq!(track_numbers(&serde_json::json!({})), (None, None));
-    }
 
     #[test]
     fn provider_ids_become_match_ids() {

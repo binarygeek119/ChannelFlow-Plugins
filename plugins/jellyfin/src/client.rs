@@ -149,34 +149,6 @@ impl JellyfinClient {
             .collect())
     }
 
-    /// One 200-item page of a library, recursive, with the fields the sync
-    /// layer and the file picker need.
-    pub async fn items(&self, library_id: &str, offset: usize) -> Result<ItemPage, PluginError> {
-        let fields = "Path,Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,ProductionYear,RunTimeTicks,CommunityRating,CriticRating,OfficialRating,Taglines,OriginalTitle,SortName,Container,PremiereDate,IndexNumber,ParentIndexNumber,SeriesName,SeriesId,AlbumId,AlbumArtist";
-        let types = "Movie,Series,Episode,Audio,MusicVideo";
-        // Without a sync user the bare /Items endpoint is right (an admin API
-        // key). /Users//Items - the empty-user form - 404s on newer Jellyfin.
-        // get() prepends the base, so only build the path here.
-        let listing = if self.user_id.is_empty() {
-            "/Items".to_string()
-        } else {
-            format!("/Users/{}/Items", self.user_id)
-        };
-        let url = format!(
-            "{listing}?ParentId={library_id}&Recursive=true&IncludeItemTypes={types}&Fields={fields}&StartIndex={offset}&Limit=200"
-        );
-        let response = self
-            .get(&url)
-            .send()
-            .await
-            .and_then(|response| response.error_for_status())
-            .map_err(|error| PluginError::new(format!("fetching items: {error}")))?;
-        response
-            .json()
-            .await
-            .map_err(|error| PluginError::new(format!("fetching items: {error}")))
-    }
-
     /// The top-level items the base Media page shows, from a *light* query: no
     /// streams, people or chapters. It is fast, so a big TV library's full
     /// detail sync does not hold the Media page up.

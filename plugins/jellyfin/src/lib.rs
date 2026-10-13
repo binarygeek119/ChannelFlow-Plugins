@@ -6,43 +6,26 @@
 //! connection forms and sync driver talk to. The exported
 //! `channelflow_plugin_v1` symbol is the ABI entrypoint the future dynamic
 //! loader will reach for (the SDK's `PLUGIN_ABI_VERSION` guards it).
+//!
+//! The plugin keeps no media tables of its own: a sync reports everything —
+//! items, files, cast and detail — into the base's catalog, which is what the
+//! Media and People pages read. Its only persistent state is the settings the
+//! base stores for it.
 
 mod client;
-mod db;
-mod dedup;
+mod migrate;
 mod routes;
-mod selection;
 mod sync;
 
-use std::sync::Arc;
-
-use channelflow_plugin_api::database::PluginDatabase;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::media::{
     Connection, FieldSpec, Library, MediaSource, MediaType, SyncCtx, SyncReport, TestResult,
 };
-use channelflow_plugin_api::plugin::{
-    Plugin, PluginApi, PluginError, PluginHealth, PLUGIN_ABI_VERSION,
-};
+use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth};
 
 pub struct JellyfinPlugin {
     metadata: PluginManifest,
     enabled: bool,
-    state: Option<PluginState>,
-}
-
-#[derive(Clone)]
-struct PluginState {
-    db: Arc<dyn PluginDatabase>,
-}
-
-/// The plugin instance the lifecycle drives and the separate media-source
-/// handle must see the same loaded state, or a core-driven sync fails with
-/// "has not been loaded". Both write/read this process-global slot.
-fn shared_state() -> &'static std::sync::Mutex<Option<PluginState>> {
-    use std::sync::OnceLock;
-    static SHARED: OnceLock<std::sync::Mutex<Option<PluginState>>> = OnceLock::new();
-    SHARED.get_or_init(|| std::sync::Mutex::new(None))
 }
 
 impl JellyfinPlugin {
@@ -50,20 +33,7 @@ impl JellyfinPlugin {
         Self {
             metadata: manifest(),
             enabled: false,
-            state: None,
         }
-    }
-
-    fn state(&self) -> Result<PluginState, PluginError> {
-        if let Some(state) = &self.state {
-            return Ok(state.clone());
-        }
-        if let Ok(guard) = shared_state().lock() {
-            if let Some(state) = guard.as_ref() {
-                return Ok(state.clone());
-            }
-        }
-        Err(PluginError::new("Jellyfin plugin has not been loaded"))
     }
 }
 
@@ -84,11 +54,6 @@ pub fn media_source() -> Box<dyn MediaSource> {
     Box::new(JellyfinPlugin::new())
 }
 
-/// Called by the base after a `jellyfin` connection is deleted: the database
-/// rows cascade first, this removes the poster files of items that lost every
-/// source.
-pub use sync::sweep_orphan_posters;
-
 /// The ABI entrypoint: a future dynamic loader calls this and downcasts the
 /// `MediaSource` it gets back. Compiled only for the `abi` feature — the
 /// standalone cdylib the release ships — because two plugins exporting the
@@ -102,7 +67,8 @@ pub extern "C" fn channelflow_plugin_v1() -> *mut dyn MediaSource {
 
 #[cfg(feature = "abi")]
 #[no_mangle]
-pub static channelflow_plugin_abi_version: u32 = PLUGIN_ABI_VERSION;
+pub static channelflow_plugin_abi_version: u32 =
+    channelflow_plugin_api::plugin::PLUGIN_ABI_VERSION;
 
 #[async_trait::async_trait]
 impl Plugin for JellyfinPlugin {
@@ -116,54 +82,32 @@ impl Plugin for JellyfinPlugin {
         api.web.serve_embedded("jellyfin.css", "text/css", include_bytes!("../web/jellyfin.css"));
         api.web.serve_embedded("jellyfin.html", "text/html", include_bytes!("../web/jellyfin.html"));
         api.web.serve_embedded("jellyfin.js", "text/javascript", include_bytes!("../web/jellyfin.js"));
-        api.web.serve_embedded("people.css", "text/css", include_bytes!("../web/people.css"));
-        api.web.serve_embedded("people.html", "text/html", include_bytes!("../web/people.html"));
-        api.web.serve_embedded("people.js", "text/javascript", include_bytes!("../web/people.js"));
 
-        // Tables initialise lazily on the first sync so a file-only install
-        // (no Postgres) still loads and fails softly at sync time.
-        let state = PluginState {
-            db: api.database.clone(),
-        };
-        if let Ok(mut guard) = shared_state().lock() {
-            *guard = Some(state.clone());
-        }
-        self.state = Some(state);
+        // The catalog is the base's now; drop the plugin's own media tables if
+        // an older version left them behind.
+        migrate::drop_legacy_tables(&api.database).await;
         api.logger.info("loaded");
         Ok(())
     }
 
     async fn on_enable(&mut self) -> Result<(), PluginError> {
-        if self.enabled {
-            return Ok(());
-        }
         self.enabled = true;
         Ok(())
     }
 
     async fn on_disable(&mut self) -> Result<(), PluginError> {
-        if !self.enabled {
-            return Ok(());
-        }
         self.enabled = false;
         Ok(())
     }
 
-    fn on_unload(&mut self) {
-        self.state = None;
-        if let Ok(mut guard) = shared_state().lock() {
-            *guard = None;
-        }
-    }
+    fn on_unload(&mut self) {}
 
     async fn on_config(&mut self, _config: serde_json::Value) -> Result<(), PluginError> {
         Ok(())
     }
 
     fn routes(&self) -> Option<axum::Router> {
-        self.state()
-            .ok()
-            .map(|state| routes::router(state.db.clone()))
+        Some(routes::router())
     }
 
     fn ui_contributions(&self) -> Vec<channelflow_plugin_api::ui::UiContribution> {
@@ -242,22 +186,11 @@ impl MediaSource for JellyfinPlugin {
     }
 
     async fn sync_library(&self, ctx: SyncCtx) -> SyncReport {
-        match self.state() {
-            Ok(state) => sync::run(&ctx, state.db.clone()).await,
-            Err(error) => {
-                tracing::error!(error = %error.0, "jellyfin: sync before load");
-                SyncReport {
-                    errors: 1,
-                    ..SyncReport::default()
-                }
-            }
-        }
+        sync::run(&ctx).await
     }
 
     fn routes(&self) -> Option<axum::Router> {
-        self.state()
-            .ok()
-            .map(|state| routes::router(state.db.clone()))
+        Some(routes::router())
     }
 
     async fn server_info(
