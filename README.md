@@ -23,6 +23,7 @@ routes under `/api/plugins/{id}`.
 | [`plugins/offair`](plugins/offair) | `com.channelflow.offair` | Off Air — what plays when a channel has no scheduled media, with custom slates (1.0.0's EBS settings as a plugin) |
 | [`plugins/pasttense`](plugins/pasttense) | `com.channelflow.pasttense` | Past Tense News — old news from local event folders, played as if it's breaking now |
 | [`plugins/presets`](plugins/presets) | `com.channelflow.presets` | Ready-made channels to get up and running quickly — a shortcut, not the only way to add channels |
+| [`plugins/scheduler`](plugins/scheduler) | `com.channelflow.scheduler` | Scheduler — builds each channel's broadcast day from six layers and the AI page's providers |
 | [`plugins/weather`](plugins/weather) | `com.channelflow.weather` | Weather — WeatherStar look, source, location, units, and screens (1.0.0's Weather tab as a plugin) |
 
 ## How the base builds against this repo
