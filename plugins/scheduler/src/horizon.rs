@@ -181,6 +181,12 @@ impl Horizon {
     ) -> Result<(), String> {
         let channels = core.channels().await.map_err(|error| error.to_string())?;
         let enabled: Vec<_> = channels.into_iter().filter(|channel| channel.enabled).collect();
+        logger.info(&format!(
+            "scheduler: building horizon for {} enabled channel(s), {} day(s) each",
+            enabled.len(),
+            settings.days_to_build
+        ));
+        
         let today = chrono::Local::now().date_naive();
         let days = settings.days_to_build as usize;
         let total = enabled.len() * days;
@@ -195,6 +201,13 @@ impl Horizon {
         );
 
         for (index, channel) in enabled.iter().enumerate() {
+            logger.info(&format!(
+                "scheduler: building channel {} ({}/{})",
+                channel.name,
+                index + 1,
+                enabled.len()
+            ));
+            
             let scopes = read_scopes(storage.as_ref()).await;
             {
                 let mut progress = self.progress.lock().await;
@@ -203,6 +216,7 @@ impl Horizon {
             }
             for day in 0..settings.days_to_build {
                 if self.cancelled() {
+                    logger.info("scheduler: build cancelled by user");
                     return Ok(());
                 }
                 let date_naive = today + chrono::Duration::days(day as i64);
@@ -230,37 +244,79 @@ impl Horizon {
                     resolved,
                     settings,
                     previous.as_ref(),
+                    logger,
                 )
                 .await
                 {
                     Ok(outcome) => {
+                        if outcome.skipped {
+                            logger.info(&format!(
+                                "scheduler: {} {} skipped (inputs unchanged)",
+                                channel.id, date
+                            ));
+                        } else {
+                            logger.info(&format!(
+                                "scheduler: {} {} built successfully ({} blocks, {} items, degraded: {})",
+                                channel.id,
+                                date,
+                                outcome.day.blocks.len(),
+                                outcome.day.blocks.iter().map(|b| b.items.len()).sum::<usize>(),
+                                outcome.day.degraded
+                            ));
+                        }
+                        
                         if !outcome.skipped {
                             if let Err(error) =
                                 state::store_day(storage.as_ref(), &channel.id, &outcome.day).await
                             {
+                                logger.error(&format!(
+                                    "scheduler: {} {} failed to store day: {}",
+                                    channel.id, date, error
+                                ));
                                 let mut progress = self.progress.lock().await;
                                 progress.errors.push(format!("{} {date}: {error}", channel.id));
                                 continue;
                             }
                         }
+                        
                         // Always write the guide and lineup, regardless of write_playout setting.
                         // The guide and lineup should be populated when building the horizon.
                         if let Err(error) =
-                            crate::playout::set_guide(core, &outcome.day).await
+                            crate::playout::set_guide(core, &outcome.day, logger).await
                         {
+                            logger.error(&format!(
+                                "scheduler: {} {} failed to set guide: {}",
+                                channel.id, date, error
+                            ));
                             let mut progress = self.progress.lock().await;
                             progress
                                 .errors
                                 .push(format!("{} {date} guide: {error}", channel.id));
+                        } else if !outcome.skipped {
+                            logger.info(&format!(
+                                "scheduler: {} {} guide updated",
+                                channel.id, date
+                            ));
                         }
+                        
                         if let Err(error) =
-                            crate::playout::set_lineup(core, &outcome.day).await
+                            crate::playout::set_lineup(core, &outcome.day, logger).await
                         {
+                            logger.error(&format!(
+                                "scheduler: {} {} failed to set lineup: {}",
+                                channel.id, date, error
+                            ));
                             let mut progress = self.progress.lock().await;
                             progress
                                 .errors
                                 .push(format!("{} {date} lineup: {error}", channel.id));
+                        } else if !outcome.skipped {
+                            logger.info(&format!(
+                                "scheduler: {} {} lineup updated",
+                                channel.id, date
+                            ));
                         }
+                        
                         // Only write playout files if write_playout is enabled.
                         if settings.write_playout {
                             let dir = crate::playout::channel_dir(
@@ -269,14 +325,29 @@ impl Horizon {
                                 &channel.id,
                             );
                             if let Err(error) =
-                                crate::playout::write(core, &outcome.day, &dir).await
+                                crate::playout::write(core, &outcome.day, &dir, logger).await
                             {
+                                logger.error(&format!(
+                                    "scheduler: {} {} failed to write playout: {}",
+                                    channel.id, date, error
+                                ));
                                 let mut progress = self.progress.lock().await;
                                 progress
                                     .errors
                                     .push(format!("{} {date} playout: {error}", channel.id));
+                            } else if !outcome.skipped {
+                                logger.info(&format!(
+                                    "scheduler: {} {} playout written to {:?}",
+                                    channel.id, date, dir
+                                ));
                             }
+                        } else if !outcome.skipped {
+                            logger.info(&format!(
+                                "scheduler: {} {} skipping playout write (write_playout is disabled)",
+                                channel.id, date
+                            ));
                         }
+                        
                         let mut progress = self.progress.lock().await;
                         progress.provider = outcome.day.provider.clone();
                         if outcome.skipped {
@@ -289,9 +360,9 @@ impl Horizon {
                         }
                     }
                     Err(error) => {
-                        logger.warn(&format!(
-                            "scheduler: {} {date} failed: {error}",
-                            channel.id
+                        logger.error(&format!(
+                            "scheduler: {} {} build failed: {}",
+                            channel.id, date, error
                         ));
                         let mut progress = self.progress.lock().await;
                         progress.errors.push(format!("{} {date}: {error}", channel.id));
@@ -299,6 +370,13 @@ impl Horizon {
                 }
             }
         }
+        
+        let progress = self.progress.lock().await;
+        logger.info(&format!(
+            "scheduler: horizon build complete - {} built, {} skipped, {} degraded, {} errors",
+            progress.built, progress.skipped, progress.degraded, progress.errors.len()
+        ));
+        
         Ok(())
     }
 }

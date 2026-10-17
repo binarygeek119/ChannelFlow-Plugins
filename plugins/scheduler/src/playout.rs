@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use channelflow_plugin_api::core::CoreData;
+use channelflow_plugin_api::plugin::PluginLogger;
 use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -141,7 +142,13 @@ pub async fn write(
     core: &Arc<dyn CoreData>,
     day: &GeneratedDay,
     dir: &Path,
+    logger: &PluginLogger,
 ) -> Result<WriteReport, String> {
+    logger.info(&format!(
+        "scheduler: writing playout for {} {} to {:?}",
+        day.channel_id, day.date, dir
+    ));
+    
     let mut paths: HashMap<String, String> = HashMap::new();
     for block in &day.blocks {
         for item in &block.items {
@@ -150,6 +157,11 @@ pub async fn write(
             }
             if let Ok(Some(file)) = core.file_for(&item.match_key).await {
                 paths.insert(item.match_key.clone(), file.path);
+            } else {
+                logger.warn(&format!(
+                    "scheduler: no file found for match_key {}",
+                    item.match_key
+                ));
             }
         }
     }
@@ -159,13 +171,34 @@ pub async fn write(
         .iter()
         .filter(|segment| !segment.match_key.is_empty() && !paths.contains_key(&segment.match_key))
         .count();
-    std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    
+    if missing > 0 {
+        logger.warn(&format!(
+            "scheduler: {} items missing files, will use slate",
+            missing
+        ));
+    }
+    
+    std::fs::create_dir_all(dir).map_err(|error| {
+        logger.error(&format!("scheduler: failed to create playout directory {:?}: {}", dir, error));
+        error.to_string()
+    })?;
+    
     let path = dir.join(&name);
-    let text = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
-    std::fs::write(&path, text).map_err(|error| error.to_string())?;
+    let text = serde_json::to_string_pretty(&document).map_err(|error| {
+        logger.error(&format!("scheduler: failed to serialize playout document: {}", error));
+        error.to_string()
+    })?;
+    
+    std::fs::write(&path, text).map_err(|error| {
+        logger.error(&format!("scheduler: failed to write playout file {:?}: {}", path, error));
+        error.to_string()
+    })?;
+    
+    logger.info(&format!("scheduler: playout written to {:?}", path));
 
-    set_guide(core, day).await?;
-    set_lineup(core, day).await?;
+    set_guide(core, day, logger).await?;
+    set_lineup(core, day, logger).await?;
 
     Ok(WriteReport {
         path: path.to_string_lossy().to_string(),
@@ -179,11 +212,30 @@ pub async fn write(
 pub async fn set_guide(
     core: &Arc<dyn CoreData>,
     day: &GeneratedDay,
+    logger: &PluginLogger,
 ) -> Result<(), String> {
+    logger.info(&format!(
+        "scheduler: setting guide for {} {}",
+        day.channel_id, day.date
+    ));
+    
     let programs = guide_programs(day);
+    logger.info(&format!(
+        "scheduler: guide contains {} programs",
+        programs.len()
+    ));
+    
     core.set_channel_guide(&day.channel_id, programs)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            logger.error(&format!(
+                "scheduler: failed to set guide for {}: {}",
+                day.channel_id, error
+            ));
+            error.to_string()
+        })?;
+    
+    logger.info(&format!("scheduler: guide set successfully for {}", day.channel_id));
     Ok(())
 }
 
@@ -220,11 +272,30 @@ pub fn blocks_to_lineup_slots(day: &GeneratedDay) -> Vec<Value> {
 pub async fn set_lineup(
     core: &Arc<dyn CoreData>,
     day: &GeneratedDay,
+    logger: &PluginLogger,
 ) -> Result<(), String> {
+    logger.info(&format!(
+        "scheduler: setting lineup for {} {}",
+        day.channel_id, day.date
+    ));
+    
     let slots = blocks_to_lineup_slots(day);
+    logger.info(&format!(
+        "scheduler: lineup contains {} slots",
+        slots.len()
+    ));
+    
     core.set_channel_lineup(&day.channel_id, slots)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            logger.error(&format!(
+                "scheduler: failed to set lineup for {}: {}",
+                day.channel_id, error
+            ));
+            error.to_string()
+        })?;
+    
+    logger.info(&format!("scheduler: lineup set successfully for {}", day.channel_id));
     Ok(())
 }
 

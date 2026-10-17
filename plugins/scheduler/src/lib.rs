@@ -99,24 +99,36 @@ impl Plugin for SchedulerPlugin {
         // build the horizon once for the day. The Tasks page stays base-owned;
         // this plugin owns its own loop and its own status route.
         if let Some(state) = self.state.clone() {
+            let logger = api.logger.clone();
             tokio::spawn(async move {
                 let mut last_date = String::new();
                 let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+                logger.info("scheduler: tick loop started (checks every 60s)");
                 loop {
                     ticker.tick().await;
                     let settings = state.settings.lock().await.clone();
                     if !settings.enabled {
+                        logger.info("scheduler: tick - scheduler is disabled, skipping");
                         continue;
                     }
                     let now = chrono::Local::now();
+                    let current_time = now.format("%H:%M").to_string();
                     let today = now.format("%Y-%m-%d").to_string();
-                    if now.format("%H:%M").to_string() != settings.build_time {
+                    if current_time != settings.build_time {
                         continue;
                     }
                     if last_date == today {
+                        logger.info(&format!(
+                            "scheduler: tick - build time {} reached, but already built today ({})",
+                            settings.build_time, today
+                        ));
                         continue;
                     }
-                    last_date = today;
+                    last_date = today.clone();
+                    logger.info(&format!(
+                        "scheduler: scheduled build triggered at {} for {}",
+                        current_time, today
+                    ));
                     state
                         .horizon
                         .run(
@@ -124,7 +136,7 @@ impl Plugin for SchedulerPlugin {
                             &state.storage,
                             &state.config_root,
                             settings,
-                            &state.logger,
+                            &logger,
                             "schedule",
                         )
                         .await;
@@ -132,7 +144,7 @@ impl Plugin for SchedulerPlugin {
             });
         }
 
-        api.logger.info("loaded");
+        api.logger.info("scheduler: plugin loaded and ready");
         Ok(())
     }
 

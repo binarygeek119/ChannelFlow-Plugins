@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use channelflow_plugin_api::core::{CatalogFilter, CatalogRow, ChatMessage, ChatRequest, CoreData};
+use channelflow_plugin_api::plugin::PluginLogger;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -325,18 +326,39 @@ pub async fn build_day(
     layers: ResolvedLayers,
     settings: &SchedulerSettings,
     previous: Option<&GeneratedDay>,
+    logger: &PluginLogger,
 ) -> Result<BuildOutcome, String> {
+    logger.info(&format!("scheduler: building {} {}", channel_id, date));
+    
     let rows = core
         .catalog(catalog_filter(&layers.items))
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            logger.error(&format!("scheduler: {} {} catalog fetch failed: {}", channel_id, date, error));
+            error.to_string()
+        })?;
+    
+    logger.info(&format!(
+        "scheduler: {} {} fetched {} catalog rows",
+        channel_id, date, rows.len()
+    ));
+    
     let pool = interleave(rows, &layers.items.filter.kinds, settings.pool_cap as usize);
+    logger.info(&format!(
+        "scheduler: {} {} built pool with {} items",
+        channel_id, date, pool.len()
+    ));
+    
     let compiled = layers::compile(layers, pool);
     let hash = input_hash(&compiled);
     let now = chrono::Local::now().to_rfc3339();
 
     if let Some(previous) = previous {
         if previous.input_hash == hash {
+            logger.info(&format!(
+                "scheduler: {} {} skipped (input hash unchanged)",
+                channel_id, date
+            ));
             return Ok(BuildOutcome {
                 day: previous.clone(),
                 skipped: true,
@@ -356,6 +378,11 @@ pub async fn build_day(
 
     for attempt in 0..=settings.max_retries {
         attempts = attempt + 1;
+        logger.info(&format!(
+            "scheduler: {} {} LLM call attempt {}/{}",
+            channel_id, date, attempt + 1, settings.max_retries + 1
+        ));
+        
         let response = match core
             .chat(ChatRequest {
                 messages: messages.clone(),
@@ -365,24 +392,43 @@ pub async fn build_day(
             })
             .await
         {
-            Ok(response) => response,
+            Ok(response) => {
+                logger.info(&format!(
+                    "scheduler: {} {} LLM response from provider {}",
+                    channel_id, date, response.provider_id
+                ));
+                response
+            }
             Err(error) => {
+                logger.error(&format!(
+                    "scheduler: {} {} LLM call failed: {}",
+                    channel_id, date, error
+                ));
                 validation = vec![error.to_string()];
                 break;
             }
         };
         provider = Some(response.provider_id.clone());
+        
         match first_json_object(&response.content) {
             Some(value) => match serde_json::from_value::<ModelOutput>(value) {
                 Ok(output) => {
                     let errors = layers::validate(&output, &compiled.pool, &limits);
                     if errors.is_empty() {
+                        logger.info(&format!(
+                            "scheduler: {} {} build successful on attempt {}",
+                            channel_id, date, attempts
+                        ));
                         let day = materialise(
                             channel_id, date, &compiled, &output, false, provider.clone(),
                             validation.clone(), hash, now,
                         );
                         return Ok(BuildOutcome { day, skipped: false, attempts });
                     }
+                    logger.warn(&format!(
+                        "scheduler: {} {} validation failed on attempt {}: {}",
+                        channel_id, date, attempts, errors.join("; ")
+                    ));
                     tracing::warn!(
                         reply = %response.content.chars().take(600).collect::<String>(),
                         errors = %errors.join("; "),
@@ -402,6 +448,10 @@ pub async fn build_day(
                     });
                 }
                 Err(error) => {
+                    logger.warn(&format!(
+                        "scheduler: {} {} response parsing failed on attempt {}: {}",
+                        channel_id, date, attempts, error
+                    ));
                     tracing::warn!(
                         reply = %response.content.chars().take(600).collect::<String>(),
                         error = %error,
@@ -421,6 +471,10 @@ pub async fn build_day(
                 }
             },
             None => {
+                logger.warn(&format!(
+                    "scheduler: {} {} response contained no JSON on attempt {}",
+                    channel_id, date, attempts
+                ));
                 tracing::warn!(
                     reply = %response.content.chars().take(600).collect::<String>(),
                     "scheduler: the reply held no JSON object"
@@ -438,6 +492,10 @@ pub async fn build_day(
         }
     }
 
+    logger.warn(&format!(
+        "scheduler: {} {} using fallback day after {} attempts",
+        channel_id, date, attempts
+    ));
     let day = fallback_day(channel_id, date, &compiled, validation, provider, hash, now);
     Ok(BuildOutcome { day, skipped: false, attempts })
 }
@@ -552,7 +610,8 @@ mod tests {
             r#"{"blocks":[{"slot_index":0,"span_slots":24,"items":[{"id":"a"}]}]}"#,
             &full_day(&["a", "b"]),
         ]));
-        let outcome = build_day(&core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None)
+        let logger = PluginLogger::new("test");
+        let outcome = build_day(&core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None, &logger)
             .await
             .expect("build");
         assert!(!outcome.day.degraded, "the repaired answer is used");
@@ -565,7 +624,8 @@ mod tests {
     #[tokio::test]
     async fn a_dead_provider_falls_back_to_a_full_deterministic_day() {
         let core: Arc<dyn CoreData> = Arc::new(FakeCore::new(vec![]));
-        let outcome = build_day(&core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None)
+        let logger = PluginLogger::new("test");
+        let outcome = build_day(&core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None, &logger)
             .await
             .expect("build");
         assert!(outcome.day.degraded, "no valid answer means the fallback");
@@ -578,13 +638,14 @@ mod tests {
     async fn an_unchanged_input_skips_the_model() {
         let core = Arc::new(FakeCore::new(vec![&full_day(&["a", "b"])]));
         let dyn_core: Arc<dyn CoreData> = core.clone();
-        let first = build_day(&dyn_core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None)
+        let logger = PluginLogger::new("test");
+        let first = build_day(&dyn_core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), None, &logger)
             .await
             .expect("first");
         assert!(!first.skipped);
         let calls_after_first = *core.calls.lock().unwrap();
         let second = build_day(
-            &dyn_core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), Some(&first.day),
+            &dyn_core, "chan", "2026-01-01", ResolvedLayers::default(), &settings(), Some(&first.day), &logger,
         )
         .await
         .expect("second");
