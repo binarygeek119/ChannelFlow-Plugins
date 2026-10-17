@@ -75,7 +75,7 @@ impl Plugin for SchedulerPlugin {
             .flatten()
             .and_then(|value| SchedulerSettings::parse(&value).ok())
             .unwrap_or_default();
-        let horizon = Arc::new(horizon::Horizon::new());
+        let horizon = Arc::new(horizon::Horizon::new(api.tasks.clone()));
         // `api.dir` is `<config>/plugins/{id}`; its grandparent is `<config>`,
         // where the playout folder lives.
         let config_root = api
@@ -89,6 +89,7 @@ impl Plugin for SchedulerPlugin {
             core: api.core.clone(),
             settings: Mutex::new(settings),
             horizon: horizon.clone(),
+            tasks: api.tasks.clone(),
             config_root,
             logger: api.logger.clone(),
         }));

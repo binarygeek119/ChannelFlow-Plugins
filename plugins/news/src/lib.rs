@@ -75,6 +75,9 @@ pub struct NewsState {
     pub config_root: PathBuf,
     /// Read-only access to core data (channels, AI providers).
     pub core: Arc<dyn channelflow_plugin_api::core::CoreData>,
+    /// Where a bulletin build reports itself, so the base's status popup shows
+    /// it from any page (and brings it back after a reload).
+    pub tasks: Arc<dyn channelflow_plugin_api::tasks::TaskHost>,
 }
 
 impl NewsPlugin {
@@ -144,6 +147,7 @@ impl Plugin for NewsPlugin {
             headline_cache: Mutex::new(None),
             config_root,
             core: api.core.clone(),
+            tasks: api.tasks.clone(),
         }));
         // The bulletin scheduler: every 30 seconds, fire at each configured
         // mark (once per mark), so the day's first build always runs and the
@@ -262,6 +266,7 @@ mod tests {
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase),
             web: channelflow_plugin_api::PluginWeb::new(),
+            tasks: Arc::new(channelflow_plugin_api::NoopTaskHost),
         };
         plugin.on_load(api).await.expect("load");
         let settings = plugin.state().expect("state").settings.lock().await.clone();

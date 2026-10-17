@@ -12,6 +12,7 @@ use axum::{Json, Router};
 use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::plugin::PluginLogger;
 use channelflow_plugin_api::storage::PluginStorage;
+use channelflow_plugin_api::tasks::{TaskGuard, TaskHost, TaskInfo};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -24,10 +25,13 @@ use crate::state;
 
 /// What the route handlers need.
 pub struct RoutesState {
-    pub storage: Arc<dyn PluginStorage>,
     pub core: Arc<dyn CoreData>,
+    pub storage: Arc<dyn PluginStorage>,
     pub settings: Mutex<SchedulerSettings>,
     pub horizon: Arc<Horizon>,
+    /// Where a one-day build reports itself, so the base's status popup shows
+    /// it from any page.
+    pub tasks: Arc<dyn TaskHost>,
     /// `<config>`, where the playout folder lives.
     pub config_root: PathBuf,
     pub logger: PluginLogger,
@@ -319,6 +323,18 @@ async fn build_one(
     let settings = state.settings.lock().await.clone();
     let settings_for_write = settings.clone();
     let previous = state::read_day(state.storage.as_ref(), &id, &date).await;
+
+    // One day is one model call, which can take a while: report it so the
+    // base's status popup shows it from any page until the guard drops.
+    let _task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "build-day".to_string(),
+            title: format!("Scheduler build · {id}"),
+            label: Some(date.clone()),
+            ..Default::default()
+        },
+    );
 
     let horizon = state.horizon.clone();
     let core = state.core.clone();

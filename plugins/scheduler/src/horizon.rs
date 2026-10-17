@@ -9,6 +9,7 @@ use std::sync::Arc;
 use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::plugin::PluginLogger;
 use channelflow_plugin_api::storage::PluginStorage;
+use channelflow_plugin_api::tasks::{TaskGuard, TaskHost, TaskInfo};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -54,10 +55,13 @@ pub struct Horizon {
     progress: Mutex<Progress>,
     /// The running task, so `cancel` can abort a build that is mid-call.
     abort: std::sync::Mutex<Option<tokio::task::AbortHandle>>,
+    /// Where a build reports itself, so the base's status popup shows it from
+    /// any page (and after the page is reloaded).
+    tasks: Arc<dyn TaskHost>,
 }
 
 impl Horizon {
-    pub fn new() -> Self {
+    pub fn new(tasks: Arc<dyn TaskHost>) -> Self {
         Self {
             running: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
@@ -66,6 +70,7 @@ impl Horizon {
                 ..Default::default()
             }),
             abort: std::sync::Mutex::new(None),
+            tasks,
         }
     }
 
@@ -131,7 +136,21 @@ impl Horizon {
             };
         }
 
-        let result = self.build_all(core, storage, config_root, &settings, logger).await;
+        // The whole build is one status-popup task: it outlives the page that
+        // asked for it, so the base shows it until the guard drops.
+        let task = TaskGuard::start(
+            self.tasks.clone(),
+            TaskInfo {
+                key: "build".to_string(),
+                title: "Scheduler build".to_string(),
+                label: Some(format!("triggered by {trigger}")),
+                ..Default::default()
+            },
+        );
+
+        let result = self
+            .build_all(core, storage, config_root, &settings, logger, &task)
+            .await;
 
         let mut progress = self.progress.lock().await;
         progress.finished_at = Some(chrono::Local::now().to_rfc3339());
@@ -158,14 +177,22 @@ impl Horizon {
         config_root: &Path,
         settings: &SchedulerSettings,
         logger: &PluginLogger,
+        task: &TaskGuard,
     ) -> Result<(), String> {
         let channels = core.channels().await.map_err(|error| error.to_string())?;
         let enabled: Vec<_> = channels.into_iter().filter(|channel| channel.enabled).collect();
         let today = chrono::Local::now().date_naive();
+        let days = settings.days_to_build as usize;
+        let total = enabled.len() * days;
         {
             let mut progress = self.progress.lock().await;
             progress.channel_total = enabled.len();
         }
+        task.progress(
+            &format!("{} channel(s) · {days} day(s)", enabled.len()),
+            Some(0),
+            Some(total as u64),
+        );
 
         for (index, channel) in enabled.iter().enumerate() {
             let scopes = read_scopes(storage.as_ref()).await;
@@ -186,6 +213,11 @@ impl Horizon {
                     progress.day_index = day as usize + 1;
                     progress.current_day = Some(date.clone());
                 }
+                task.progress(
+                    &format!("{} · {date}", channel.name),
+                    Some((index * days + day as usize) as u64),
+                    Some(total as u64),
+                );
 
                 let layers = state::read_channel_layers(storage.as_ref(), &channel.id).await;
                 let resolved = layers::resolve(layers, &scopes, &channel.id, &date, weekday, &[]);
@@ -254,7 +286,7 @@ impl Horizon {
 
 impl Default for Horizon {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(channelflow_plugin_api::NoopTaskHost))
     }
 }
 
@@ -346,7 +378,7 @@ mod tests {
             pool: vec![row()],
         });
         let storage: Arc<dyn PluginStorage> = Arc::new(MemStorage::default());
-        let horizon = Horizon::new();
+        let horizon = Horizon::new(Arc::new(channelflow_plugin_api::NoopTaskHost));
         let settings = SchedulerSettings {
             days_to_build: 2,
             enabled: true,

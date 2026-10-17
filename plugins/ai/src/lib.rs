@@ -53,6 +53,9 @@ pub struct AiState {
     pub storage: Arc<dyn PluginStorage>,
     pub http: reqwest::Client,
     pub logger: PluginLogger,
+    /// Where a slow provider call reports itself, so the base's status popup
+    /// shows it from any page.
+    pub tasks: Arc<dyn channelflow_plugin_api::tasks::TaskHost>,
     /// Provider count, kept lock-free so `health()` stays sync.
     providers: AtomicUsize,
 }
@@ -123,6 +126,7 @@ impl Plugin for AiPlugin {
             storage: api.storage,
             http: api.http,
             logger: api.logger.clone(),
+            tasks: api.tasks.clone(),
         }));
         api.logger.info("loaded");
         Ok(())
@@ -223,6 +227,7 @@ mod tests {
             core: std::sync::Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: std::sync::Arc::new(channelflow_plugin_api::database::NoPluginDatabase::default()),
             web: channelflow_plugin_api::PluginWeb::new(),
+            tasks: Arc::new(channelflow_plugin_api::NoopTaskHost),
         };
         plugin.on_load(api).await.expect("load");
         assert_eq!(plugin.health().detail, "disabled with 1 provider(s)");

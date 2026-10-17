@@ -19,6 +19,7 @@ use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::manifest::PluginManifest;
 use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealth, PluginLogger};
 use channelflow_plugin_api::storage::PluginStorage;
+use channelflow_plugin_api::tasks::TaskHost;
 use channelflow_plugin_api::ui::UiContribution;
 use channelflow_plugin_api::{register_preset, unregister_preset};
 use tokio::sync::Mutex;
@@ -81,6 +82,9 @@ pub struct WeatherState {
     pub weather_cache: Mutex<Option<(String, std::time::Instant, serde_json::Value)>>,
     /// Read channels (to find the WeatherStar ones) and write their guide.
     pub core: Arc<dyn CoreData>,
+    /// Where a guide build reports itself, so the base's status popup shows it
+    /// from any page (and brings it back after a reload).
+    pub tasks: Arc<dyn TaskHost>,
 }
 
 impl WeatherPlugin {
@@ -141,6 +145,7 @@ impl Plugin for WeatherPlugin {
             logger: api.logger.clone(),
             weather_cache: Mutex::new(None),
             core: api.core.clone(),
+            tasks: api.tasks.clone(),
         }));
         // The daily guide task: once a day at the configured time, write the
         // day's forecast into the WeatherStar channel's guide.
@@ -264,6 +269,7 @@ mod tests {
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase),
             web: channelflow_plugin_api::PluginWeb::new(),
+            tasks: Arc::new(channelflow_plugin_api::NoopTaskHost),
         };
         plugin.on_load(api).await.expect("load");
         let settings = plugin.state().expect("state").settings.lock().await.clone();

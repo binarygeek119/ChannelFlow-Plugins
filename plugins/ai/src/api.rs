@@ -15,6 +15,7 @@ use serde_json::json;
 
 use crate::openai;
 use crate::{AiConfig, AiError, AiState, AiView, ProviderView};
+use channelflow_plugin_api::tasks::{TaskGuard, TaskInfo};
 
 pub fn router(state: Arc<AiState>) -> Router {
     Router::new()
@@ -148,7 +149,20 @@ async fn test_all(
 ) -> Result<Json<openai::FailoverReport>, HttpError> {
     let config = state.lock().await;
     let providers = config.enabled_in_order();
-    Ok(Json(openai::failover(&state.http, &providers).await))
+    // Report the walk: it calls every enabled provider in turn, so a slow or
+    // unreachable one (the reason to press the button) leaves the page waiting.
+    let task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "test-all".to_string(),
+            title: "AI failover test".to_string(),
+            label: Some(format!("{} provider(s)", providers.len())),
+            ..Default::default()
+        },
+    );
+    let report = openai::failover(&state.http, &providers).await;
+    drop(task);
+    Ok(Json(report))
 }
 
 #[derive(serde::Deserialize)]
@@ -181,6 +195,18 @@ async fn fetch_models(
         }
     };
     let request = state.http.get(format!("{base_url}/models")).header("Accept", "application/json");
+    // Report the run: an unreachable or slow provider used to leave the page
+    // sitting on a spinner with nothing else to show. The guard clears it
+    // however this returns.
+    let _task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "models".to_string(),
+            title: "AI model list".to_string(),
+            label: Some(base_url.clone()),
+            ..Default::default()
+        },
+    );
     let request = if body.ollama || body.api_key.trim().is_empty() {
         request
     } else {

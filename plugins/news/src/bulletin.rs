@@ -16,6 +16,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use chrono::{Local, TimeZone, Timelike};
+use channelflow_plugin_api::tasks::{TaskGuard, TaskInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -269,11 +270,27 @@ pub async fn run(
     // before the AI rewrite changes the copy.
     let ledger_keys: Vec<String> = encoded.iter().map(story_key).collect();
 
+    // From here the run does real work (an AI rewrite and an ffmpeg render), so
+    // report it: the base's status popup shows it from any page, and brings it
+    // back if the page is reloaded. The guard clears it however this returns.
+    let task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "bulletin".to_string(),
+            title: "News bulletin".to_string(),
+            label: Some(format!("{} story(ies)", encoded.len())),
+            ..Default::default()
+        },
+    );
+
     // With the option on, hand the copy to the AI writer so the bulletin reads
     // as one broadcast rather than a stack of articles.
     if settings.ai_rewrite {
+        task.progress("rewriting the copy", None, None);
         encoded = rewrite::rewrite_show(state, &settings, &encoded).await;
     }
+
+    task.progress("rendering the newscast", None, None);
 
     let stamp = now.format("%Y%m%d-%H%M%S").to_string();
     let folder = config_root.join("news");

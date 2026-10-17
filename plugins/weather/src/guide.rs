@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone, Timelike};
+use channelflow_plugin_api::tasks::{TaskGuard, TaskInfo};
 use serde_json::{json, Value};
 
 use crate::forecast;
@@ -57,7 +58,21 @@ pub async fn build(state: &Arc<WeatherState>, force: bool) -> Result<usize, Stri
         return Err("set a location first".to_string());
     }
 
+    // Report the build so the base's status popup shows it from any page — and
+    // brings it back if the page is reloaded while the build runs. The guard
+    // clears it however this returns, including on error.
+    let task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "guide".to_string(),
+            title: "Weather guide build".to_string(),
+            label: Some(settings.default_location.clone()),
+            ..Default::default()
+        },
+    );
+
     let place = forecast::geocode(&state.http, &settings.default_location).await?;
+    task.progress("fetching the forecast", None, None);
     let snapshot = forecast::snapshot(&state.http, &place, settings.source, settings.units).await?;
 
     let channels = state.core.channels().await.map_err(|error| error.to_string())?;
@@ -71,7 +86,12 @@ pub async fn build(state: &Arc<WeatherState>, force: bool) -> Result<usize, Stri
 
     let programs = build_programs(&snapshot, &settings);
     let mut written = 0;
-    for channel in &weather {
+    for (index, channel) in weather.iter().enumerate() {
+        task.progress(
+            &format!("{} · {}/{}", channel.name, index + 1, weather.len()),
+            Some((index + 1) as u64),
+            Some(weather.len() as u64),
+        );
         state
             .core
             .set_channel_guide(&channel.id, programs.clone())
