@@ -392,6 +392,24 @@
             "size": 221453
           }
         }
+      },
+      {
+        "version": "2.0.59",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T02:33:52Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/news-v2.0.59/com.channelflow.news-v2.0.59-linux-x86_64.zip",
+            "checksum": "sha256:6a88a5067765803168a825317f2a07f715acc2843ab6ad33e0139138e2596828",
+            "size": 272324
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/news-v2.0.59/com.channelflow.news-v2.0.59-windows-x86_64.zip",
+            "checksum": "sha256:f24138c00cbe64949311d5995eb9bb87bf41c04ff179ab3f8354c267dd4d5ecf",
+            "size": 221343
+          }
+        }
       }
     ]
   },
@@ -482,6 +500,24 @@
             "size": 221463
           }
         }
+      },
+      {
+        "version": "2.0.12",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T02:33:34Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/weather-v2.0.12/com.channelflow.weather-v2.0.12-linux-x86_64.zip",
+            "checksum": "sha256:975c3b8da3ebbab69ac994916f6b4a7cc7293362414012adb1d73dfbae106824",
+            "size": 264801
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/weather-v2.0.12/com.channelflow.weather-v2.0.12-windows-x86_64.zip",
+            "checksum": "sha256:1d8e86233ad0752d165bfd073625acef47f8dcb14d90d2fef99fcafdea9803df",
+            "size": 221352
+          }
+        }
       }
     ]
   },
@@ -558,6 +594,24 @@
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.11/com.channelflow.scheduler-v2.0.11-windows-x86_64.zip",
             "checksum": "sha256:6351b40306d59173ad505da0a2688ddcfb6bbfc3ae6c72761e804bb659d4aa34",
             "size": 221368
+          }
+        }
+      },
+      {
+        "version": "2.0.12",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T02:33:46Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.12/com.channelflow.scheduler-v2.0.12-linux-x86_64.zip",
+            "checksum": "sha256:3ed0fba1288f18a6178d29b40b54f08420cb5baa1ebb2850ab565f7f5e67a058",
+            "size": 282534
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.12/com.channelflow.scheduler-v2.0.12-windows-x86_64.zip",
+            "checksum": "sha256:2bbc24b57fecfba7635ee565378875e73ed569b046f46bab2c6d75d930a02542",
+            "size": 221367
           }
         }
       }
