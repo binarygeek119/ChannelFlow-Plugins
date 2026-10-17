@@ -542,6 +542,24 @@
             "size": 221488
           }
         }
+      },
+      {
+        "version": "2.0.11",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T02:00:40Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.11/com.channelflow.scheduler-v2.0.11-linux-x86_64.zip",
+            "checksum": "sha256:e260a6e2cdaab22f1bd888c8c8e162c2474f4153750510de0ad05c6659b0ffcf",
+            "size": 282428
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.11/com.channelflow.scheduler-v2.0.11-windows-x86_64.zip",
+            "checksum": "sha256:6351b40306d59173ad505da0a2688ddcfb6bbfc3ae6c72761e804bb659d4aa34",
+            "size": 221368
+          }
+        }
       }
     ]
   }
