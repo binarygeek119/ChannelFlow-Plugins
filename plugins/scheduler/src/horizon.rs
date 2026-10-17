@@ -243,8 +243,8 @@ impl Horizon {
                                 continue;
                             }
                         }
-                        // Always write the guide, regardless of write_playout setting.
-                        // The guide should be populated when building the horizon.
+                        // Always write the guide and lineup, regardless of write_playout setting.
+                        // The guide and lineup should be populated when building the horizon.
                         if let Err(error) =
                             crate::playout::set_guide(core, &outcome.day).await
                         {
@@ -252,6 +252,14 @@ impl Horizon {
                             progress
                                 .errors
                                 .push(format!("{} {date} guide: {error}", channel.id));
+                        }
+                        if let Err(error) =
+                            crate::playout::set_lineup(core, &outcome.day).await
+                        {
+                            let mut progress = self.progress.lock().await;
+                            progress
+                                .errors
+                                .push(format!("{} {date} lineup: {error}", channel.id));
                         }
                         // Only write playout files if write_playout is enabled.
                         if settings.write_playout {

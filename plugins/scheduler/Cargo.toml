@@ -1,6 +1,6 @@
 [package]
 name = "channelflow-plugin-scheduler"
-version = "2.0.15"
+version = "2.0.16"
 edition = "2021"
 license = "MIT"
 description = "Scheduler — turns each channel's layers into a generated broadcast day"

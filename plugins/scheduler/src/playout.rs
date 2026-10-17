@@ -165,6 +165,7 @@ pub async fn write(
     std::fs::write(&path, text).map_err(|error| error.to_string())?;
 
     set_guide(core, day).await?;
+    set_lineup(core, day).await?;
 
     Ok(WriteReport {
         path: path.to_string_lossy().to_string(),
@@ -181,6 +182,47 @@ pub async fn set_guide(
 ) -> Result<(), String> {
     let programs = guide_programs(day);
     core.set_channel_guide(&day.channel_id, programs)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Convert the generated blocks into lineup slots for the Lineups page.
+/// Each block becomes a slot with its items as candidates.
+pub fn blocks_to_lineup_slots(day: &GeneratedDay) -> Vec<Value> {
+    day.blocks
+        .iter()
+        .map(|block| {
+            let candidates: Vec<Value> = block
+                .items
+                .iter()
+                .map(|item| {
+                    json!({
+                        "kind": "item",
+                        "match_key": item.match_key,
+                        "title": item.title,
+                        "weight": 1,
+                    })
+                })
+                .collect();
+            json!({
+                "slot_index": block.slot_index,
+                "span_slots": block.span_slots,
+                "is_rerun": false,
+                "candidates": candidates,
+            })
+        })
+        .collect()
+}
+
+/// Set the channel's lineup from a generated day. This populates the Lineups
+/// page with the Scheduler's output so users can view and edit it.
+pub async fn set_lineup(
+    core: &Arc<dyn CoreData>,
+    day: &GeneratedDay,
+) -> Result<(), String> {
+    let slots = blocks_to_lineup_slots(day);
+    core.set_channel_lineup(&day.channel_id, slots)
         .await
         .map_err(|error| error.to_string())?;
     Ok(())

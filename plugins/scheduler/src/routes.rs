@@ -366,9 +366,12 @@ async fn build_one(
             return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
         }
     }
-    // Always write the guide, regardless of write_playout setting.
-    // The guide should be populated when building a day.
+    // Always write the guide and lineup, regardless of write_playout setting.
+    // The guide and lineup should be populated when building a day.
     if let Err(error) = crate::playout::set_guide(&state.core, &outcome.day).await {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
+    if let Err(error) = crate::playout::set_lineup(&state.core, &outcome.day).await {
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
     }
     // Only write playout files if write_playout is enabled.
@@ -437,8 +440,11 @@ async fn write_playout(
     };
     let settings = state.settings.lock().await.clone();
     let dir = crate::playout::channel_dir(&state.config_root, &settings.playout_dir, &id);
-    // Always set the guide before writing the playout file
+    // Always set the guide and lineup before writing the playout file
     if let Err(error) = crate::playout::set_guide(&state.core, &day).await {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
+    if let Err(error) = crate::playout::set_lineup(&state.core, &day).await {
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
     }
     match crate::playout::write(&state.core, &day, &dir).await {
@@ -508,9 +514,13 @@ pub async fn rebuild_all_playouts(
                 Some(report.days as u64),
                 None,
             );
-            // Always set the guide before writing the playout file
+            // Always set the guide and lineup before writing the playout file
             if let Err(error) = crate::playout::set_guide(core, &day).await {
                 report.errors.push(format!("{} {} guide: {}", channel.id, date, error));
+                continue;
+            }
+            if let Err(error) = crate::playout::set_lineup(core, &day).await {
+                report.errors.push(format!("{} {} lineup: {}", channel.id, date, error));
                 continue;
             }
             match crate::playout::write(core, &day, &dir).await {
