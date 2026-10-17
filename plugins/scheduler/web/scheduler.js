@@ -26,7 +26,10 @@ async function loadScheduler() {
   fillSettings();
   fillChannels();
   renderScopes();
-  loadProgress();
+  // A build outlives the page that started it: re-attach on load, so closing
+  // and reopening the page keeps the progress moving (and Cancel working).
+  const progress = await loadProgress();
+  if ((progress || {}).state === "running") pollProgress();
   if (schedChannelId) await loadLayers();
 }
 
@@ -430,9 +433,12 @@ async function buildHorizon() {
 async function loadProgress() {
   try {
     const data = await request(`${SCHED}/build/status`);
-    renderProgress(data.progress || {});
+    const progress = data.progress || {};
+    renderProgress(progress);
+    return progress;
   } catch (error) {
     /* leave the label alone */
+    return null;
   }
 }
 
@@ -448,16 +454,29 @@ function renderProgress(progress) {
   }
 }
 
+// Keep the "Generated days" heading current while a build runs. Started when a
+// build is launched and re-attached on page load, so closing and reopening the
+// page never loses a build that is still going. No poll limit — a horizon
+// build over many channels can take a long time.
+let schedPolling = false;
+
 async function pollProgress() {
-  for (let i = 0; i < 120; i += 1) {
-    const data = await request(`${SCHED}/build/status`).catch(() => null);
-    if (!data) return;
-    renderProgress(data.progress || {});
-    if ((data.progress || {}).state !== "running") {
-      if (schedChannelId) await loadDays();
-      return;
+  if (schedPolling) return;
+  schedPolling = true;
+  try {
+    for (;;) {
+      const data = await request(`${SCHED}/build/status`).catch(() => null);
+      if (!data) return;
+      const progress = data.progress || {};
+      renderProgress(progress);
+      if (progress.state !== "running") {
+        if (schedChannelId) await loadDays();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } finally {
+    schedPolling = false;
   }
 }
 
