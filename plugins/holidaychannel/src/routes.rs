@@ -13,6 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use channelflow_plugin_api::plugin::PluginLogger;
 use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -20,13 +21,15 @@ use serde_json::{json, Value};
 use crate::calendar;
 
 #[derive(Clone)]
-pub struct RoutesState {}
+pub struct RoutesState {
+    pub logger: PluginLogger,
+}
 
-pub fn router() -> Router {
+pub fn router(logger: PluginLogger) -> Router {
     Router::new()
         .route("/calendar", get(calendar_json))
         .route("/lineup", post(lineup))
-        .with_state(RoutesState {})
+        .with_state(RoutesState { logger })
 }
 
 #[derive(Deserialize)]
@@ -58,12 +61,21 @@ fn holiday_json(holiday: &'static calendar::Holiday, year: i32) -> Value {
 /// The active (and upcoming) holiday plus every holiday's window, for the
 /// current and following year.
 async fn calendar_json(
-    State(_state): State<RoutesState>,
+    State(state): State<RoutesState>,
     Query(query): Query<CalendarQuery>,
 ) -> impl IntoResponse {
     let date = parse_date(query.date.as_deref());
+    state.logger.info(&format!("holidaychannel: calendar requested for date {}", date));
+    
     let active = calendar::active_holiday(date);
     let upcoming = calendar::active_or_upcoming(date, calendar::MAX_DAYS_BEFORE);
+    
+    if let Some(holiday) = active {
+        state.logger.info(&format!("holidaychannel: active holiday for {} is '{}'", date, holiday.name));
+    } else {
+        state.logger.info(&format!("holidaychannel: no active holiday for {}", date));
+    }
+    
     let holidays: Vec<Value> = calendar::HOLIDAYS
         .iter()
         .map(|holiday| {
@@ -100,11 +112,14 @@ struct LineupBody {
 /// Match the supplied catalog rows against the holiday active on `date` and
 /// return the lineup the channel would play, with the logo to show.
 async fn lineup(
-    State(_state): State<RoutesState>,
+    State(state): State<RoutesState>,
     body: Json<LineupBody>,
 ) -> Response {
     let date = parse_date(body.date.as_deref());
+    state.logger.info(&format!("holidaychannel: lineup requested for {} with {} items", date, body.items.len()));
+    
     let Some(holiday) = calendar::active_holiday(date) else {
+        state.logger.info(&format!("holidaychannel: no active holiday for {}, returning off-season lineup", date));
         return Json(json!({
             "date": date.to_string(),
             "holiday": Value::Null,
@@ -115,6 +130,8 @@ async fn lineup(
         }))
         .into_response();
     };
+    
+    state.logger.info(&format!("holidaychannel: active holiday for {} is '{}'", date, holiday.name));
     let observance = calendar::observance_date(holiday, date.year());
     let (start, end) = calendar::window(holiday, observance);
     let matches: Vec<Value> = body
@@ -132,6 +149,9 @@ async fn lineup(
             })
         })
         .collect();
+    
+    state.logger.info(&format!("holidaychannel: matched {} items for holiday '{}'", matches.len(), holiday.name));
+    
     Json(json!({
         "date": date.to_string(),
         "holiday": {

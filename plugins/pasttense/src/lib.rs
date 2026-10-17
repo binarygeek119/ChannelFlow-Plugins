@@ -72,17 +72,23 @@ impl Plugin for PastTensePlugin {
         api.web
             .serve_embedded("pasttense.js", "text/javascript", include_bytes!("../web/pasttense.js"));
         self.logger = Some(api.logger.clone());
-        api.logger.info("loaded");
+        api.logger.info("pasttense: plugin loaded and ready");
         Ok(())
     }
 
     async fn on_enable(&mut self) -> Result<(), PluginError> {
         self.enabled = true;
+        if let Some(logger) = &self.logger {
+            logger.info("pasttense: plugin enabled");
+        }
         Ok(())
     }
 
     async fn on_disable(&mut self) -> Result<(), PluginError> {
         self.enabled = false;
+        if let Some(logger) = &self.logger {
+            logger.info("pasttense: plugin disabled");
+        }
         Ok(())
     }
 
@@ -134,35 +140,77 @@ impl MediaSource for PastTensePlugin {
     }
 
     async fn test_connection(&self, connection: &Connection, _api_key: &str) -> TestResult {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: testing connection to {}", connection.name));
+        }
+        
         let folders: Vec<&str> = if connection.folders.is_empty() {
             vec![connection.url.trim()]
         } else {
             connection.folders.iter().map(|folder| folder.as_str()).collect()
         };
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: checking {} folder(s)", folders.len()));
+        }
+        
         let any_exists = folders.iter().any(|folder| {
-            !folder.is_empty() && std::fs::metadata(folder).map(|meta| meta.is_dir()).unwrap_or(false)
+            let exists = !folder.is_empty() && std::fs::metadata(folder).map(|meta| meta.is_dir()).unwrap_or(false);
+            if let Some(logger) = &self.logger {
+                if exists {
+                    logger.info(&format!("pasttense: folder '{}' is accessible", folder));
+                } else if !folder.is_empty() {
+                    logger.warn(&format!("pasttense: folder '{}' is not accessible", folder));
+                }
+            }
+            exists
         });
+        
         if any_exists {
+            if let Some(logger) = &self.logger {
+                logger.info("pasttense: connection test successful");
+            }
             TestResult::ok("folder(s) are readable")
         } else {
+            if let Some(logger) = &self.logger {
+                logger.warn("pasttense: connection test failed - no folders accessible");
+            }
             TestResult::bad_url("enter readable folders on this machine")
         }
     }
 
     async fn list_libraries(&self, _connection: &Connection, _api_key: &str) -> Vec<Library> {
-        vec![Library {
+        if let Some(logger) = &self.logger {
+            logger.info("pasttense: listing libraries");
+        }
+        
+        let libraries = vec![Library {
             remote_id: "news".to_string(),
             name: "news".to_string(),
             collection_type: None,
-        }]
+        }];
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: found {} library", libraries.len()));
+        }
+        
+        libraries
     }
 
     async fn sync_library(&self, ctx: SyncCtx) -> SyncReport {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: starting library sync for connection '{}'", ctx.connection.name));
+        }
+        
         let mut report = SyncReport::default();
         let Some(catalog) = &ctx.catalog else {
+            if let Some(logger) = &self.logger {
+                logger.error("pasttense: sync failed - no catalog available");
+            }
             report.errors += 1;
             return report;
         };
+        
         let mut folders: Vec<String> = if ctx.connection.folders.is_empty() {
             if ctx.connection.url.trim().is_empty() {
                 Vec::new()
@@ -172,30 +220,67 @@ impl MediaSource for PastTensePlugin {
         } else {
             ctx.connection.folders.clone()
         };
+        
         if folders.is_empty() {
+            if let Some(logger) = &self.logger {
+                logger.error("pasttense: sync failed - no folders configured");
+            }
             report.errors += 1;
             return report;
         }
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: scanning {} folder(s)", folders.len()));
+        }
+        
         let mut items = Vec::new();
         for folder in &mut folders {
             if folder.trim().is_empty() {
                 continue;
             }
-            for event in scanner::scan_folder(folder) {
+            
+            if let Some(logger) = &self.logger {
+                logger.info(&format!("pasttense: scanning folder '{}'", folder));
+            }
+            
+            let events = scanner::scan_folder(folder);
+            
+            if let Some(logger) = &self.logger {
+                logger.info(&format!("pasttense: found {} events in folder '{}'", events.len(), folder));
+            }
+            
+            for event in events {
                 let mut item = event.catalog;
                 if let Some(poster) = event.poster {
                     if let Some(path) = write_poster(&ctx.image_root, &poster, &item.remote_id) {
                         item.poster_path = Some(path);
+                        if let Some(logger) = &self.logger {
+                            logger.info(&format!("pasttense: copied poster for '{}'", item.title));
+                        }
                     }
                 }
                 report.added += 1;
                 items.push(item);
             }
         }
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("pasttense: scan complete - {} items found", report.added));
+        }
+        
         match catalog.replace_library(ctx.connection_id, "news", items).await {
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some(logger) = &self.logger {
+                    logger.info(&format!(
+                        "pasttense: sync complete - added: {}, updated: {}, removed: {}",
+                        report.added, report.updated, report.removed
+                    ));
+                }
+            }
             Err(error) => {
-                tracing::warn!(error = %error, "pasttense: could not report the scan");
+                if let Some(logger) = &self.logger {
+                    logger.error(&format!("pasttense: could not report the scan: {}", error));
+                }
                 report.errors += 1;
             }
         }

@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-scheduler"
-version = "2.0.16"
+version = "2.0.17"
 dependencies = [
  "async-trait",
  "axum",

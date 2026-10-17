@@ -34,6 +34,7 @@ fn view(settings: &EmergencySettings) -> serde_json::Value {
 }
 
 async fn get_settings(State(state): State<Arc<EmergencyState>>) -> Response {
+    state.logger.info("emergency: retrieving settings");
     let settings = state.settings.lock().await.clone();
     Json(view(&settings)).into_response()
 }
@@ -42,22 +43,31 @@ async fn put_settings(
     State(state): State<Arc<EmergencyState>>,
     Json(value): Json<serde_json::Value>,
 ) -> Response {
+    state.logger.info("emergency: updating settings");
     let settings = match EmergencySettings::parse(&value) {
         Ok(settings) => settings,
-        Err(error) => return fail(StatusCode::BAD_REQUEST, error.to_string()),
+        Err(error) => {
+            state.logger.warn(&format!("emergency: failed to parse settings: {}", error));
+            return fail(StatusCode::BAD_REQUEST, error.to_string());
+        }
     };
     let stored = serde_json::to_value(&settings).unwrap_or(value);
     if let Err(error) = state.storage.set(SETTINGS_KEY, &stored).await {
+        state.logger.error(&format!("emergency: failed to save settings: {}", error));
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
     *state.settings.lock().await = settings.clone();
-    state.logger.info("emergency settings updated");
+    state.logger.info(&format!(
+        "emergency: settings updated - alert_display={:?}, location='{}'",
+        settings.alert_display, settings.location
+    ));
     Json(view(&settings)).into_response()
 }
 
 /// Simulate an alert so the settings page can show what an active alert would
 /// do, without needing a live NOAA watch.
 async fn test_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
+    state.logger.info("emergency: testing alert display");
     let settings = state.settings.lock().await.clone();
     let (kind, detail): (&str, String) = match settings.alert_display {
         AlertDisplay::Off => (
@@ -77,6 +87,7 @@ async fn test_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
             "Scrolling alert text overlays the bottom of the current program.".to_string(),
         ),
     };
+    state.logger.info(&format!("emergency: test alert - mode={}, detail={}", kind, detail));
     Json(json!({
         "result": {
             "ok": settings.alert_display != AlertDisplay::Off,
@@ -96,6 +107,7 @@ fn fail(status: StatusCode, message: String) -> Response {
 /// the cut-in schedule. v1 pulled alerts from NOAA; Open-Meteo's alerts feed
 /// covers the US and EU here.
 async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
+    state.logger.info("emergency: fetching current alerts");
     let settings = state.settings.lock().await.clone();
     let mode = match settings.alert_display {
         AlertDisplay::Off => "off",
@@ -108,6 +120,7 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
         0
     };
     if settings.location.trim().is_empty() {
+        state.logger.warn("emergency: cannot fetch alerts - location is not set");
         return Json(json!({
             "ok": false,
             "mode": mode,
@@ -119,9 +132,17 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
         .into_response();
     }
 
-    let place = match geocode(&state.http, &settings.location).await {
-        Ok(place) => place,
+    state.logger.info(&format!("emergency: geocoding location '{}'", settings.location));
+    let place = match geocode(&state.http, &state.logger, &settings.location).await {
+        Ok(place) => {
+            state.logger.info(&format!(
+                "emergency: geocoded to '{}' ({}, {})",
+                place.name, place.latitude, place.longitude
+            ));
+            place
+        }
         Err(error) => {
+            state.logger.error(&format!("emergency: geocoding failed: {}", error));
             return Json(json!({
                 "ok": false,
                 "mode": mode,
@@ -143,9 +164,11 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
          &alerts=true&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto",
         place.latitude, place.longitude
     );
+    state.logger.info(&format!("emergency: fetching weather data from {}", url));
     let response = match state.http.get(&url).send().await {
         Ok(response) if response.status().is_success() => response,
         Ok(response) => {
+            state.logger.error(&format!("emergency: weather service returned status {}", response.status()));
             return Json(json!({
                 "ok": false,
                 "mode": mode,
@@ -156,7 +179,8 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
             }))
             .into_response();
         }
-        Err(_) => {
+        Err(error) => {
+            state.logger.error(&format!("emergency: failed to reach weather service: {}", error));
             return Json(json!({
                 "ok": false,
                 "mode": mode,
@@ -169,6 +193,7 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
         }
     };
     let Ok(body) = response.json::<serde_json::Value>().await else {
+        state.logger.error("emergency: failed to parse weather service response");
         return Json(json!({
             "ok": false,
             "mode": mode,
@@ -202,6 +227,12 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
         .unwrap_or_default();
     let current = body.get("current").cloned();
 
+    state.logger.info(&format!(
+        "emergency: fetched {} alerts for location '{}'",
+        alerts.len(),
+        place.name
+    ));
+
     Json(json!({
         "ok": true,
         "mode": mode,
@@ -217,39 +248,58 @@ async fn current_alerts(State(state): State<Arc<EmergencyState>>) -> Response {
 
 /// Resolve a location query to coordinates via Open-Meteo's geocoder (or
 /// `latitude,longitude` directly).
-async fn geocode(http: &reqwest::Client, query: &str) -> Result<GeoPlace, String> {
+async fn geocode(http: &reqwest::Client, logger: &channelflow_plugin_api::plugin::PluginLogger, query: &str) -> Result<GeoPlace, String> {
     let query = query.trim();
+    logger.info(&format!("emergency: geocoding query '{}'", query));
+    
     if let Some((latitude, longitude)) = parse_coordinates(query) {
+        logger.info(&format!("emergency: parsed coordinates directly: ({}, {})", latitude, longitude));
         return Ok(GeoPlace {
             name: query.to_string(),
             latitude,
             longitude,
         });
     }
+    
     let url = format!(
         "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1",
         query.replace(' ', "+")
     );
+    logger.info(&format!("emergency: calling geocoding API: {}", url));
+    
     let response = http
         .get(&url)
         .send()
         .await
-        .map_err(|_| "could not reach the location geocoder".to_string())?;
+        .map_err(|error| {
+            logger.error(&format!("emergency: failed to reach geocoding service: {}", error));
+            "could not reach the location geocoder".to_string()
+        })?;
+    
     if !response.status().is_success() {
-        return Err(format!("the location geocoder answered {}", response.status()));
+        let status = response.status();
+        logger.error(&format!("emergency: geocoding service returned status {}", status));
+        return Err(format!("the location geocoder answered {}", status));
     }
+    
     let body = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|_| "the location geocoder reply was unreadable".to_string())?;
+        .map_err(|error| {
+            logger.error(&format!("emergency: failed to parse geocoding response: {}", error));
+            "the location geocoder reply was unreadable".to_string()
+        })?;
+    
     let Some(result) = body
         .get("results")
         .and_then(serde_json::Value::as_array)
         .and_then(|results| results.first())
     else {
+        logger.warn(&format!("emergency: geocoding returned no results for '{}'", query));
         return Err(format!("could not find {query:?}"));
     };
-    Ok(GeoPlace {
+    
+    let place = GeoPlace {
         name: result
             .get("name")
             .and_then(serde_json::Value::as_str)
@@ -257,7 +307,14 @@ async fn geocode(http: &reqwest::Client, query: &str) -> Result<GeoPlace, String
             .to_string(),
         latitude: result.get("latitude").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
         longitude: result.get("longitude").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
-    })
+    };
+    
+    logger.info(&format!(
+        "emergency: geocoding resolved '{}' to ({}, {})",
+        place.name, place.latitude, place.longitude
+    ));
+    
+    Ok(place)
 }
 
 struct GeoPlace {

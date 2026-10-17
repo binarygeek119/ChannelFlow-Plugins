@@ -10,6 +10,7 @@ use axum::{
     Json, Router,
 };
 use channelflow_plugin_api::core::CoreData;
+use channelflow_plugin_api::plugin::PluginLogger;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -17,12 +18,13 @@ use crate::presets::PRESETS;
 
 pub struct RoutesState {
     pub core: Arc<dyn CoreData>,
+    pub logger: PluginLogger,
 }
 
-pub fn router(core: Arc<dyn CoreData>) -> Router {
+pub fn router(core: Arc<dyn CoreData>, logger: PluginLogger) -> Router {
     Router::new()
         .route("/presets", get(list_presets))
-        .with_state(Arc::new(RoutesState { core }))
+        .with_state(Arc::new(RoutesState { core, logger }))
 }
 
 #[derive(Deserialize)]
@@ -118,11 +120,18 @@ async fn list_presets(
     State(state): State<Arc<RoutesState>>,
     Query(query): Query<PresetsQuery>,
 ) -> impl IntoResponse {
+    state.logger.info("presets: listing all presets");
+    
     let mode = query.mode.as_deref().unwrap_or("retro");
     let channels = match state.core.channels().await {
         Ok(channels) => channels,
-        Err(_) => Vec::new(),
+        Err(error) => {
+            state.logger.warn(&format!("presets: failed to fetch channels: {}", error));
+            Vec::new()
+        }
     };
+    state.logger.info(&format!("presets: found {} existing channels", channels.len()));
+    
     let mut rows: Vec<PresetRow<'_>> = PRESETS
         .iter()
         .map(|preset| PresetRow {
@@ -135,13 +144,20 @@ async fn list_presets(
             logo: preset.logo,
         })
         .collect();
+    
+    state.logger.info(&format!("presets: loaded {} built-in presets", rows.len()));
+    
     // The ready-made channels other plugins contribute (The Holiday Channel
     // registers itself here on load). They are only listed while their owning
     // plugin is actually installed.
     let installed = match state.core.installed_plugins().await {
         Ok(installed) => installed.into_iter().collect::<std::collections::HashSet<_>>(),
-        Err(_) => std::collections::HashSet::new(),
+        Err(error) => {
+            state.logger.warn(&format!("presets: failed to fetch installed plugins: {}", error));
+            std::collections::HashSet::new()
+        }
     };
+    
     let contributed_values = channelflow_plugin_api::contributed_presets();
     let contributed: Vec<PresetRow<'_>> = contributed_values
         .iter()
@@ -160,6 +176,9 @@ async fn list_presets(
             },
         })
         .collect();
+    
+    state.logger.info(&format!("presets: found {} contributed presets from installed plugins", contributed.len()));
+    
     // The two WeatherStars are one channel, not two: when both are contributed
     // (the Weather plugin is installed) exactly one becomes a preset row, the
     // one the page's switch has selected.
@@ -175,6 +194,7 @@ async fn list_presets(
     } else {
         ""
     };
+    
     let weatherstar_options: Vec<serde_json::Value> = if both_weatherstars {
         contributed
             .iter()
@@ -191,6 +211,7 @@ async fn list_presets(
     } else {
         Vec::new()
     };
+    
     for row in contributed {
         let swap = both_weatherstars
             && (row.id == WEATHERSTAR_4000 || row.id == WEATHERSTAR_3000);
@@ -202,6 +223,7 @@ async fn list_presets(
         }
         rows.push(row);
     }
+    
     let presets: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| preset_row_json(PresetRow {
@@ -214,6 +236,15 @@ async fn list_presets(
             logo: row.logo,
         }, &channels, mode))
         .collect();
+    
+    let exists_count = presets.iter().filter(|p| p["exists"].as_bool().unwrap_or(false)).count();
+    state.logger.info(&format!(
+        "presets: returning {} presets ({} already exist), mode={}",
+        presets.len(),
+        exists_count,
+        mode
+    ));
+    
     Json(json!({
         "mode": mode,
         "presets": presets,

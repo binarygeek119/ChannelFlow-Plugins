@@ -30,6 +30,7 @@ fn view(settings: &CommercialBrainzSettings) -> serde_json::Value {
 }
 
 async fn get_settings(State(state): State<Arc<CommercialBrainzState>>) -> Response {
+    state.logger.info("commercialbrainz: retrieving settings");
     let settings = state.settings.lock().await.clone();
     Json(view(&settings)).into_response()
 }
@@ -38,24 +39,35 @@ async fn put_settings(
     State(state): State<Arc<CommercialBrainzState>>,
     Json(value): Json<serde_json::Value>,
 ) -> Response {
+    state.logger.info("commercialbrainz: updating settings");
     let settings = match CommercialBrainzSettings::parse(&value) {
         Ok(settings) => settings,
-        Err(error) => return fail(StatusCode::BAD_REQUEST, error.to_string()),
+        Err(error) => {
+            state.logger.warn(&format!("commercialbrainz: failed to parse settings: {}", error));
+            return fail(StatusCode::BAD_REQUEST, error.to_string());
+        }
     };
     let stored = serde_json::to_value(&settings).unwrap_or(value);
     if let Err(error) = state.storage.set(SETTINGS_KEY, &stored).await {
+        state.logger.error(&format!("commercialbrainz: failed to save settings: {}", error));
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
     *state.settings.lock().await = settings.clone();
-    state.logger.info("commercialbrainz settings updated");
+    state.logger.info(&format!(
+        "commercialbrainz: settings updated - enabled={}, base_url={}, max_sync_results={}",
+        settings.enabled, settings.base_url, settings.max_sync_results
+    ));
     Json(view(&settings)).into_response()
 }
 
 /// Ping the configured server and report reachability and token acceptance,
 /// so the settings page can explain what is wrong.
 async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Response {
+    state.logger.info("commercialbrainz: testing connection");
     let settings = state.settings.lock().await.clone();
     let url = format!("{}/api/v1/browse/videos?limit=1", settings.base_url);
+    state.logger.info(&format!("commercialbrainz: testing URL: {}", url));
+    
     let request = state
         .http
         .get(&url)
@@ -66,10 +78,14 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
         request.header("Authorization", format!("Bearer {}", settings.api_token.trim()))
     };
     let result = match request.send().await {
-        Err(_) => json!({ "ok": false, "code": "unreachable", "detail": "Could not reach the server" }),
+        Err(error) => {
+            state.logger.warn(&format!("commercialbrainz: connection test failed - unreachable: {}", error));
+            json!({ "ok": false, "code": "unreachable", "detail": "Could not reach the server" })
+        }
         Ok(response) => {
             let status = response.status().as_u16();
             if (200..=299).contains(&status) {
+                state.logger.info("commercialbrainz: connection test succeeded");
                 json!({ "ok": true, "code": "ok", "detail": "Reachable, token accepted" })
             } else if status == 401 || status == 403 {
                 // Read the server's own message — a rejection can be about the
@@ -81,6 +97,7 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
                     .ok()
                     .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
                     .and_then(|value| value.get("detail").and_then(|detail| detail.as_str()).map(str::to_string));
+                state.logger.warn(&format!("commercialbrainz: connection test failed - auth failed (status {})", status));
                 json!({
                     "ok": false,
                     "code": "auth_failed",
@@ -88,6 +105,7 @@ async fn test_settings(State(state): State<Arc<CommercialBrainzState>>) -> Respo
                         .unwrap_or_else(|| "Server reachable, API token rejected".to_string()),
                 })
             } else {
+                state.logger.warn(&format!("commercialbrainz: connection test failed - unexpected status {}", status));
                 json!({ "ok": false, "code": "bad_url", "detail": format!("Unexpected response ({status})") })
             }
         }
@@ -103,10 +121,17 @@ fn fail(status: StatusCode, message: String) -> Response {
 /// browse endpoint up to the max results and apply the saved filters. The
 /// page shows how many would come in, why others were filtered, and a sample.
 async fn pool_preview(State(state): State<Arc<CommercialBrainzState>>) -> Response {
+    state.logger.info("commercialbrainz: generating pool preview");
     let settings = state.settings.lock().await.clone();
     if !settings.enabled {
+        state.logger.info("commercialbrainz: pool preview skipped - plugin is disabled");
         return Json(json!({ "ok": false, "error": "CommercialBrainz is disabled." })).into_response();
     }
+    state.logger.info(&format!(
+        "commercialbrainz: fetching pool from {} with max_results={}",
+        settings.base_url, settings.max_sync_results
+    ));
+    
     let mut offset: i64 = 0;
     let page_size: i64 = 50;
     let max_results = settings.max_sync_results.max(1) as i64;
@@ -147,12 +172,18 @@ async fn pool_preview(State(state): State<Arc<CommercialBrainzState>>) -> Respon
                 }
             }
             Err(error) => {
+                state.logger.error(&format!("commercialbrainz: pool preview failed - {}", error));
                 return Json(json!({ "ok": false, "error": error })).into_response();
             }
         }
     }
 
     let sample = accepted.iter().take(24).cloned().collect::<Vec<_>>();
+    state.logger.info(&format!(
+        "commercialbrainz: pool preview complete - {} total on server, {} accepted, {} filtered",
+        total_on_server, accepted.len(), filtered
+    ));
+    
     Json(json!({
         "ok": true,
         "enabled": settings.enabled,

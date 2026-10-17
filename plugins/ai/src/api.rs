@@ -80,16 +80,24 @@ fn storage_error(error: channelflow_plugin_api::plugin::PluginError) -> HttpErro
 }
 
 async fn get_providers(State(state): State<StateRef>) -> Result<Json<AiView>, HttpError> {
-    Ok(Json(state.lock().await.view()))
+    state.logger.info("ai: listing all providers");
+    let view = state.lock().await.view();
+    state.logger.info(&format!("ai: returning {} providers", view.providers.len()));
+    Ok(Json(view))
 }
 
 async fn create_provider(
     State(state): State<StateRef>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<(StatusCode, Json<ProviderView>), HttpError> {
+    state.logger.info("ai: creating new provider");
     let mut config = state.lock().await;
     let provider = config.create(&body)?;
-    state.store(&config).await.map_err(storage_error)?;
+    state.logger.info(&format!("ai: created provider '{}' with id {}", provider.name, provider.id));
+    state.store(&config).await.map_err(|e| {
+        state.logger.error(&format!("ai: failed to save provider: {}", e));
+        storage_error(e)
+    })?;
     Ok((StatusCode::CREATED, Json(provider.view())))
 }
 
@@ -98,12 +106,18 @@ async fn update_provider(
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ProviderView>, HttpError> {
+    state.logger.info(&format!("ai: updating provider {}", id));
     let mut config = state.lock().await;
     if config.find(&id).is_none() {
+        state.logger.warn(&format!("ai: provider {} not found for update", id));
         return Err(HttpError::missing(&id));
     }
     let provider = config.update(&id, &body)?;
-    state.store(&config).await.map_err(storage_error)?;
+    state.logger.info(&format!("ai: updated provider '{}' ({})", provider.name, id));
+    state.store(&config).await.map_err(|e| {
+        state.logger.error(&format!("ai: failed to save updated provider: {}", e));
+        storage_error(e)
+    })?;
     Ok(Json(provider.view()))
 }
 
@@ -111,12 +125,18 @@ async fn delete_provider(
     State(state): State<StateRef>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, HttpError> {
+    state.logger.info(&format!("ai: deleting provider {}", id));
     let mut config = state.lock().await;
     if config.find(&id).is_none() {
+        state.logger.warn(&format!("ai: provider {} not found for deletion", id));
         return Err(HttpError::missing(&id));
     }
     config.delete(&id)?;
-    state.store(&config).await.map_err(storage_error)?;
+    state.store(&config).await.map_err(|e| {
+        state.logger.error(&format!("ai: failed to save after deleting provider: {}", e));
+        storage_error(e)
+    })?;
+    state.logger.info(&format!("ai: successfully deleted provider {}", id));
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -125,8 +145,17 @@ async fn test_draft(
     State(state): State<StateRef>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<openai::Report>, HttpError> {
+    state.logger.info("ai: testing draft provider");
     let provider = AiConfig::draft(&body)?;
-    Ok(Json(openai::run(&state.http, &provider).await))
+    state.logger.info(&format!("ai: testing provider at {}", provider.base_url));
+    let report = openai::run(&state.http, &provider).await;
+    if report.ok {
+        state.logger.info("ai: draft provider test succeeded");
+    } else {
+        let detail = report.probes.iter().find(|p| !p.ok).map(|p| p.detail.clone()).unwrap_or_else(|| "unknown error".to_string());
+        state.logger.warn(&format!("ai: draft provider test failed: {}", detail));
+    }
+    Ok(Json(report))
 }
 
 async fn test_provider(
@@ -134,12 +163,22 @@ async fn test_provider(
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<openai::Report>, HttpError> {
+    state.logger.info(&format!("ai: testing provider {}", id));
     let config = state.lock().await;
     if config.find(&id).is_none() {
+        state.logger.warn(&format!("ai: provider {} not found for test", id));
         return Err(HttpError::missing(&id));
     }
     let provider = config.resolve(&id, &body)?;
-    Ok(Json(openai::run(&state.http, &provider).await))
+    state.logger.info(&format!("ai: testing provider '{}' at {}", provider.name, provider.base_url));
+    let report = openai::run(&state.http, &provider).await;
+    if report.ok {
+        state.logger.info(&format!("ai: provider {} test succeeded", id));
+    } else {
+        let detail = report.probes.iter().find(|p| !p.ok).map(|p| p.detail.clone()).unwrap_or_else(|| "unknown error".to_string());
+        state.logger.warn(&format!("ai: provider {} test failed: {}", id, detail));
+    }
+    Ok(Json(report))
 }
 
 /// Walk the saved providers in priority order; the report shows which one the
@@ -147,8 +186,10 @@ async fn test_provider(
 async fn test_all(
     State(state): State<StateRef>,
 ) -> Result<Json<openai::FailoverReport>, HttpError> {
+    state.logger.info("ai: testing all providers");
     let config = state.lock().await;
     let providers = config.enabled_in_order();
+    state.logger.info(&format!("ai: testing {} enabled providers", providers.len()));
     // Report the walk: it calls every enabled provider in turn, so a slow or
     // unreachable one (the reason to press the button) leaves the page waiting.
     let task = TaskGuard::start(
@@ -162,6 +203,21 @@ async fn test_all(
     );
     let report = openai::failover(&state.http, &providers).await;
     drop(task);
+    
+    if report.attempts.is_empty() {
+        state.logger.warn("ai: no providers to test");
+    } else {
+        let successful = report.attempts.iter().filter(|p| p.ok).count();
+        state.logger.info(&format!("ai: failover test complete - {}/{} providers successful", successful, report.attempts.len()));
+        if report.ok {
+            if let Some(chosen) = &report.chosen {
+                state.logger.info(&format!("ai: failover chose provider '{}'", chosen));
+            }
+        } else {
+            state.logger.warn("ai: failover test failed - no provider succeeded");
+        }
+    }
+    
     Ok(Json(report))
 }
 
@@ -194,6 +250,7 @@ async fn fetch_models(
             value
         }
     };
+    state.logger.info(&format!("ai: fetching models from {}", base_url));
     let request = state.http.get(format!("{base_url}/models")).header("Accept", "application/json");
     // Report the run: an unreachable or slow provider used to leave the page
     // sitting on a spinner with nothing else to show. The guard clears it
@@ -215,14 +272,21 @@ async fn fetch_models(
     let response = request
         .send()
         .await
-        .map_err(|_| HttpError::bad("could not reach the provider"))?;
+        .map_err(|e| {
+            state.logger.error(&format!("ai: failed to reach provider at {}: {}", base_url, e));
+            HttpError::bad("could not reach the provider")
+        })?;
     if !response.status().is_success() {
+        state.logger.warn(&format!("ai: provider at {} returned status {}", base_url, response.status()));
         return Err(HttpError::bad(format!("the provider answered {}", response.status())));
     }
     let value = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|_| HttpError::bad("the provider reply was unreadable"))?;
+        .map_err(|e| {
+            state.logger.error(&format!("ai: failed to parse response from {}: {}", base_url, e));
+            HttpError::bad("the provider reply was unreadable")
+        })?;
     let mut models: Vec<String> = Vec::new();
     if let Some(ids) = value
         .get("data")
@@ -245,8 +309,10 @@ async fn fetch_models(
     models.sort();
     models.dedup();
     if models.is_empty() {
+        state.logger.warn(&format!("ai: provider at {} returned no models", base_url));
         return Err(HttpError::bad("the provider returned no models"));
     }
+    state.logger.info(&format!("ai: fetched {} models from {}", models.len(), base_url));
     Ok(Json(json!({
         "ok": true,
         "base_url": base_url,

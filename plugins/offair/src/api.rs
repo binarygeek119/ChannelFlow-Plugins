@@ -104,6 +104,7 @@ fn valid_variant(variant: &str) -> bool {
 }
 
 async fn get_settings(State(state): State<Arc<OffAirState>>) -> Response {
+    state.logger.info("offair: retrieving settings");
     let settings = state.settings.lock().await.clone();
     Json(view(&state, &settings)).into_response()
 }
@@ -112,16 +113,24 @@ async fn put_settings(
     State(state): State<Arc<OffAirState>>,
     Json(value): Json<serde_json::Value>,
 ) -> Response {
+    state.logger.info("offair: updating settings");
     let settings = match OffAirSettings::parse(&value) {
         Ok(settings) => settings,
-        Err(error) => return fail(StatusCode::BAD_REQUEST, error.to_string()),
+        Err(error) => {
+            state.logger.warn(&format!("offair: failed to parse settings: {}", error));
+            return fail(StatusCode::BAD_REQUEST, error.to_string());
+        }
     };
     let stored = serde_json::to_value(&settings).unwrap_or(value);
     if let Err(error) = state.storage.set(SETTINGS_KEY, &stored).await {
+        state.logger.error(&format!("offair: failed to save settings: {}", error));
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
     *state.settings.lock().await = settings.clone();
-    state.logger.info("off-air settings updated");
+    state.logger.info(&format!(
+        "offair: settings updated - display_mode={:?}, audio_mode={:?}",
+        settings.display_mode, settings.audio_mode
+    ));
     Json(view(&state, &settings)).into_response()
 }
 
@@ -132,47 +141,63 @@ async fn upload_slate(
     AxumPath(variant): AxumPath<String>,
     bytes: Bytes,
 ) -> Response {
+    state.logger.info(&format!("offair: uploading custom slate for variant '{}'", variant));
+    
     if !valid_variant(&variant) {
+        state.logger.warn(&format!("offair: invalid slate variant '{}'", variant));
         return fail(
             StatusCode::BAD_REQUEST,
             "variant must be usa or international".to_string(),
         );
     }
     if bytes.is_empty() {
+        state.logger.warn("offair: slate upload failed - empty file");
         return fail(StatusCode::BAD_REQUEST, "an image file is required".to_string());
     }
     if bytes.len() > 2 * 1024 * 1024 {
+        state.logger.warn(&format!("offair: slate upload failed - file too large ({} bytes)", bytes.len()));
         return fail(StatusCode::BAD_REQUEST, "the slate image is larger than 2 MB".to_string());
     }
+    
     let ext = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "png"
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         "jpg"
     } else {
+        state.logger.warn("offair: slate upload failed - invalid image format");
         return fail(
             StatusCode::BAD_REQUEST,
             "the slate must be a PNG or JPEG image".to_string(),
         );
     };
+    
     let dir = state.dir.join("slates");
     if let Err(error) = std::fs::create_dir_all(&dir) {
+        state.logger.error(&format!("offair: failed to create slates directory: {}", error));
         return fail(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("could not create the slates store: {error}"),
         );
     }
+    
     // Remove any older-format custom slate for this variant, then write.
     for old in ["png", "jpg"] {
         if old != ext {
             let _ = std::fs::remove_file(dir.join(format!("{variant}.{old}")));
         }
     }
-    if let Err(error) = std::fs::write(dir.join(format!("{variant}.{ext}")), &bytes) {
+    
+    let file_path = dir.join(format!("{variant}.{ext}"));
+    if let Err(error) = std::fs::write(&file_path, &bytes) {
+        state.logger.error(&format!("offair: failed to write slate file: {}", error));
         return fail(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("could not store the slate: {error}"),
         );
     }
+    
+    state.logger.info(&format!("offair: custom slate uploaded for variant '{}' ({} bytes, {} format)", variant, bytes.len(), ext));
+    
     Json(json!({
         "variant": variant,
         "custom_slates": custom_slate_status(&state),
@@ -185,15 +210,22 @@ async fn delete_slate(
     State(state): State<Arc<OffAirState>>,
     AxumPath(variant): AxumPath<String>,
 ) -> Response {
+    state.logger.info(&format!("offair: deleting custom slate for variant '{}'", variant));
+    
     if !valid_variant(&variant) {
+        state.logger.warn(&format!("offair: invalid slate variant '{}'", variant));
         return fail(
             StatusCode::BAD_REQUEST,
             "variant must be usa or international".to_string(),
         );
     }
+    
     for old in ["png", "jpg"] {
         let _ = std::fs::remove_file(state.dir.join("slates").join(format!("{variant}.{old}")));
     }
+    
+    state.logger.info(&format!("offair: custom slate deleted for variant '{}'", variant));
+    
     Json(json!({ "custom_slates": custom_slate_status(&state) })).into_response()
 }
 
@@ -212,12 +244,16 @@ async fn slate_image(
     AxumPath(variant): AxumPath<String>,
     Query(query): Query<SlateImageQuery>,
 ) -> Response {
+    state.logger.info(&format!("offair: serving slate image for variant '{}'", variant));
+    
     let Some((v, wide, square)) = STOCK_SLATES.iter().find(|(v, _, _)| *v == variant) else {
+        state.logger.warn(&format!("offair: invalid slate variant '{}'", variant));
         return fail(
             StatusCode::BAD_REQUEST,
             "variant must be usa or international".to_string(),
         );
     };
+    
     if let Some(custom) = custom_slate_file(&state.dir, v) {
         let mime = if custom.extension().and_then(|e| e.to_str()) == Some("png") {
             "image/png"
@@ -226,6 +262,7 @@ async fn slate_image(
         };
         match std::fs::read(&custom) {
             Ok(bytes) => {
+                state.logger.info(&format!("offair: serving custom slate for variant '{}' ({} format)", variant, mime));
                 return (
                     [(header::CONTENT_TYPE, mime)],
                     axum::body::Bytes::from(bytes),
@@ -233,11 +270,13 @@ async fn slate_image(
                     .into_response();
             }
             Err(error) => {
-                state.logger.warn(&format!("could not read the custom slate: {error}"));
+                state.logger.warn(&format!("offair: could not read the custom slate for variant '{}': {}", variant, error));
             }
         }
     }
+    
     let file = if query.aspect == Some(1) { square } else { wide };
+    state.logger.info(&format!("offair: serving stock slate '{}' for variant '{}'", file, variant));
     Redirect::to(&format!("/plugin/com.channelflow.offair/web/media/{file}")).into_response()
 }
 
@@ -250,12 +289,23 @@ fn fail(status: StatusCode, message: String) -> Response {
 /// The pack list the Off Air page shows, with the active pack and a sample
 /// track the off-air background music would use.
 async fn music_packs_list(State(state): State<Arc<OffAirState>>) -> Response {
+    state.logger.info("offair: listing music packs");
     let date = chrono::Local::now().date_naive();
+    let packs = crate::music_pack::list_status(&state.config_root, date);
+    let active = crate::music_pack::active_pack_id(&state.config_root, date);
+    let active_track = crate::music_pack::pick_track(&state.config_root, date)
+        .map(|path| path.to_string_lossy().to_string());
+    
+    state.logger.info(&format!(
+        "offair: found {} packs, active pack: {:?}",
+        packs.len(),
+        active
+    ));
+    
     Json(json!({
-        "packs": crate::music_pack::list_status(&state.config_root, date),
-        "active": crate::music_pack::active_pack_id(&state.config_root, date),
-        "active_track": crate::music_pack::pick_track(&state.config_root, date)
-            .map(|path| path.to_string_lossy().to_string()),
+        "packs": packs,
+        "active": active,
+        "active_track": active_track,
     }))
     .into_response()
 }
@@ -265,15 +315,25 @@ async fn music_pack_download(
     State(state): State<Arc<OffAirState>>,
     AxumPath(id): AxumPath<String>,
 ) -> Response {
+    state.logger.info(&format!("offair: downloading music pack '{}'", id));
+    
     let pack = crate::music_pack::catalog()
         .into_iter()
         .find(|pack| pack.id == id);
     let Some(pack) = pack else {
+        state.logger.warn(&format!("offair: unknown music pack '{}'", id));
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "unknown pack" }))).into_response();
     };
+    
     match crate::music_pack::download(&state.config_root, &state.http, &pack).await {
-        Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(error) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": error }))).into_response(),
+        Ok(()) => {
+            state.logger.info(&format!("offair: music pack '{}' downloaded successfully", id));
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(error) => {
+            state.logger.error(&format!("offair: failed to download music pack '{}': {}", id, error));
+            (StatusCode::BAD_GATEWAY, Json(json!({ "error": error }))).into_response()
+        }
     }
 }
 
@@ -282,6 +342,8 @@ async fn music_pack_delete(
     State(state): State<Arc<OffAirState>>,
     AxumPath(id): AxumPath<String>,
 ) -> Response {
+    state.logger.info(&format!("offair: deleting music pack '{}'", id));
     crate::music_pack::delete(&state.config_root, &id);
+    state.logger.info(&format!("offair: music pack '{}' deleted", id));
     Json(json!({ "ok": true })).into_response()
 }

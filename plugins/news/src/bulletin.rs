@@ -213,6 +213,8 @@ pub async fn run(
     config_root: &Path,
     force: bool,
 ) -> BulletinOutcome {
+    state.logger.info(&format!("news: bulletin run started (force={})", force));
+    
     let settings = state.settings.lock().await.clone();
     let now = Local::now();
     let today = local_date(now);
@@ -220,10 +222,14 @@ pub async fn run(
     let ran_at = now.to_rfc3339();
 
     if !settings.bulletin_enabled && !force {
+        state.logger.info("news: bulletin disabled, skipping");
         return finish_skip(state, ledger, ran_at, "Bulletin videos are turned off.".to_string(), 0, false).await;
     }
 
+    state.logger.info("news: fetching stories for bulletin");
     let stories = api::fetch_enabled_stories(state, &settings).await;
+    state.logger.info(&format!("news: fetched {} total stories", stories.len()));
+    
     let used: std::collections::HashSet<&str> =
         ledger.used.iter().map(String::as_str).collect();
     let new: Vec<Value> = stories
@@ -235,15 +241,19 @@ pub async fn run(
         .cloned()
         .collect();
 
+    state.logger.info(&format!("news: found {} new stories (out of {} used)", new.len(), ledger.used.len()));
+
     let first_today = ledger.last_built_date.as_deref() != Some(today.as_str());
     let required = force || first_today;
     let min = settings.minimum_new_stories.max(1) as usize;
 
     if !required && new.is_empty() {
+        state.logger.info("news: no new stories, skipping bulletin");
         return finish_skip(state, ledger, ran_at, "No new stories.".to_string(), 0, false).await;
     }
     if !required && new.len() < min {
         let plural = if new.len() == 1 { "story" } else { "stories" };
+        state.logger.info(&format!("news: only {} new {} (minimum {}), skipping bulletin", new.len(), plural, min));
         return finish_skip(
             state,
             ledger,
@@ -258,11 +268,14 @@ pub async fn run(
     // Encode the newest stories, capped at the article count. The day's first
     // build re-encodes even with no new stories (so a video exists).
     let mut encoded: Vec<Value> = if new.is_empty() {
+        state.logger.info(&format!("news: no new stories, using {} most recent stories", settings.article_count));
         stories.iter().take(settings.article_count.max(1) as usize).cloned().collect()
     } else {
+        state.logger.info(&format!("news: encoding {} new stories", new.len().min(settings.article_count.max(1) as usize)));
         new.iter().take(settings.article_count.max(1) as usize).cloned().collect()
     };
     if encoded.is_empty() {
+        state.logger.warn("news: no stories to encode, skipping bulletin");
         return finish_skip(state, ledger, ran_at, "No stories to encode.".to_string(), 0, false).await;
     }
 
@@ -283,11 +296,15 @@ pub async fn run(
         },
     );
 
+    state.logger.info(&format!("news: starting bulletin render with {} stories", encoded.len()));
+
     // With the option on, hand the copy to the AI writer so the bulletin reads
     // as one broadcast rather than a stack of articles.
     if settings.ai_rewrite {
+        state.logger.info("news: AI rewrite enabled, rewriting stories");
         task.progress("rewriting the copy", None, None);
         encoded = rewrite::rewrite_show(state, &settings, &encoded).await;
+        state.logger.info("news: AI rewrite complete");
     }
 
     task.progress("rendering the newscast", None, None);
@@ -298,6 +315,7 @@ pub async fn run(
     let output = folder.join(format!("news-{stamp}.mp4"));
     let staging = output.with_extension("mp4.partial");
 
+    state.logger.info(&format!("news: rendering bulletin to {}", output.display()));
     let ai_provider = state.core.tts_provider().await.ok().flatten();
     let (hour, minute) = (now.hour(), now.minute());
     match render_bulletin(
@@ -312,11 +330,13 @@ pub async fn run(
     )
     .await
     {
-        Ok(()) => {}
+        Ok(()) => {
+            state.logger.info("news: bulletin render successful");
+        }
         Err(error) => {
             state
                 .logger
-                .warn(&format!("news bulletin render failed: {error}"));
+                .error(&format!("news: bulletin render failed: {}", error));
             let _ = std::fs::remove_file(&staging);
             let _ = std::fs::remove_dir_all(&work_dir);
             return finish_skip(
@@ -333,6 +353,7 @@ pub async fn run(
     let _ = std::fs::remove_dir_all(&work_dir);
 
     if let Err(error) = std::fs::rename(&staging, &output) {
+        state.logger.error(&format!("news: failed to publish bulletin: {}", error));
         let _ = std::fs::remove_file(&staging);
         state.logger.warn(&format!("could not publish the news video: {error}"));
         return finish_skip(
@@ -369,7 +390,7 @@ pub async fn run(
     save_ledger(state, &ledger).await;
 
     state.logger.info(&format!(
-        "news bulletin created {} with {} of {} new stories",
+        "news: bulletin created {} with {} of {} new stories",
         output.display(),
         encoded.len(),
         new.len()

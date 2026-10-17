@@ -126,7 +126,7 @@ impl Plugin for HolidayChannelPlugin {
     }
 
     fn routes(&self) -> Option<Router> {
-        Some(routes::router())
+        self.logger.as_ref().map(|logger| routes::router(logger.clone()))
     }
 
     fn ui_contributions(&self) -> Vec<UiContribution> {

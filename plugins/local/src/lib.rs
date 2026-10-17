@@ -152,12 +152,32 @@ impl MediaSource for LocalPlugin {
         } else {
             connection.folders.iter().map(|folder| folder.as_str()).collect()
         };
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("local: testing connection with {} folder(s)", folders.len()));
+        }
+        
         let any_exists = folders.iter().any(|folder| {
-            !folder.is_empty() && std::fs::metadata(folder).map(|meta| meta.is_dir()).unwrap_or(false)
+            let exists = !folder.is_empty() && std::fs::metadata(folder).map(|meta| meta.is_dir()).unwrap_or(false);
+            if let Some(logger) = &self.logger {
+                if exists {
+                    logger.info(&format!("local: folder '{}' is accessible", folder));
+                } else if !folder.is_empty() {
+                    logger.warn(&format!("local: folder '{}' is not accessible", folder));
+                }
+            }
+            exists
         });
+        
         if any_exists {
+            if let Some(logger) = &self.logger {
+                logger.info("local: connection test successful - at least one folder is readable");
+            }
             TestResult::ok("folder(s) are readable")
         } else {
+            if let Some(logger) = &self.logger {
+                logger.warn("local: connection test failed - no folders are readable");
+            }
             TestResult::bad_url("enter readable folders on this machine")
         }
     }
@@ -171,11 +191,19 @@ impl MediaSource for LocalPlugin {
     }
 
     async fn sync_library(&self, ctx: SyncCtx) -> SyncReport {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("local: starting library sync for connection '{}'", ctx.connection.name));
+        }
+        
         let mut report = SyncReport::default();
         let Some(catalog) = &ctx.catalog else {
+            if let Some(logger) = &self.logger {
+                logger.error("local: sync failed - no catalog available");
+            }
             report.errors += 1;
             return report;
         };
+        
         let mut folders: Vec<String> = if ctx.connection.folders.is_empty() {
             if ctx.connection.url.trim().is_empty() {
                 Vec::new()
@@ -185,16 +213,26 @@ impl MediaSource for LocalPlugin {
         } else {
             ctx.connection.folders.clone()
         };
+        
         if folders.is_empty() {
+            if let Some(logger) = &self.logger {
+                logger.error("local: sync failed - no folders configured");
+            }
             report.errors += 1;
             return report;
         }
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("local: scanning {} folder(s)", folders.len()));
+        }
+        
         let kinds = ctx.connection.folder_kinds.clone();
         let mut items = Vec::new();
         for (index, folder) in folders.iter_mut().enumerate() {
             if folder.trim().is_empty() {
                 continue;
             }
+            
             // Each folder has its own "what kind of media"; fall back to the
             // connection-wide media_kind (or movies) when unset.
             let kind = kinds
@@ -202,22 +240,49 @@ impl MediaSource for LocalPlugin {
                 .filter(|kind| !kind.trim().is_empty())
                 .cloned()
                 .unwrap_or_else(|| ctx.connection.media_kind.clone().unwrap_or_else(|| "movies".to_string()));
+            
+            if let Some(logger) = &self.logger {
+                logger.info(&format!("local: scanning folder '{}' as '{}'", folder, kind));
+            }
+            
             let scanned = scanner::scan_folder(folder, &kind);
+            
+            if let Some(logger) = &self.logger {
+                logger.info(&format!("local: found {} items in folder '{}'", scanned.len(), folder));
+            }
+            
             for scanned_item in scanned {
                 let mut item = scanned_item.catalog;
                 if let Some(poster) = scanned_item.poster {
                     if let Some(path) = write_poster(&ctx.image_root, &poster, &item.remote_id) {
                         item.poster_path = Some(path);
+                        if let Some(logger) = &self.logger {
+                            logger.info(&format!("local: copied poster for '{}'", item.title));
+                        }
                     }
                 }
                 report.added += 1;
                 items.push(item);
             }
         }
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("local: sync scan complete - {} items found", report.added));
+        }
+        
         match catalog.replace_library(ctx.connection_id, "local", items).await {
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some(logger) = &self.logger {
+                    logger.info(&format!(
+                        "local: sync complete - added: {}, updated: {}, removed: {}",
+                        report.added, report.updated, report.removed
+                    ));
+                }
+            }
             Err(error) => {
-                tracing::warn!(error = %error, "local: could not report the scan");
+                if let Some(logger) = &self.logger {
+                    logger.error(&format!("local: could not report the scan: {}", error));
+                }
                 report.errors += 1;
             }
         }

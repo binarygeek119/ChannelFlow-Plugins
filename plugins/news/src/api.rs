@@ -55,6 +55,7 @@ fn view(settings: &NewsSettings) -> serde_json::Value {
 }
 
 async fn get_settings(State(state): State<Arc<NewsState>>) -> Response {
+    state.logger.info("news: retrieving settings");
     let settings = state.settings.lock().await.clone();
     Json(view(&settings)).into_response()
 }
@@ -63,16 +64,27 @@ async fn put_settings(
     State(state): State<Arc<NewsState>>,
     Json(value): Json<serde_json::Value>,
 ) -> Response {
+    state.logger.info("news: updating settings");
     let settings = match NewsSettings::parse(&value) {
         Ok(settings) => settings,
-        Err(error) => return fail(StatusCode::BAD_REQUEST, error.to_string()),
+        Err(error) => {
+            state.logger.warn(&format!("news: failed to parse settings: {}", error));
+            return fail(StatusCode::BAD_REQUEST, error.to_string());
+        }
     };
     let stored = serde_json::to_value(&settings).unwrap_or(value);
     if let Err(error) = state.storage.set(SETTINGS_KEY, &stored).await {
+        state.logger.error(&format!("news: failed to save settings: {}", error));
         return fail(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
     *state.settings.lock().await = settings.clone();
-    state.logger.info("news settings updated");
+    state.logger.info(&format!(
+        "news: settings updated - show='{}', feeds={}, articles={}, ai_rewrite={}",
+        settings.header,
+        settings.feeds.iter().filter(|f| f.enabled).count(),
+        settings.article_count,
+        settings.ai_rewrite
+    ));
     Json(view(&settings)).into_response()
 }
 
@@ -174,9 +186,12 @@ pub fn anchor_line(
 /// Fetch every enabled feed and build the newscast show — the stories plus
 /// the anchor's intro and outro — cached ~2 minutes like v1.0.0.
 async fn preview_newscast(State(state): State<Arc<NewsState>>) -> Response {
+    state.logger.info("news: generating preview");
     let settings = state.settings.lock().await.clone();
     let show_name = resolve_show_name(&settings.header);
     let now = Local::now();
+    state.logger.info(&format!("news: show '{}' preview at {}:{:02}", show_name, now.hour(), now.minute()));
+    
     let intro = anchor_line(
         &settings.anchor_intro,
         default_intro(&show_name),
@@ -200,9 +215,15 @@ async fn preview_newscast(State(state): State<Arc<NewsState>>) -> Response {
         .into_iter()
         .take(settings.article_count.max(1) as usize)
         .collect();
+    
+    state.logger.info(&format!("news: preview has {} stories", stories.len()));
+    
     if settings.ai_rewrite {
+        state.logger.info("news: applying AI rewrite to stories");
         stories = crate::rewrite::rewrite_show(&state, &settings, &stories).await;
+        state.logger.info(&format!("news: AI rewrite complete, {} stories rewritten", stories.len()));
     }
+    
     Json(json!({
         "header": show_name,
         "show_header": settings.show_header,
@@ -223,11 +244,14 @@ async fn cached_stories(state: &Arc<NewsState>, settings: &NewsSettings) -> Vec<
         let cache = state.headline_cache.lock().await;
         if let Some((cached_key, fetched_at, stories)) = cache.as_ref() {
             if cached_key == &key && fetched_at.elapsed().as_secs() < 2 * 60 {
+                state.logger.info(&format!("news: using cached stories ({} stories, {}s old)", stories.len(), fetched_at.elapsed().as_secs()));
                 return stories.clone();
             }
         }
     }
+    state.logger.info("news: cache miss, fetching fresh stories");
     let stories = fetch_enabled_stories(state, settings).await;
+    state.logger.info(&format!("news: fetched {} fresh stories", stories.len()));
     {
         let mut cache = state.headline_cache.lock().await;
         *cache = Some((key, Instant::now(), stories.clone()));
@@ -252,7 +276,12 @@ pub(crate) async fn fetch_enabled_stories(
         .filter(|feed| feed.enabled)
         .map(|feed| feed.url.clone())
         .collect();
-    fetch_stories(&state.http, &enabled, limit).await
+    
+    state.logger.info(&format!("news: fetching stories from {} enabled feeds (limit: {})", enabled.len(), limit));
+    
+    let stories = fetch_stories(&state.http, &enabled, limit, &state.logger).await;
+    state.logger.info(&format!("news: fetched {} total stories", stories.len()));
+    stories
 }
 
 fn feeds_key(settings: &NewsSettings) -> String {
@@ -267,18 +296,34 @@ fn feeds_key(settings: &NewsSettings) -> String {
 
 /// Fetch and parse every feed into stories, stopping once `limit` stories have
 /// been found (v1.0.0 fetched until the cap too).
-async fn fetch_stories(http: &reqwest::Client, urls: &[String], limit: usize) -> Vec<Value> {
+async fn fetch_stories(http: &reqwest::Client, urls: &[String], limit: usize, logger: &channelflow_plugin_api::plugin::PluginLogger) -> Vec<Value> {
     let mut stories = Vec::new();
     for url in urls {
         if stories.len() >= limit {
             break;
         }
-        let Ok(response) = http.get(url).send().await else { continue };
+        
+        logger.info(&format!("news: fetching feed from {}", url));
+        
+        let Ok(response) = http.get(url).send().await else { 
+            logger.warn(&format!("news: failed to fetch feed from {}", url));
+            continue 
+        };
+        
         if !response.status().is_success() {
+            logger.warn(&format!("news: feed {} returned status {}", url, response.status()));
             continue;
         }
-        let Ok(body) = response.text().await else { continue };
-        for story in extract_stories(&body, url) {
+        
+        let Ok(body) = response.text().await else { 
+            logger.warn(&format!("news: failed to read body from feed {}", url));
+            continue 
+        };
+        
+        let feed_stories = extract_stories(&body, url);
+        logger.info(&format!("news: extracted {} stories from feed {}", feed_stories.len(), url));
+        
+        for story in feed_stories {
             stories.push(story);
             if stories.len() >= limit {
                 return stories;

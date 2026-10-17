@@ -30,9 +30,10 @@ pub struct ListsPlugin {
     enabled: bool,
 }
 
-/// What the route handlers need: the plugin's own storage.
+/// What the route handlers need: the plugin's own storage and a logger.
 pub struct ListsState {
     pub storage: Arc<dyn channelflow_plugin_api::storage::PluginStorage>,
+    pub logger: channelflow_plugin_api::plugin::PluginLogger,
 }
 
 impl ListsPlugin {
@@ -65,8 +66,9 @@ impl Plugin for ListsPlugin {
         api.web.serve_embedded("lists.js", "text/javascript", include_bytes!("../web/lists.js"));
         self.state = Some(Arc::new(ListsState {
             storage: api.storage.clone(),
+            logger: api.logger.clone(),
         }));
-        api.logger.info("loaded");
+        api.logger.info("lists: plugin loaded");
         Ok(())
     }
 
@@ -91,7 +93,7 @@ impl Plugin for ListsPlugin {
     fn routes(&self) -> Option<Router> {
         self.state()
             .ok()
-            .map(|state| routes::router(state.storage.clone()))
+            .map(|state| routes::router(state.storage.clone(), state.logger.clone()))
     }
 
     fn ui_contributions(&self) -> Vec<UiContribution> {

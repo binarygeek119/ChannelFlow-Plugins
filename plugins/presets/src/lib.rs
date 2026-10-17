@@ -34,9 +34,10 @@ pub struct PresetsPlugin {
     enabled: bool,
 }
 
-/// What the route handlers need: read access to the core's channels.
+/// What the route handlers need: read access to the core's channels and a logger.
 pub struct PresetsState {
     pub core: Arc<dyn CoreData>,
+    pub logger: channelflow_plugin_api::plugin::PluginLogger,
 }
 
 impl PresetsPlugin {
@@ -71,8 +72,9 @@ impl Plugin for PresetsPlugin {
         serve_logos(&api);
         self.state = Some(Arc::new(PresetsState {
             core: api.core.clone(),
+            logger: api.logger.clone(),
         }));
-        api.logger.info("loaded");
+        api.logger.info("presets: plugin loaded");
         Ok(())
     }
 
@@ -95,7 +97,7 @@ impl Plugin for PresetsPlugin {
     }
 
     fn routes(&self) -> Option<Router> {
-        self.state().ok().map(|state| routes::router(state.core.clone()))
+        self.state().ok().map(|state| routes::router(state.core.clone(), state.logger.clone()))
     }
 
     fn ui_contributions(&self) -> Vec<UiContribution> {

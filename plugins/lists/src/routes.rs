@@ -15,6 +15,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use channelflow_plugin_api::plugin::PluginLogger;
 use channelflow_plugin_api::storage::PluginStorage;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -24,15 +25,16 @@ const LISTS_KEY: &str = "lists";
 
 pub struct RoutesState {
     pub storage: Arc<dyn PluginStorage>,
+    pub logger: PluginLogger,
 }
 
-pub fn router(storage: Arc<dyn PluginStorage>) -> Router {
+pub fn router(storage: Arc<dyn PluginStorage>, logger: PluginLogger) -> Router {
     Router::new()
         .route("/lists", get(list_lists).post(create_list))
         .route("/lists/{id}", put(rename_list).delete(delete_list))
         .route("/lists/{id}/items", post(add_item))
         .route("/lists/{id}/items/{match_key}", delete(remove_item))
-        .with_state(Arc::new(RoutesState { storage }))
+        .with_state(Arc::new(RoutesState { storage, logger }))
 }
 
 async fn load(state: &RoutesState) -> Value {
@@ -65,6 +67,7 @@ fn now() -> String {
 
 /// Every list, newest first (items included so the page can render counts).
 async fn list_lists(State(state): State<Arc<RoutesState>>) -> impl IntoResponse {
+    state.logger.info("lists: listing all lists");
     let doc = load(&state).await;
     let mut lists = doc["lists"].as_array().cloned().unwrap_or_default();
     lists.sort_by(|a, b| {
@@ -73,6 +76,7 @@ async fn list_lists(State(state): State<Arc<RoutesState>>) -> impl IntoResponse 
             .unwrap_or("")
             .cmp(a["created_at"].as_str().unwrap_or(""))
     });
+    state.logger.info(&format!("lists: returning {} lists", lists.len()));
     Json(json!({ "lists": lists }))
 }
 
@@ -87,6 +91,7 @@ async fn create_list(
 ) -> Response {
     let name = input.name.trim().to_string();
     if name.is_empty() {
+        state.logger.warn("lists: create_list failed - name is empty");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "name is required" })),
@@ -100,14 +105,17 @@ async fn create_list(
         "created_at": now(),
         "items": [],
     });
+    state.logger.info(&format!("lists: creating list '{}' with id {}", name, list["id"]));
     doc["lists"].as_array_mut().map(|lists| lists.push(list.clone()));
     if let Err(message) = save(&state, &doc).await {
+        state.logger.error(&format!("lists: failed to save list '{}': {}", name, message));
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": message })),
         )
             .into_response();
     }
+    state.logger.info(&format!("lists: successfully created list '{}'", name));
     Json(list).into_response()
 }
 
@@ -123,24 +131,29 @@ async fn rename_list(
 ) -> Response {
     let name = input.name.trim().to_string();
     if name.is_empty() {
+        state.logger.warn("lists: rename_list failed - name is empty");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "name is required" })),
         )
             .into_response();
     }
+    state.logger.info(&format!("lists: renaming list {} to '{}'", id, name));
     let mut doc = load(&state).await;
     let Some(list) = find_list(&mut doc, &id) else {
+        state.logger.warn(&format!("lists: list {} not found for rename", id));
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such list" }))).into_response();
     };
     list["name"] = json!(name);
     if let Err(message) = save(&state, &doc).await {
+        state.logger.error(&format!("lists: failed to save renamed list {}: {}", id, message));
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": message })),
         )
             .into_response();
     }
+    state.logger.info(&format!("lists: successfully renamed list {} to '{}'", id, name));
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -148,6 +161,7 @@ async fn delete_list(
     State(state): State<Arc<RoutesState>>,
     Path(id): Path<String>,
 ) -> Response {
+    state.logger.info(&format!("lists: deleting list {}", id));
     let mut doc = load(&state).await;
     let mut found = false;
     if let Some(lists) = doc["lists"].as_array_mut() {
@@ -156,9 +170,18 @@ async fn delete_list(
         found = lists.len() != before;
     }
     if !found {
+        state.logger.warn(&format!("lists: list {} not found for deletion", id));
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such list" }))).into_response();
     }
-    let _ = save(&state, &doc).await;
+    if let Err(message) = save(&state, &doc).await {
+        state.logger.error(&format!("lists: failed to save after deleting list {}: {}", id, message));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": message })),
+        )
+            .into_response();
+    }
+    state.logger.info(&format!("lists: successfully deleted list {}", id));
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -180,14 +203,20 @@ async fn add_item(
     Json(input): Json<AddItem>,
 ) -> Response {
     if input.match_key.is_empty() || input.title.is_empty() {
+        state.logger.warn(&format!("lists: add_item to {} failed - match_key or title is empty", id));
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "match_key and title are required" })),
         )
             .into_response();
     }
+    state.logger.info(&format!(
+        "lists: adding item '{}' (kind: {}) to list {}",
+        input.title, input.kind, id
+    ));
     let mut doc = load(&state).await;
     let Some(list) = find_list(&mut doc, &id) else {
+        state.logger.warn(&format!("lists: list {} not found for add_item", id));
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such list" }))).into_response();
     };
     let items = list["items"].as_array_mut().expect("lists carry an items array");
@@ -199,8 +228,12 @@ async fn add_item(
     });
     if !items.iter().any(|existing| existing["match_key"] == item["match_key"]) {
         items.push(item);
+        state.logger.info(&format!("lists: added item with match_key {} to list {}", input.match_key, id));
+    } else {
+        state.logger.info(&format!("lists: item with match_key {} already exists in list {}, skipping", input.match_key, id));
     }
     if let Err(message) = save(&state, &doc).await {
+        state.logger.error(&format!("lists: failed to save after adding item to list {}: {}", id, message));
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": message })),
@@ -214,13 +247,30 @@ async fn remove_item(
     State(state): State<Arc<RoutesState>>,
     Path((id, match_key)): Path<(String, String)>,
 ) -> Response {
+    state.logger.info(&format!("lists: removing item with match_key {} from list {}", match_key, id));
     let mut doc = load(&state).await;
     let Some(list) = find_list(&mut doc, &id) else {
+        state.logger.warn(&format!("lists: list {} not found for remove_item", id));
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such list" }))).into_response();
     };
+    let mut removed = false;
     if let Some(items) = list["items"].as_array_mut() {
+        let before = items.len();
         items.retain(|existing| existing["match_key"].as_str() != Some(match_key.as_str()));
+        removed = items.len() != before;
     }
-    let _ = save(&state, &doc).await;
+    if !removed {
+        state.logger.warn(&format!("lists: item with match_key {} not found in list {}", match_key, id));
+    } else {
+        state.logger.info(&format!("lists: removed item with match_key {} from list {}", match_key, id));
+    }
+    if let Err(message) = save(&state, &doc).await {
+        state.logger.error(&format!("lists: failed to save after removing item from list {}: {}", id, message));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": message })),
+        )
+            .into_response();
+    }
     Json(json!({ "ok": true })).into_response()
 }

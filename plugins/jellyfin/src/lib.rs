@@ -25,6 +25,7 @@ use channelflow_plugin_api::plugin::{Plugin, PluginApi, PluginError, PluginHealt
 
 pub struct JellyfinPlugin {
     metadata: PluginManifest,
+    logger: Option<channelflow_plugin_api::plugin::PluginLogger>,
     enabled: bool,
 }
 
@@ -32,6 +33,7 @@ impl JellyfinPlugin {
     pub fn new() -> Self {
         Self {
             metadata: manifest(),
+            logger: None,
             enabled: false,
         }
     }
@@ -92,11 +94,17 @@ impl Plugin for JellyfinPlugin {
 
     async fn on_enable(&mut self) -> Result<(), PluginError> {
         self.enabled = true;
+        if let Some(logger) = &self.logger {
+            logger.info("jellyfin: plugin enabled");
+        }
         Ok(())
     }
 
     async fn on_disable(&mut self) -> Result<(), PluginError> {
         self.enabled = false;
+        if let Some(logger) = &self.logger {
+            logger.info("jellyfin: plugin disabled");
+        }
         Ok(())
     }
 
@@ -107,7 +115,7 @@ impl Plugin for JellyfinPlugin {
     }
 
     fn routes(&self) -> Option<axum::Router> {
-        Some(routes::router())
+        self.logger.as_ref().map(|logger| routes::router(logger.clone()))
     }
 
     fn ui_contributions(&self) -> Vec<channelflow_plugin_api::ui::UiContribution> {
@@ -160,37 +168,112 @@ impl MediaSource for JellyfinPlugin {
     }
 
     async fn test_connection(&self, connection: &Connection, api_key: &str) -> TestResult {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("jellyfin: testing connection to {}", connection.url));
+        }
+        
         let client = match client::JellyfinClient::new(connection, api_key) {
             Ok(client) => client,
-            Err(_) => return TestResult::bad_url("Not a valid URL"),
+            Err(_) => {
+                if let Some(logger) = &self.logger {
+                    logger.warn(&format!("jellyfin: invalid URL format for connection: {}", connection.url));
+                }
+                return TestResult::bad_url("Not a valid URL");
+            }
         };
+        
         match client.test().await {
-            client::TestVerdict::Ok => TestResult::ok("Reachable, key accepted"),
+            client::TestVerdict::Ok => {
+                if let Some(logger) = &self.logger {
+                    logger.info(&format!("jellyfin: connection test successful for {}", connection.url));
+                }
+                TestResult::ok("Reachable, key accepted")
+            }
             client::TestVerdict::AuthFailed => {
-                if client.has_token() {
+                if let Some(logger) = &self.logger {
+                    if client.has_token() {
+                        logger.warn(&format!("jellyfin: authentication failed for {} - API key rejected", connection.url));
+                        TestResult::auth_failed("Server reachable, API key rejected")
+                    } else {
+                        logger.warn(&format!("jellyfin: authentication failed for {} - no API key provided", connection.url));
+                        TestResult::auth_failed("Server reachable, but no API key was given")
+                    }
+                } else if client.has_token() {
                     TestResult::auth_failed("Server reachable, API key rejected")
                 } else {
                     TestResult::auth_failed("Server reachable, but no API key was given")
                 }
             }
-            client::TestVerdict::Unreachable => TestResult::unreachable("Could not reach the server"),
-            client::TestVerdict::BadUrl => TestResult::bad_url("Unexpected response from that URL"),
+            client::TestVerdict::Unreachable => {
+                if let Some(logger) = &self.logger {
+                    logger.error(&format!("jellyfin: could not reach server at {}", connection.url));
+                }
+                TestResult::unreachable("Could not reach the server")
+            }
+            client::TestVerdict::BadUrl => {
+                if let Some(logger) = &self.logger {
+                    logger.warn(&format!("jellyfin: unexpected response from URL {}", connection.url));
+                }
+                TestResult::bad_url("Unexpected response from that URL")
+            }
         }
     }
 
     async fn list_libraries(&self, connection: &Connection, api_key: &str) -> Vec<Library> {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("jellyfin: listing libraries from {}", connection.url));
+        }
+        
         match client::JellyfinClient::new(connection, api_key) {
-            Ok(client) => client.libraries().await.unwrap_or_default(),
-            Err(_) => Vec::new(),
+            Ok(client) => {
+                let libraries = client.libraries().await.unwrap_or_default();
+                if let Some(logger) = &self.logger {
+                    logger.info(&format!("jellyfin: found {} libraries", libraries.len()));
+                }
+                libraries
+            }
+            Err(error) => {
+                if let Some(logger) = &self.logger {
+                    logger.error(&format!("jellyfin: failed to create client for {}: {}", connection.url, error));
+                }
+                Vec::new()
+            }
         }
     }
 
     async fn sync_library(&self, ctx: SyncCtx) -> SyncReport {
-        sync::run(&ctx).await
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("jellyfin: starting library sync for connection '{}'", ctx.connection.name));
+        }
+        
+        let report = sync::run(&ctx).await;
+        
+        if let Some(logger) = &self.logger {
+            if report.added == 0 && report.updated == 0 && report.removed == 0 {
+                logger.info(&format!(
+                    "jellyfin: sync complete - no changes (total scanned: {})",
+                    report.added + report.updated
+                ));
+            } else {
+                logger.info(&format!(
+                    "jellyfin: sync complete - added: {}, updated: {}, removed: {}",
+                    report.added, report.updated, report.removed
+                ));
+            }
+            
+            if report.errors > 0 {
+                logger.warn(&format!(
+                    "jellyfin: sync completed with {} errors",
+                    report.errors
+                ));
+            }
+        }
+        
+        report
     }
 
     fn routes(&self) -> Option<axum::Router> {
-        Some(routes::router())
+        self.logger.as_ref().map(|logger| routes::router(logger.clone()))
     }
 
     async fn server_info(
@@ -198,8 +281,17 @@ impl MediaSource for JellyfinPlugin {
         connection: &Connection,
         api_key: &str,
     ) -> Option<serde_json::Value> {
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("jellyfin: fetching server info from {}", connection.url));
+        }
+        
         let client = client::JellyfinClient::new(connection, api_key).ok()?;
         let (server_id, server_name) = client.system_info().await?;
+        
+        if let Some(logger) = &self.logger {
+            logger.info(&format!("jellyfin: connected to server '{}' (id: {})", server_name, server_id));
+        }
+        
         Some(serde_json::json!({
             "server_id": server_id,
             "server_name": server_name,
@@ -208,16 +300,29 @@ impl MediaSource for JellyfinPlugin {
 
     fn item_web_url(&self, connection: &Connection, remote_id: &str) -> Option<String> {
         if remote_id.is_empty() {
+            if let Some(logger) = &self.logger {
+                logger.debug("jellyfin: item_web_url called with empty remote_id");
+            }
             return None;
         }
+        
         let base = connection.url.trim().trim_end_matches('/');
         if base.is_empty() {
+            if let Some(logger) = &self.logger {
+                logger.debug("jellyfin: item_web_url called with empty connection URL");
+            }
             return None;
         }
+        
         let mut url = format!("{base}/web/index.html#!/details?id={remote_id}");
         if let Some(server_id) = connection.server_id.as_deref().filter(|id| !id.is_empty()) {
             url.push_str(&format!("&serverId={server_id}"));
         }
+        
+        if let Some(logger) = &self.logger {
+            logger.debug(&format!("jellyfin: generated web URL for item {}: {}", remote_id, url));
+        }
+        
         Some(url)
     }
 }
