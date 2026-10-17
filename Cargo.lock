@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-ai"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "async-trait",
  "axum",
@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-commercialbrainz"
-version = "2.0.6"
+version = "2.0.7"
 dependencies = [
  "async-trait",
  "axum",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-emergency"
-version = "2.0.7"
+version = "2.0.8"
 dependencies = [
  "async-trait",
  "axum",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-holidaychannel"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "async-trait",
  "axum",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-jellyfin"
-version = "2.0.33"
+version = "2.0.34"
 dependencies = [
  "async-trait",
  "axum",
@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-lists"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-local"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "async-trait",
  "axum",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-news"
-version = "2.0.59"
+version = "2.0.60"
 dependencies = [
  "async-trait",
  "axum",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-offair"
-version = "2.0.8"
+version = "2.0.9"
 dependencies = [
  "async-trait",
  "axum",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-pasttense"
-version = "2.0.2"
+version = "2.0.3"
 dependencies = [
  "async-trait",
  "axum",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-presets"
-version = "2.0.12"
+version = "2.0.13"
 dependencies = [
  "async-trait",
  "axum",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "channelflow-plugin-weather"
-version = "2.0.12"
+version = "2.0.13"
 dependencies = [
  "async-trait",
  "axum",

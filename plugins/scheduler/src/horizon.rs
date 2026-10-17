@@ -279,8 +279,9 @@ impl Horizon {
                             }
                         }
                         
-                        // Always write the guide and lineup, regardless of write_playout setting.
+                        // Always write the guide and lineup, regardless of write_playout setting or skip status.
                         // The guide and lineup should be populated when building the horizon.
+                        // When skipped, we use the existing day data from the previous build.
                         if let Err(error) =
                             crate::playout::set_guide(core, &outcome.day, logger).await
                         {
@@ -292,10 +293,11 @@ impl Horizon {
                             progress
                                 .errors
                                 .push(format!("{} {date} guide: {error}", channel.id));
-                        } else if !outcome.skipped {
+                        } else {
                             logger.info(&format!(
-                                "scheduler: {} {} guide updated",
-                                channel.id, date
+                                "scheduler: {} {} guide updated{}",
+                                channel.id, date,
+                                if outcome.skipped { " (from existing data)" } else { "" }
                             ));
                         }
                         
@@ -310,10 +312,11 @@ impl Horizon {
                             progress
                                 .errors
                                 .push(format!("{} {date} lineup: {error}", channel.id));
-                        } else if !outcome.skipped {
+                        } else {
                             logger.info(&format!(
-                                "scheduler: {} {} lineup updated",
-                                channel.id, date
+                                "scheduler: {} {} lineup updated{}",
+                                channel.id, date,
+                                if outcome.skipped { " (from existing data)" } else { "" }
                             ));
                         }
                         
