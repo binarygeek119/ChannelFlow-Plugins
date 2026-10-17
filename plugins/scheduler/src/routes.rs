@@ -366,9 +366,12 @@ async fn build_one(
             return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
         }
     }
-    // Write the playout (and the guide) even when the day was unchanged: an
-    // operator who cleared the guide and rebuilds the same day expects it back,
-    // and this costs no model call.
+    // Always write the guide, regardless of write_playout setting.
+    // The guide should be populated when building a day.
+    if let Err(error) = crate::playout::set_guide(&state.core, &outcome.day).await {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
+    // Only write playout files if write_playout is enabled.
     if settings_for_write.write_playout {
         let dir = crate::playout::channel_dir(
             &state.config_root,
@@ -434,6 +437,10 @@ async fn write_playout(
     };
     let settings = state.settings.lock().await.clone();
     let dir = crate::playout::channel_dir(&state.config_root, &settings.playout_dir, &id);
+    // Always set the guide before writing the playout file
+    if let Err(error) = crate::playout::set_guide(&state.core, &day).await {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
     match crate::playout::write(&state.core, &day, &dir).await {
         Ok(report) => Json(json!({ "report": report })).into_response(),
         Err(error) => fail(StatusCode::INTERNAL_SERVER_ERROR, error),
@@ -501,6 +508,11 @@ pub async fn rebuild_all_playouts(
                 Some(report.days as u64),
                 None,
             );
+            // Always set the guide before writing the playout file
+            if let Err(error) = crate::playout::set_guide(core, &day).await {
+                report.errors.push(format!("{} {} guide: {}", channel.id, date, error));
+                continue;
+            }
             match crate::playout::write(core, &day, &dir).await {
                 Ok(written) => {
                     report.days += 1;

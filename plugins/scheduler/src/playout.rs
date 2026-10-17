@@ -164,16 +164,26 @@ pub async fn write(
     let text = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
     std::fs::write(&path, text).map_err(|error| error.to_string())?;
 
-    let programs = guide_programs(day);
-    core.set_channel_guide(&day.channel_id, programs)
-        .await
-        .map_err(|error| error.to_string())?;
+    set_guide(core, day).await?;
 
     Ok(WriteReport {
         path: path.to_string_lossy().to_string(),
         items: document["items"].as_array().map(Vec::len).unwrap_or(0),
         missing,
     })
+}
+
+/// Set the channel's guide from a generated day. This is always called when
+/// building the horizon, regardless of whether playout files are written.
+pub async fn set_guide(
+    core: &Arc<dyn CoreData>,
+    day: &GeneratedDay,
+) -> Result<(), String> {
+    let programs = guide_programs(day);
+    core.set_channel_guide(&day.channel_id, programs)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Where a channel's playout files go: `playout_dir` (or `<config>/playout`),
