@@ -62,13 +62,17 @@ function describeField(field, value) {
   return String(value);
 }
 
-function fieldId(field) {
-  return `f-${field.path.replace(/\./g, "-")}`;
+// Every field id carries its container's id as a prefix: the Transcode page and
+// the per-channel dialog render the same fields at once, so `f-<path>` alone
+// would put two elements with one id in the document.
+function fieldId(field, prefix) {
+  const base = `f-${field.path.replace(/\./g, "-")}`;
+  return prefix ? `${prefix}-${base}` : base;
 }
 
 // Build the control for one field, reporting every edit through `onChange`.
 // The control is seeded from `value`, which is the object being edited.
-function buildControl(field, value, onChange) {
+function buildControl(field, value, onChange, prefix) {
   const control = document.createElement("input");
   const extras = [];
 
@@ -174,7 +178,7 @@ function buildControl(field, value, onChange) {
   control.value = value == null ? "" : String(value);
   if (field.suggestions && field.suggestions.length) {
     const list = document.createElement("datalist");
-    list.id = `${fieldId(field)}-list`;
+    list.id = `${fieldId(field, prefix)}-list`;
     for (const suggestion of field.suggestions) {
       const option = document.createElement("option");
       option.value = suggestion;
@@ -193,7 +197,7 @@ function buildControl(field, value, onChange) {
 // `defaults` is only passed for the per-channel dialog; with it each field
 // grows a note reading back what inheriting would give, and lights up once the
 // value differs from the default.
-function renderField(field, value, defaults) {
+function renderField(field, value, defaults, prefix) {
   const wrapper = document.createElement("div");
   wrapper.className = "field";
   wrapper.dataset.path = field.path;
@@ -201,7 +205,7 @@ function renderField(field, value, defaults) {
   const label = document.createElement("label");
   label.className = "field-label";
   label.textContent = field.label;
-  label.htmlFor = fieldId(field);
+  label.htmlFor = fieldId(field, prefix);
   wrapper.appendChild(label);
 
   const note = defaults ? document.createElement("small") : null;
@@ -221,8 +225,8 @@ function renderField(field, value, defaults) {
   const { control, extras } = buildControl(field, getPath(value, field.path), (next) => {
     setPath(value, field.path, next);
     if (note) updateNote();
-  });
-  control.id = fieldId(field);
+  }, prefix);
+  control.id = fieldId(field, prefix);
   wrapper.appendChild(control);
   for (const extra of extras) wrapper.appendChild(extra);
 
@@ -242,6 +246,7 @@ function renderField(field, value, defaults) {
 
 function renderSettings(container, groups, value, defaults) {
   container.innerHTML = "";
+  const prefix = container.id || "settings";
   for (const group of groups) {
     const card = document.createElement("div");
     card.className = "card section-card settings-group";
@@ -255,7 +260,7 @@ function renderSettings(container, groups, value, defaults) {
       card.appendChild(hint);
     }
     for (const field of group.fields) {
-      card.appendChild(renderField(field, value, defaults));
+      card.appendChild(renderField(field, value, defaults, prefix));
     }
     container.appendChild(card);
   }

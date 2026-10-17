@@ -197,7 +197,7 @@ async function loadDays() {
 }
 
 function renderDays() {
-  const host = $("sched-days");
+  const host = $("sched-day-list");
   if (!host) return;
   host.textContent = "";
   if (!schedDays.length) {
