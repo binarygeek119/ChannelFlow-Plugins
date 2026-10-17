@@ -193,6 +193,24 @@
             "size": 221923
           }
         }
+      },
+      {
+        "version": "2.0.3",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T03:34:42Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ersatztv-v2.0.3/com.channelflow.ersatztv-v2.0.3-linux-x86_64.zip",
+            "checksum": "sha256:165b65cc06d873f37a8403011a12a7ce16c8492ccb023ddde59c93fbd3a68232",
+            "size": 268282
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ersatztv-v2.0.3/com.channelflow.ersatztv-v2.0.3-windows-x86_64.zip",
+            "checksum": "sha256:7e374e7a2e30e14d67a777fe0eba3c97a567da20a75b41d00deff3669e76d378",
+            "size": 221677
+          }
+        }
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.ersatztv.png"
@@ -647,6 +665,24 @@
           "windows-x86_64": {
             "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.13/com.channelflow.scheduler-v2.0.13-windows-x86_64.zip",
             "checksum": "sha256:d95ff3982878521f73f0117aa508de1e545afdf947d80916cab7d15a4f988e91",
+            "size": 221367
+          }
+        }
+      },
+      {
+        "version": "2.0.14",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T03:34:59Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.14/com.channelflow.scheduler-v2.0.14-linux-x86_64.zip",
+            "checksum": "sha256:9f53bff7f3356ed62ec3d5892e5bcd73f77a54011b1b0793be40115e12231a03",
+            "size": 283146
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/scheduler-v2.0.14/com.channelflow.scheduler-v2.0.14-windows-x86_64.zip",
+            "checksum": "sha256:1e20eddca0613e35105f1fb117a9c361a0906181282fbf1eb27daa436258944e",
             "size": 221367
           }
         }
