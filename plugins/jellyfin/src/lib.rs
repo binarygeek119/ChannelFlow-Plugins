@@ -301,7 +301,7 @@ impl MediaSource for JellyfinPlugin {
     fn item_web_url(&self, connection: &Connection, remote_id: &str) -> Option<String> {
         if remote_id.is_empty() {
             if let Some(logger) = &self.logger {
-                logger.debug("jellyfin: item_web_url called with empty remote_id");
+                logger.info("jellyfin: item_web_url called with empty remote_id");
             }
             return None;
         }
@@ -309,7 +309,7 @@ impl MediaSource for JellyfinPlugin {
         let base = connection.url.trim().trim_end_matches('/');
         if base.is_empty() {
             if let Some(logger) = &self.logger {
-                logger.debug("jellyfin: item_web_url called with empty connection URL");
+                logger.info("jellyfin: item_web_url called with empty connection URL");
             }
             return None;
         }
@@ -320,7 +320,7 @@ impl MediaSource for JellyfinPlugin {
         }
         
         if let Some(logger) = &self.logger {
-            logger.debug(&format!("jellyfin: generated web URL for item {}: {}", remote_id, url));
+            logger.info(&format!("jellyfin: generated web URL for item {}: {}", remote_id, url));
         }
         
         Some(url)

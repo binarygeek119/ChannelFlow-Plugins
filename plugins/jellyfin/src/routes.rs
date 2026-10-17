@@ -71,9 +71,7 @@ async fn progress_snapshot(
     axum::extract::State(state): axum::extract::State<Arc<RoutesState>>,
 ) -> Json<serde_json::Value> {
     let sync_state = crate::sync::progress_state().lock().unwrap();
-    if sync_state.is_some() {
-        state.logger.debug("jellyfin: sync progress requested");
-    }
+    state.logger.info("jellyfin: sync progress requested");
     Json(serde_json::json!({ "progress": sync_state.clone() }))
 }
 
