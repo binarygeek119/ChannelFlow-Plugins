@@ -145,6 +145,24 @@
             "size": 221898
           }
         }
+      },
+      {
+        "version": "2.0.10",
+        "min_base_version": "2.0.0",
+        "max_base_version": "2.999.999",
+        "timestamp": "2026-10-17T02:34:07Z",
+        "artifacts": {
+          "linux-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ai-v2.0.10/com.channelflow.ai-v2.0.10-linux-x86_64.zip",
+            "checksum": "sha256:bf6a94453bdbcbf977cf5cf1249fff6cde55d21b115c21c9f8081d138b655ecf",
+            "size": 268559
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/binarygeek119/ChannelFlow-Plugins/releases/download/ai-v2.0.10/com.channelflow.ai-v2.0.10-windows-x86_64.zip",
+            "checksum": "sha256:ba2758d5b990ab370796a01544b7683850e6f5252ecc6f3da4e7b2ca6378026a",
+            "size": 221653
+          }
+        }
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/binarygeek119/ChannelFlow-Plugins/main/banners/com.channelflow.ai.png"
