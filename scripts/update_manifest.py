@@ -96,10 +96,11 @@ def released_versions(slug: str) -> list[str]:
     """
     out = []
     tags = gh("release", "list", "--limit", "200", "--json", "tagName", "--jq", ".[].tagName")
+    prefix = f"{slug}-v"
     for tag in tags.splitlines():
         tag = tag.strip()
-        if tag.startswith(f"{slug}-v"):
-            out.append(tag[len(slug) + 3 :])
+        if tag.startswith(prefix):
+            out.append(tag[len(prefix) :])
     return out
 
 
