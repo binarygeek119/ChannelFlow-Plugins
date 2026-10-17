@@ -92,6 +92,7 @@ impl Plugin for SchedulerPlugin {
             tasks: api.tasks.clone(),
             config_root,
             logger: api.logger.clone(),
+            rebuilding: std::sync::atomic::AtomicBool::new(false),
         }));
 
         // The horizon scheduler: every minute, at the configured build time,

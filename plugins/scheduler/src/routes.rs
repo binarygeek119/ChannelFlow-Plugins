@@ -2,6 +2,7 @@
 //! scopes, the compile dry-run, one-day and whole-horizon builds, and status.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -13,7 +14,7 @@ use channelflow_plugin_api::core::CoreData;
 use channelflow_plugin_api::plugin::PluginLogger;
 use channelflow_plugin_api::storage::PluginStorage;
 use channelflow_plugin_api::tasks::{TaskGuard, TaskHost, TaskInfo};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
@@ -35,6 +36,9 @@ pub struct RoutesState {
     /// `<config>`, where the playout folder lives.
     pub config_root: PathBuf,
     pub logger: PluginLogger,
+    /// True while a whole-catalog playout rebuild runs, so a second trigger is
+    /// refused rather than racing the first.
+    pub rebuilding: AtomicBool,
 }
 
 pub fn router(state: Arc<RoutesState>) -> Router {
@@ -58,6 +62,7 @@ pub fn router(state: Arc<RoutesState>) -> Router {
         .route("/build/cancel", post(cancel_build))
         .route("/channels/{id}/clear", post(clear_channel))
         .route("/guide/clear", post(clear_guide))
+        .route("/playout/rebuild", post(rebuild_playouts))
         .with_state(state)
 }
 
@@ -435,6 +440,118 @@ async fn write_playout(
     }
 }
 
+/// Clears the rebuild flag however the handler returns, so a failed write or an
+/// early return cannot leave the plugin refusing every later rebuild.
+struct RebuildFlag<'a>(&'a AtomicBool);
+
+impl Drop for RebuildFlag<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// What a whole-catalog playout rebuild did.
+#[derive(Debug, Clone, Serialize)]
+pub struct RebuildReport {
+    pub channels: usize,
+    pub days: usize,
+    pub items: usize,
+    pub missing: usize,
+    pub errors: Vec<String>,
+}
+
+/// Rewrite every stored day's playout JSON for every channel that has days, and
+/// reset each channel's guide from what is stored. No model calls — the days
+/// themselves are untouched — so this is the recovery step after a file move or
+/// a cleared guide. Shared by the route and the tests.
+pub async fn rebuild_all_playouts(
+    core: &Arc<dyn CoreData>,
+    storage: &Arc<dyn PluginStorage>,
+    config_root: &std::path::Path,
+    settings: &SchedulerSettings,
+    task: &TaskGuard,
+) -> RebuildReport {
+    let mut report = RebuildReport {
+        channels: 0,
+        days: 0,
+        items: 0,
+        missing: 0,
+        errors: Vec::new(),
+    };
+    let channels = match core.channels().await {
+        Ok(channels) => channels,
+        Err(error) => {
+            report.errors.push(error.to_string());
+            return report;
+        }
+    };
+    for channel in &channels {
+        let dates = state::read_days_index(storage.as_ref(), &channel.id).await;
+        if dates.is_empty() {
+            continue;
+        }
+        let dir = crate::playout::channel_dir(config_root, &settings.playout_dir, &channel.id);
+        let mut wrote_any = false;
+        for date in &dates {
+            let Some(day) = state::read_day(storage.as_ref(), &channel.id, date).await else {
+                continue;
+            };
+            task.progress(
+                &format!("{} · {date}", channel.name),
+                Some(report.days as u64),
+                None,
+            );
+            match crate::playout::write(core, &day, &dir).await {
+                Ok(written) => {
+                    report.days += 1;
+                    report.items += written.items;
+                    report.missing += written.missing;
+                    wrote_any = true;
+                }
+                Err(error) => report.errors.push(format!("{} · {date}: {error}", channel.name)),
+            }
+        }
+        if wrote_any {
+            report.channels += 1;
+        }
+    }
+    report
+}
+
+/// "Rebuild All Playouts": the base Tasks page calls it and then refreshes the
+/// encoder's `lineup.json`/`channel.json` (its `/api/playout/regenerate`).
+async fn rebuild_playouts(State(state): State<Arc<RoutesState>>) -> Response {
+    if state.rebuilding.swap(true, Ordering::SeqCst) {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "a playout rebuild is already running" })),
+        )
+            .into_response();
+    }
+    let _reset = RebuildFlag(&state.rebuilding);
+
+    let settings = state.settings.lock().await.clone();
+    let task = TaskGuard::start(
+        state.tasks.clone(),
+        TaskInfo {
+            key: "rebuild-playouts".to_string(),
+            title: "Rebuild all playouts".to_string(),
+            ..Default::default()
+        },
+    );
+
+    let report = rebuild_all_playouts(
+        &state.core,
+        &state.storage,
+        &state.config_root,
+        &settings,
+        &task,
+    )
+    .await;
+
+    Json(json!({ "report": report })).into_response()
+}
+
 async fn build_horizon(State(state): State<Arc<RoutesState>>) -> Response {
     if state.horizon.is_running() {
         return (
@@ -506,4 +623,129 @@ async fn build_status(State(state): State<Arc<RoutesState>>) -> Response {
     let settings = state.settings.lock().await.clone();
     let progress = state.horizon.snapshot().await;
     Json(json!({ "settings": settings, "progress": progress })).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use channelflow_plugin_api::core::{
+        CatalogFilter, CatalogRow, ChatRequest, ChatResponse, CoreChannel, CoreDataError,
+    };
+    use channelflow_plugin_api::storage::PluginStorageError;
+    use channelflow_plugin_api::NoopTaskHost;
+
+    use crate::build::{AiredBlock, AiredItem, GeneratedDay};
+    use std::collections::HashMap;
+
+    /// A real in-memory store (the SDK's `InMemoryStorage` is read-only).
+    #[derive(Default)]
+    struct MemStorage {
+        inner: std::sync::Mutex<HashMap<String, Value>>,
+    }
+
+    #[async_trait::async_trait]
+    impl PluginStorage for MemStorage {
+        async fn get(&self, key: &str) -> Result<Option<Value>, PluginStorageError> {
+            Ok(self.inner.lock().unwrap().get(key).cloned())
+        }
+        async fn set(&self, key: &str, value: &Value) -> Result<(), PluginStorageError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), value.clone());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<(), PluginStorageError> {
+            self.inner.lock().unwrap().remove(key);
+            Ok(())
+        }
+    }
+
+    struct FakeCore {
+        channels: Vec<CoreChannel>,
+    }
+
+    #[async_trait::async_trait]
+    impl CoreData for FakeCore {
+        async fn channels(&self) -> Result<Vec<CoreChannel>, CoreDataError> {
+            Ok(self.channels.clone())
+        }
+        async fn installed_plugins(&self) -> Result<Vec<String>, CoreDataError> {
+            Ok(Vec::new())
+        }
+        async fn catalog(&self, _filter: CatalogFilter) -> Result<Vec<CatalogRow>, CoreDataError> {
+            Ok(Vec::new())
+        }
+        async fn chat(&self, _request: ChatRequest) -> Result<ChatResponse, CoreDataError> {
+            Err(CoreDataError("unused".into()))
+        }
+    }
+
+    fn a_day(channel: &str, date: &str) -> GeneratedDay {
+        GeneratedDay {
+            channel_id: channel.into(),
+            date: date.into(),
+            base_hash: "b".into(),
+            input_hash: "i".into(),
+            blocks: vec![AiredBlock {
+                slot_index: 0,
+                span_slots: 4,
+                start_ms: 6 * 60 * 60 * 1000,
+                finish_ms: 7 * 60 * 60 * 1000,
+                filled_ms: 30 * 60 * 1000,
+                items: vec![AiredItem {
+                    match_key: "movie:x".into(),
+                    title: "X".into(),
+                    runtime_ms: Some(30 * 60 * 1000),
+                    why: "test".into(),
+                }],
+            }],
+            degraded: false,
+            provider: None,
+            created_at: "now".into(),
+            validation: vec![],
+            prompt: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn rebuilding_writes_every_stored_day_and_skips_channels_without_days() {
+        let core: Arc<dyn CoreData> = Arc::new(FakeCore {
+            channels: vec![
+                CoreChannel { id: "c1".into(), number: 1.0, name: "One".into(), enabled: true },
+                CoreChannel { id: "c2".into(), number: 2.0, name: "Two".into(), enabled: true },
+            ],
+        });
+        let storage: Arc<dyn PluginStorage> = Arc::new(MemStorage::default());
+        state::store_day(storage.as_ref(), "c1", &a_day("c1", "2026-10-16"))
+            .await
+            .expect("store day 1");
+        state::store_day(storage.as_ref(), "c1", &a_day("c1", "2026-10-17"))
+            .await
+            .expect("store day 2");
+        // c2 has no days: it is skipped, not counted.
+
+        let root = std::env::temp_dir().join(format!("channelflow-rebuild-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let settings = SchedulerSettings {
+            playout_dir: root.join("playout").to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        let task = TaskGuard::start(
+            Arc::new(NoopTaskHost),
+            TaskInfo { key: "test".into(), title: "test".into(), ..Default::default() },
+        );
+
+        let report = rebuild_all_playouts(&core, &storage, &root, &settings, &task).await;
+        assert_eq!(report.channels, 1, "only the channel that has days");
+        assert_eq!(report.days, 2);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let files = std::fs::read_dir(root.join("playout").join("c1"))
+            .expect("c1 playout folder")
+            .filter_map(|entry| entry.ok())
+            .count();
+        assert_eq!(files, 2, "one playout file per stored day");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
