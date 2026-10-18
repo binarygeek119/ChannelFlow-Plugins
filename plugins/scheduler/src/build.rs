@@ -158,12 +158,11 @@ fn input_hash(compiled: &layers::Compiled) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// The local minute-of-day the broadcast day starts at (`HH:MM`, default 0).
-fn day_start_minutes(hours: &layers::HoursLayer) -> i64 {
-    let mut parts = hours.day_start.trim().split(':');
-    let hour = parts.next().and_then(|h| h.parse::<i64>().ok()).unwrap_or(0);
-    let minute = parts.next().and_then(|m| m.parse::<i64>().ok()).unwrap_or(0);
-    hour.clamp(0, 23) * 60 + minute.clamp(0, 59)
+/// The local minute-of-day the broadcast day starts at. Forced to 00:00
+/// (midnight) so every channel's schedule begins at 12am (req: all channels
+/// start at 12am).
+fn day_start_minutes(_hours: &layers::HoursLayer) -> i64 {
+    0
 }
 
 /// The first complete JSON object in a reply (models often wrap it in prose or
@@ -338,6 +337,9 @@ pub async fn build_day(
         .and_then(|channels| channels.into_iter().find(|c| c.id == channel_id))
         .map(|c| c.name)
         .unwrap_or_default();
+
+    // Force broadcast day to start at midnight (12am) for all channels.
+    layers.hours.day_start = "00:00".to_string();
 
     // Special source restrictions (req 15, 16).
     let mut items = layers.items.clone();
