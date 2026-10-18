@@ -299,6 +299,7 @@ mod tests {
             core: Arc::new(channelflow_plugin_api::core::NoCoreData::default()),
             database: Arc::new(channelflow_plugin_api::database::NoPluginDatabase::default()),
             web: channelflow_plugin_api::PluginWeb::new(),
+            tasks: Arc::new(channelflow_plugin_api::NoopTaskHost),
         };
         plugin.on_load(api).await.expect("load");
         let state = plugin.state().expect("state");
