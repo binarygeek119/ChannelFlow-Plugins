@@ -192,7 +192,6 @@ impl Horizon {
             "Creature Double Feature",
             "Hero TV",
             "The Holiday Channel",
-            "OpenSwim",
         ];
         let enabled: Vec<_> = channels
             .into_iter()
