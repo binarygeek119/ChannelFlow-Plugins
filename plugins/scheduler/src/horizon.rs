@@ -193,7 +193,6 @@ impl Horizon {
             "Hero TV",
             "The Holiday Channel",
             "OpenSwim",
-            "FlowWire News",
         ];
         let enabled: Vec<_> = channels
             .into_iter()
@@ -233,6 +232,29 @@ impl Horizon {
                 progress.channel_index = index + 1;
                 progress.channel_id = Some(channel.id.clone());
             }
+
+            // FlowWire News (req 28): loops a single video; guide shows
+            // "FlowWire News Live". Skip the LLM planner entirely.
+            if channel.name == "FlowWire News" {
+                for day in 0..settings.days_to_build {
+                    let date_naive = today + chrono::Duration::days(day as i64);
+                    let date = date_naive.format("%Y-%m-%d").to_string();
+                    let program = serde_json::json!({
+                        "id": format!("{}-flowwire", date),
+                        "start": format!("{}T00:00:00-05:00", date),
+                        "finish": format!("{}T23:59:59-05:00", date),
+                        "title": "FlowWire News Live",
+                        "description": "Live news loop",
+                    });
+                    if let Err(error) = core.set_channel_guide(&channel.id, vec![program]).await {
+                        logger.warn(&format!("flowwire guide set failed: {}", error));
+                    }
+                }
+                let mut progress = self.progress.lock().await;
+                progress.built += settings.days_to_build as usize;
+                continue;
+            }
+
             for day in 0..settings.days_to_build {
                 if self.cancelled() {
                     logger.info("scheduler: build cancelled by user");
