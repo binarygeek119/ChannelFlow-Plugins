@@ -400,6 +400,58 @@ pub async fn build_day(
         }
     }
 
+    // OpenSwim (req 14): kids 24/7, alternates kid/teen blocks every 2 hours.
+    // Deterministic build: 12 two-hour blocks, alternating, filled round-robin
+    // from the pool (no LLM).
+    if channel_name == "OpenSwim" {
+        let mut blocks = Vec::new();
+        let mut item_cursor = 0usize;
+        for b in 0..12usize {
+            let slot = (b * 4) as i32;
+            let start_ms = (b * 4 * 30) as i64 * 60_000;
+            let finish_ms = start_ms + 4 * 30 * 60_000;
+            let mut items = Vec::new();
+            let mut filled = 0i64;
+            let target = 2 * 60 * 60 * 1000i64; // 2 hours
+            while filled < target && !compiled.pool.is_empty() {
+                let pool_item = &compiled.pool[item_cursor % compiled.pool.len()];
+                let rt = pool_item.runtime_ms.unwrap_or(10 * 60 * 1000);
+                if filled + rt > target && !items.is_empty() {
+                    break;
+                }
+                items.push(AiredItem {
+                    match_key: pool_item.match_key.clone(),
+                    title: pool_item.title.clone(),
+                    runtime_ms: pool_item.runtime_ms,
+                    why: if b % 2 == 0 { "kid block".to_string() } else { "teen block".to_string() },
+                });
+                filled += rt;
+                item_cursor += 1;
+            }
+            blocks.push(AiredBlock {
+                slot_index: slot,
+                span_slots: 4,
+                start_ms,
+                finish_ms,
+                filled_ms: filled,
+                items,
+            });
+        }
+        let day = GeneratedDay {
+            channel_id: channel_id.to_string(),
+            date: date.to_string(),
+            base_hash: compiled.base_hash.clone(),
+            input_hash: hash,
+            blocks,
+            degraded: false,
+            provider: None,
+            created_at: now,
+            validation: Vec::new(),
+            prompt: Some(compiled.prompt.clone()),
+        };
+        return Ok(BuildOutcome { day, skipped: false, attempts: 0 });
+    }
+
     let limits = max_per_day(&compiled.layers.rules);
     let mut messages = vec![ChatMessage {
         role: "user".to_string(),
