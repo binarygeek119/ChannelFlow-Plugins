@@ -799,11 +799,35 @@ async fn build_horizon(State(state): State<Arc<RoutesState>>) -> Response {
     let config_root = state.config_root.clone();
     let settings = state.settings.lock().await.clone();
     let logger = state.logger.clone();
+    let tasks = state.tasks.clone();
     let task_horizon = horizon.clone();
     let handle = tokio::spawn(async move {
         task_horizon
-            .run(&core, &storage, &config_root, settings, &logger, "manual")
+            .run(&core, &storage, &config_root, settings.clone(), &logger, "manual")
             .await;
+        // Auto-rebuild all playouts after the horizon build completes.
+        logger.info("scheduler: auto-rebuilding all playouts after horizon build");
+        let task = TaskGuard::start(
+            tasks.clone(),
+            TaskInfo {
+                key: "rebuild-playouts".to_string(),
+                title: "Rebuild all playouts".to_string(),
+                ..Default::default()
+            },
+        );
+        let report = rebuild_all_playouts(
+            &core,
+            &storage,
+            &config_root,
+            &settings,
+            &task,
+            &logger,
+        )
+        .await;
+        logger.info(&format!(
+            "scheduler: auto-rebuild complete - {} channels, {} days, {} errors",
+            report.channels, report.days, report.errors.len()
+        ));
     });
     horizon.set_abort(handle.abort_handle());
     
