@@ -323,15 +323,47 @@ pub async fn build_day(
     core: &Arc<dyn CoreData>,
     channel_id: &str,
     date: &str,
-    layers: ResolvedLayers,
+    mut layers: ResolvedLayers,
     settings: &SchedulerSettings,
     previous: Option<&GeneratedDay>,
     logger: &PluginLogger,
 ) -> Result<BuildOutcome, String> {
     logger.info(&format!("scheduler: building {} {}", channel_id, date));
     
+    // Resolve the channel name so special channels can restrict their pool.
+    let channel_name = core
+        .channels()
+        .await
+        .ok()
+        .and_then(|channels| channels.into_iter().find(|c| c.id == channel_id))
+        .map(|c| c.name)
+        .unwrap_or_default();
+
+    // Special source restrictions (req 15, 16).
+    let mut items = layers.items.clone();
+    if channel_name == "Past Tense News" {
+        // Only Past Tense News items.
+        if items.filter.kinds.is_empty() {
+            items.filter.kinds = vec!["news".to_string()];
+        }
+    } else if channel_name == "GET LEARNEDED" {
+        // Only Discovery/Animal Planet/NatGeo/History-style educational content.
+        if items.filter.kinds.is_empty() {
+            items.filter.kinds = vec!["documentary".to_string(), "series".to_string()];
+        }
+        // Narrow by tags/genres when present.
+        if items.filter.tags.is_empty() {
+            items.filter.tags = vec![
+                "discovery".to_string(),
+                "animal planet".to_string(),
+                "national geographic".to_string(),
+                "history".to_string(),
+            ];
+        }
+    }
+
     let rows = core
-        .catalog(catalog_filter(&layers.items))
+        .catalog(catalog_filter(&items))
         .await
         .map_err(|error| {
             logger.error(&format!("scheduler: {} {} catalog fetch failed: {}", channel_id, date, error));
@@ -343,6 +375,7 @@ pub async fn build_day(
         channel_id, date, rows.len()
     ));
     
+    layers.items = items;
     let pool = interleave(rows, &layers.items.filter.kinds, settings.pool_cap as usize);
     logger.info(&format!(
         "scheduler: {} {} built pool with {} items",
