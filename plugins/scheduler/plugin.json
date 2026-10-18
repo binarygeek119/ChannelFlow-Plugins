@@ -4,6 +4,8 @@
   "version": "2.0.23",
   "min_base_version": "2.0.0",
   "max_base_version": "2.999.999",
+  "min_api": "2.0.0",
+  "force_min_api_version": "",
   "author": "ChannelFlow",
   "description": "Builds each channel's broadcast day from six layers and the AI page's providers",
   "homepage": "https://github.com/binarygeek119/ChannelFlow",

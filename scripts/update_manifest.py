@@ -145,6 +145,8 @@ def version_entry(slug: str, version: str, plugin: dict) -> dict | None:
         "version": version,
         "min_base_version": plugin.get("min_base_version", ""),
         "max_base_version": plugin.get("max_base_version", ""),
+        "min_api": plugin.get("min_api", ""),
+        "force_min_api_version": plugin.get("force_min_api_version", ""),
         "timestamp": release.get("publishedAt") or "",
         "artifacts": dict(sorted(artifacts.items())),
     }
