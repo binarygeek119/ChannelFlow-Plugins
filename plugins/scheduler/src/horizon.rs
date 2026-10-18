@@ -180,7 +180,26 @@ impl Horizon {
         task: &TaskGuard,
     ) -> Result<(), String> {
         let channels = core.channels().await.map_err(|error| error.to_string())?;
-        let enabled: Vec<_> = channels.into_iter().filter(|channel| channel.enabled).collect();
+        // Channels whose scheduling rules are not implemented yet: skip them so
+        // the generic time-of-day planner does not fill them with unrelated
+        // content. (Requirements 17, 18, 19, 27.)
+        const SKIP_FOR_NOW: &[&str] = &[
+            "Rap On Tap",
+            "HeadPhone Jack",
+            "The Parody Channel",
+            "YouTube TV",
+            "That's Funny",
+            "Creature Double Feature",
+            "Hero TV",
+            "The Holiday Channel",
+            "OpenSwim",
+            "FlowWire News",
+        ];
+        let enabled: Vec<_> = channels
+            .into_iter()
+            .filter(|channel| channel.enabled)
+            .filter(|channel| !SKIP_FOR_NOW.contains(&channel.name.as_str()))
+            .collect();
         logger.info(&format!(
             "scheduler: building horizon for {} enabled channel(s), {} day(s) each",
             enabled.len(),

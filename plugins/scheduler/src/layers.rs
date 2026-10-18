@@ -17,12 +17,16 @@ You are programming exactly one broadcast day of a television channel.
 Return ONLY a JSON object of this shape, and nothing else:
 {\"blocks\":[{\"slot_index\":<0-47>,\"span_slots\":<1-48>,\"items\":[{\"id\":\"<an id from the candidate list>\",\"why\":\"<short reason>\"}]}]}
 Rules that never change:
-- The day is 48 half-hour slots, 0..47. Every slot must be covered exactly once, in order.
+- The day is 48 half-hour slots, 0..47. Every slot must be covered exactly once, in order, with NO gaps and NO dead air.
 - A block occupies slot_index..slot_index+span_slots-1 and must not overlap another block.
+- The last item in a block is padded to reach the next block's start boundary; do not leave short trailing gaps.
+- Each item is a SINGLE episode/movie. Back-to-back episodes of the same show are two separate items, never one block.
+- Blocks exist only to group SHORT shows (under ~22 minutes, e.g. cartoons) until they reach ~22 minutes; a block may hold 1-8 episodes and may mix shows. Normal-length shows (>=22 min) are always their own item/block.
 - Use ONLY ids from the candidate list. Never invent an id.
 - The scheduler computes each block's start and finish from runtimes; you choose what plays and in what order.
-- Group items into as FEW blocks as possible: most days are 8 to 16 blocks, each spanning several hours. Do not emit one block per half-hour unless the content really changes every half-hour.
-- Respect the channel's rules and dayparts below.
+- Respect the channel's time-of-day dayparts below: morning cartoons, daytime TV, reruns, afterschool cartoons, teen shows, primetime, late fringe, late night, overnight reruns.
+- Weekends (Fri/Sat/Sun): put movies in primetime.
+- Overnight (02:00-05:00): reruns of the previous day's primetime shows.
 - Output nothing but the JSON object.";
 
 /// A stable hash of the base layer, stored with every generated day.
